@@ -9,12 +9,10 @@ import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.optim as optim
 import yaml
-from albumentations.augmentations import transforms
-from albumentations.core.composition import Compose, OneOf
 from sklearn.model_selection import train_test_split
 from torch.optim import lr_scheduler
 from tqdm import tqdm
-from albumentations import RandomRotate90,Resize
+from albumentations import Compose, OneOf, RandomRotate90, Resize, Normalize, HorizontalFlip, VerticalFlip
 import archs
 import losses
 from dataset import Dataset
@@ -255,14 +253,15 @@ def main():
 
     train_transform = Compose([
         RandomRotate90(),
-        transforms.Flip(),
+        HorizontalFlip(p=0.5),
+        VerticalFlip(p=0.5),
         Resize(config['input_h'], config['input_w']),
-        transforms.Normalize(),
+        Normalize(),
     ])
 
     val_transform = Compose([
         Resize(config['input_h'], config['input_w']),
-        transforms.Normalize(),
+        Normalize(),
     ])
 
     train_dataset = Dataset(

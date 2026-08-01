@@ -6,8 +6,7 @@ import cv2
 import torch
 import torch.backends.cudnn as cudnn
 import yaml
-from albumentations.augmentations import transforms
-from albumentations.core.composition import Compose
+from albumentations import Compose, Resize, Normalize
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
@@ -15,7 +14,7 @@ import archs
 from dataset import Dataset
 from metrics import iou_score
 from utils import AverageMeter
-from albumentations import RandomRotate90,Resize
+from albumentations import RandomRotate90
 import time
 
 def parse_args():
@@ -62,7 +61,7 @@ def main():
 
     val_transform = Compose([
         Resize(config['input_h'], config['input_w']),
-        transforms.Normalize(),
+        Normalize(),
     ])
 
     val_dataset = Dataset(
