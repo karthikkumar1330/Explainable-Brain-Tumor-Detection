@@ -20,26 +20,27 @@ class GenerateIntegratedReportUseCase:
         self.report_generator = report_generator
         self.logger = logger
 
-    def execute(self, report: ClinicalReport, output_dir: str) -> tuple[str, str]:
-        """Orchestrates saving the clinical findings to Markdown and JSON formats.
+    def execute(self, report: ClinicalReport, output_dir: str) -> tuple[str, str, str]:
+        """Orchestrates saving the clinical findings to Markdown, JSON, and PDF formats.
 
         Args:
             report: The combined ClinicalReport entity.
             output_dir: Destination folder.
 
         Returns:
-            A tuple of (markdown_file_path, json_file_path).
+            A tuple of (markdown_file_path, json_file_path, pdf_file_path).
         """
         self.logger.info(f"Generating integrated clinical report for patient: {report.patient_info.patient_id}")
 
         try:
-            md_path, json_path = self.report_generator.generate(report, output_dir)
+            md_path, json_path, pdf_path = self.report_generator.generate(report, output_dir)
             self.logger.info(
                 f"Integrated clinical report successfully generated.\n"
                 f"  - Markdown: {md_path}\n"
-                f"  - JSON: {json_path}"
+                f"  - JSON: {json_path}\n"
+                f"  - PDF: {pdf_path}"
             )
-            return md_path, json_path
+            return md_path, json_path, pdf_path
         except Exception as e:
             self.logger.error(f"Failed to generate clinical report: {e}")
             raise e

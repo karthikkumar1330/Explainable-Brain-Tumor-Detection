@@ -1,9 +1,8 @@
-# Tasks - Tumor Area Analysis Module
+# Tasks - PDF Generation Module
 
-- `[x]` Create `tumor_analysis/domain/entities.py` (SeverityLevel, TumorAnalysisResult, ClinicalReportData)
-- `[x]` Create `tumor_analysis/domain/interfaces.py` (ITumorAnalyzer)
-- `[x]` Create `tumor_analysis/application/use_cases.py` (AnalyzeTumorUseCase)
-- `[x]` Create `tumor_analysis/infrastructure/analyzer.py` (OpenCVTumorAnalyzer)
-- `[x]` Create `tumor_analysis/infrastructure/reporting.py` (save_clinical_report)
-- `[x]` Create `analyze_tumor.py` CLI script in the project root
-- `[x]` Verify execution by running the CLI script and validating outputs
+- `[x]` Update `clinical_reporting/domain/interfaces.py` to return `Tuple[str, str, str]`
+- `[x]` Update `clinical_reporting/application/use_cases.py` to reflect the updated generator contract
+- `[x]` Create `clinical_reporting/infrastructure/pdf_generator.py` implementing report rendering using ReportLab Platypus
+- `[x]` Modify `clinical_reporting/infrastructure/generator.py` to integrate PDF generation into the main generator class
+- `[x]` Update `generate_clinical_report.py` to handle PDF paths and show them in logs
+- `[x]` Verify execution by running the pipeline script and checking if a valid PDF is generated

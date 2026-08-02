@@ -366,7 +366,7 @@ def main() -> None:
         # Wire generator Clean Architecture components
         generator = MarkdownJSONReportGenerator()
         report_use_case = GenerateIntegratedReportUseCase(report_generator=generator, logger=logger)
-        md_file, json_file = report_use_case.execute(report=clinical_report, output_dir=args.output_dir)
+        md_file, json_file, pdf_file = report_use_case.execute(report=clinical_report, output_dir=args.output_dir)
 
         # 9. Display pipeline complete summary to console
         print("\n" + "=" * 60)
@@ -400,6 +400,7 @@ def main() -> None:
         print(f"Reports successfully generated and saved to: {args.output_dir}")
         print(f"  - Markdown Report : {md_file}")
         print(f"  - EHR JSON Payload: {json_file}")
+        print(f"  - Clinical PDF    : {pdf_file}")
         print("=" * 60 + "\n")
 
     except Exception as e:

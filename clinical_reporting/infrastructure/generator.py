@@ -3,20 +3,21 @@ import json
 from typing import Tuple
 from clinical_reporting.domain.entities import ClinicalReport
 from clinical_reporting.domain.interfaces import IClinicalReportGenerator
+from clinical_reporting.infrastructure.pdf_generator import ReportLabPDFGenerator
 
 
 class MarkdownJSONReportGenerator(IClinicalReportGenerator):
     """Generates structured Markdown and JSON reports for clinical brain MRI scans."""
 
-    def generate(self, report: ClinicalReport, output_dir: str) -> Tuple[str, str]:
-        """Saves clinical report in both Markdown and JSON formats.
+    def generate(self, report: ClinicalReport, output_dir: str) -> Tuple[str, str, str]:
+        """Saves clinical report in Markdown, JSON, and PDF formats.
 
         Args:
             report: The aggregated clinical report.
             output_dir: Destination folder.
 
         Returns:
-            A tuple of (saved_markdown_path, saved_json_path).
+            A tuple of (saved_markdown_path, saved_json_path, saved_pdf_path).
         """
         os.makedirs(output_dir, exist_ok=True)
         base_name = f"{report.patient_info.patient_id}_clinical_report"
@@ -33,7 +34,12 @@ class MarkdownJSONReportGenerator(IClinicalReportGenerator):
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(md_content)
 
-        return md_path, json_path
+        # 3. Generate PDF report
+        pdf_path = os.path.join(output_dir, f"{base_name}.pdf")
+        pdf_gen = ReportLabPDFGenerator()
+        pdf_gen.generate_pdf(report, pdf_path)
+
+        return md_path, json_path, pdf_path
 
     def _build_json_payload(self, report: ClinicalReport) -> dict:
         """Constructs a clean serializable dictionary for downstream ML/systems."""
