@@ -380,7 +380,7 @@ def main() -> None:
         try:
             db_repo = SQLitePersistenceRepository(db_path=args.db_path, logger=logger)
             db_repo.initialize_db()
-            db_report_id = db_repo.save_report(clinical_report)
+            db_report_id = db_repo.save_report(clinical_report, output_dir=args.output_dir)
             logger.info(f"Report findings successfully persisted in SQLite (Record ID: {db_report_id}).")
         except Exception as db_err:
             logger.error(f"Failed to persist report to SQLite: {db_err}")

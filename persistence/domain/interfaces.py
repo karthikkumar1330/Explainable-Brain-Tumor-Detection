@@ -12,11 +12,12 @@ class IPersistenceRepository(ABC):
         pass
 
     @abstractmethod
-    def save_report(self, report: ClinicalReport) -> int:
+    def save_report(self, report: ClinicalReport, output_dir: str) -> int:
         """Saves an integrated clinical report to database tables.
 
         Args:
             report: Aggregated report entity.
+            output_dir: Folder where report documents are stored.
 
         Returns:
             The saved clinical report ID.

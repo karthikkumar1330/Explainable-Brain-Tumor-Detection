@@ -116,11 +116,12 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         finally:
             conn.close()
 
-    def save_report(self, report: ClinicalReport) -> int:
+    def save_report(self, report: ClinicalReport, output_dir: str) -> int:
         """Persists the full integrated clinical report findings into SQLite.
 
         Args:
             report: The combined ClinicalReport entity.
+            output_dir: Destination folder where reports are physically written.
 
         Returns:
             The saved clinical report record ID.
@@ -218,10 +219,9 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 # Markdown & JSON generated outputs are generated using PatientID prefix
                 # The caller should make sure actual paths are populated.
                 base_name = f"{report.patient_info.patient_id}_clinical_report"
-                out_dir = os.path.dirname(report.original_image_path) or "outputs/clinical_reports"
-                md_p = os.path.join(out_dir, f"{base_name}.md")
-                js_p = os.path.join(out_dir, f"{base_name}.json")
-                pdf_p = os.path.join(out_dir, f"{base_name}.pdf")
+                md_p = os.path.join(output_dir, f"{base_name}.md")
+                js_p = os.path.join(output_dir, f"{base_name}.json")
+                pdf_p = os.path.join(output_dir, f"{base_name}.pdf")
 
                 cursor = conn.execute(report_sql, (
                     pred_id,

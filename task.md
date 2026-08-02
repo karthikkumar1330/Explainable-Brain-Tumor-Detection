@@ -1,7 +1,8 @@
-# Tasks - SQLite Database Persistence Module
+# Tasks - Prediction History Module
 
-- `[x]` Create `persistence/domain/interfaces.py` (IPersistenceRepository interface)
-- `[x]` Create `persistence/infrastructure/repository.py` (SQLitePersistenceRepository implementing interfaces)
-- `[x]` Update `generate_clinical_report.py` to add database option and automatically persist reports
-- `[x]` Create `query_db.py` script to run diagnostic dashboard analytics and retrieve scan histories
-- `[x]` Verify execution by running CLI scripts and inspecting database file
+- `[x]` Create `prediction_history/domain/entities.py` (HistorySearchCriteria, PredictionSummary)
+- `[x]` Create `prediction_history/domain/interfaces.py` (IPredictionHistoryRepository interface)
+- `[x]` Create `prediction_history/application/use_cases.py` (SearchHistoryUseCase, RetrieveReportUseCase)
+- `[x]` Create `prediction_history/infrastructure/repository.py` (SQLitePredictionHistoryRepository querying SQLite)
+- `[x]` Create `prediction_history_cli.py` script in the project root to support CLI search filters and PDF report exports
+- `[x]` Verify execution by running CLI scripts and inspecting files
