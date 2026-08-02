@@ -1,13 +1,38 @@
+# Git
 .git
-.venv
+.gitignore
+
+# Python
 __pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
 logs/
+
+# Runtime folders
 outputs/
 uploads/
-datasets/
-inputs/
+
+# Test cache
 .pytest_cache/
 .mypy_cache/
-*.db
+
+# Operating system files
 .DS_Store
 Thumbs.db
+
+# Training datasets
+datasets/
+inputs/
+
+# Local databases
+*.db
