@@ -12,6 +12,8 @@ from tumor_analysis.domain.entities import ClinicalReportData
 from tumor_analysis.infrastructure.analyzer import OpenCVTumorAnalyzer
 from tumor_analysis.application.use_cases import AnalyzeTumorUseCase
 from tumor_analysis.infrastructure.reporting import save_clinical_report
+from severity_assessment.infrastructure.classifier import RuleBasedSeverityClassifier
+from severity_assessment.application.use_cases import AssessSeverityUseCase
 
 
 def parse_args() -> argparse.Namespace:
@@ -101,7 +103,10 @@ def main() -> None:
     analyzer = OpenCVTumorAnalyzer(low_thresh=1.0, med_thresh=5.0, high_thresh=15.0)
     use_case = AnalyzeTumorUseCase(analyzer=analyzer, logger=logger)
 
-    # 6. Execute use case
+    severity_classifier = RuleBasedSeverityClassifier()
+    severity_use_case = AssessSeverityUseCase(classifier=severity_classifier, logger=logger)
+
+    # 6. Execute use cases
     try:
         report_data: ClinicalReportData = use_case.execute(
             mask=mask,
@@ -111,6 +116,13 @@ def main() -> None:
             pixel_spacing_mm=args.pixel_spacing,
         )
 
+        # Perform Rule-Based Severity Assessment
+        severity_assessment = severity_use_case.execute(
+            tumor_type=report_data.tumor_class,
+            tumor_area_mm2=report_data.analysis.tumor_area_mm2,
+            tumor_percentage=report_data.analysis.tumor_percentage_brain,
+        )
+
         # 7. Save reports
         base_filename = f"{args.patient_id}_{args.tumor_class.lower().replace(' ', '_')}"
         save_clinical_report(
@@ -118,23 +130,29 @@ def main() -> None:
             output_dir=args.output_dir,
             base_filename=base_filename,
             logger=logger,
+            severity_assessment=severity_assessment,
         )
 
         # 8. Print Summary to console
-        print("\n" + "=" * 50)
+        print("\n" + "=" * 60)
         print("TUMOR AREA ANALYSIS SUMMARY")
-        print("=" * 50)
+        print("=" * 60)
         print(f"Patient ID          : {report_data.patient_id}")
         print(f"Tumor Class         : {report_data.tumor_class}")
-        print(f"Severity Level      : {report_data.analysis.severity_level.value}")
+        print(f"Parenchymal Severity: {report_data.analysis.severity_level.value}")
         print(f"Tumor Pixel Count   : {report_data.analysis.pixel_count:,} px")
         print(f"Tumor Area          : {report_data.analysis.tumor_area_mm2:.2f} mm²")
         print(f"Tumor % of Image    : {report_data.analysis.tumor_percentage_image:.4f}%")
         print(f"Tumor % of Brain    : {report_data.analysis.tumor_percentage_brain:.4f}%")
-        print("-" * 50)
+        print("-" * 60)
+        print(f"AI SEVERITY LEVEL   : {severity_assessment.category.value.upper()}")
+        print(f"Decision Rule       : {severity_assessment.rule_description}")
+        print("-" * 60)
         print("Clinical Note:")
         print(report_data.clinical_notes)
-        print("=" * 50 + "\n")
+        print("-" * 60)
+        print(severity_assessment.educational_disclaimer)
+        print("=" * 60 + "\n")
 
     except Exception as e:
         logger.error(f"Execution failed: {e}")

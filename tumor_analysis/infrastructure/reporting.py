@@ -1,7 +1,7 @@
 import json
 import os
 import logging
-from typing import Optional
+from typing import Optional, Any
 from tumor_analysis.domain.entities import ClinicalReportData
 
 
@@ -10,6 +10,7 @@ def save_clinical_report(
     output_dir: str,
     base_filename: str,
     logger: Optional[logging.Logger] = None,
+    severity_assessment: Optional[Any] = None,
 ) -> None:
     """Saves clinical report data in both JSON (machine-readable) and Markdown (human-readable) formats.
 
@@ -18,6 +19,7 @@ def save_clinical_report(
         output_dir: Directory where report should be saved.
         base_filename: Filename prefix.
         logger: Optional logger.
+        severity_assessment: Optional SeverityAssessment object.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -36,6 +38,11 @@ def save_clinical_report(
         },
         "metadata": report.analysis.metadata,
     }
+
+    if severity_assessment is not None:
+        json_data["rule_based_severity"] = severity_assessment.category.value
+        json_data["severity_rule_description"] = severity_assessment.rule_description
+        json_data["educational_disclaimer"] = severity_assessment.educational_disclaimer
 
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(json_data, f, indent=4)
@@ -66,7 +73,20 @@ def save_clinical_report(
 
 ## Action Plan & Recommendations
 {report.recommendations}
+"""
 
+    if severity_assessment is not None:
+        md_content += f"""
+---
+
+## AI Severity Assessment (Educational Use Only)
+- **Assigned Severity Category:** {severity_assessment.category.value.upper()}  
+- **Matched Decision Rule:** {severity_assessment.rule_description}  
+
+{severity_assessment.educational_disclaimer}
+"""
+
+    md_content += """
 ---
 *Report generated automatically by Tumor Area Analysis Module.*
 """
