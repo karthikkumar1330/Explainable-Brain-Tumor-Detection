@@ -1,8 +1,9 @@
 import logging
 import os
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
+import numpy as np
 from classification.domain.entities import BrainTumorClass, PredictionResult
-from classification.domain.interfaces import IModelAdapter
+from classification.domain.interfaces import IModelAdapter, IExplainabilityService
 
 
 class TrainModelUseCase:
@@ -159,3 +160,69 @@ class PredictUseCase:
             confidence_score=confidence,
             probabilities=probs,
         )
+
+
+class ExplainPredictionUseCase:
+    """Use case to run prediction and generate explanation heatmaps using Grad-CAM."""
+
+    def __init__(
+        self,
+        predict_use_case: PredictUseCase,
+        explain_service: IExplainabilityService,
+        logger: logging.Logger,
+    ) -> None:
+        """Initializes the explain prediction use case.
+
+        Args:
+            predict_use_case: Use case for standard prediction.
+            explain_service: Service to generate explainability maps.
+            logger: The logger instance.
+        """
+        self.predict_use_case = predict_use_case
+        self.explain_service = explain_service
+        self.logger = logger
+
+    def execute(
+        self, image_tensor: Any, target_class: Optional[int] = None
+    ) -> Tuple[PredictionResult, np.ndarray]:
+        """Runs prediction and generates explainability map for the image tensor.
+
+        If target_class is None, the predicted class will be used.
+
+        Args:
+            image_tensor: Normalized image tensor (C, H, W) or (1, C, H, W).
+            target_class: Optional target class index.
+
+        Returns:
+            A tuple containing:
+                - PredictionResult: The predictions.
+                - np.ndarray: The 2D normalized heatmap (0.0 to 1.0).
+        """
+        self.logger.info("Executing explainable prediction...")
+        # 1. Run prediction
+        try:
+            result = self.predict_use_case.execute(image_tensor)
+            self.logger.info(
+                f"Prediction successful. Class: {result.class_name} "
+                f"(confidence: {result.confidence_score:.4f})"
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Error during prediction inside explain use case: {e}"
+            )
+            raise e
+
+        # 2. Determine target class index
+        actual_target = target_class if target_class is not None else result.label
+        self.logger.info(f"Generating Grad-CAM for class index: {actual_target}")
+
+        # 3. Generate heatmap
+        try:
+            heatmap = self.explain_service.generate_heatmap(
+                image_tensor, actual_target
+            )
+            self.logger.info("Grad-CAM heatmap generated successfully.")
+            return result, heatmap
+        except Exception as e:
+            self.logger.error(f"Error during Grad-CAM generation: {e}")
+            raise e

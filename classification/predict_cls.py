@@ -11,8 +11,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from classification.config import ClassificationConfig
 from classification.infrastructure.models import EfficientNetB0Model, PyTorchModelAdapter
-from classification.application.use_cases import PredictUseCase
+from classification.application.use_cases import PredictUseCase, ExplainPredictionUseCase
 from classification.domain.entities import PredictionResult
+from classification.infrastructure.explainability import GradCAMService
+from classification.infrastructure.visualization import save_explainability_outputs
+from classification.infrastructure.logging import get_logger
 
 
 def parse_args() -> argparse.Namespace:
@@ -37,6 +40,17 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="cpu",
         help="Device to run inference on (cuda or cpu)",
+    )
+    parser.add_argument(
+        "--explain",
+        action="store_true",
+        help="Generate and save Grad-CAM explainability heatmaps",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Custom output directory to save explainability heatmaps (defaults to config explainability_dir)",
     )
     return parser.parse_args()
 
@@ -141,6 +155,60 @@ def main() -> None:
     for cls_name, prob in result.probabilities.items():
         print(f"  - {cls_name:<16}: {prob:.4%}")
     print("=" * 50 + "\n")
+
+    # 7. Generate Explainability
+    if args.explain:
+        logger = get_logger(
+            name="predict_cls",
+            log_dir=config.log_dir,
+            log_filename=config.log_filename,
+        )
+        logger.info("Starting explainability pipeline...")
+        try:
+            # The target layer is the last convolutional block in the EfficientNet-B0 backbone.
+            # EfficientNetB0Model wraps efficientnet_b0 where self.backbone.features is a Sequential.
+            # features[8] is the last block containing the final Conv2d, BatchNorm2d, and SiLU activation.
+            target_layer = model.backbone.features[8]
+
+            explain_service = GradCAMService(
+                model=model,
+                target_layer=target_layer,
+                device=torch.device(device),
+            )
+
+            explain_use_case = ExplainPredictionUseCase(
+                predict_use_case=predict_use_case,
+                explain_service=explain_service,
+                logger=logger,
+            )
+
+            # Generate heatmap for the predicted class
+            _, heatmap = explain_use_case.execute(image_tensor, target_class=result.label)
+
+            # Load the original image (un-normalized) for visual overlay
+            original_image = cv2.imread(args.image_path)
+            if original_image is None:
+                raise IOError(
+                    f"Could not load original image for overlay at: {args.image_path}"
+                )
+
+            # Output paths setup
+            output_dir = args.output_dir or config.explainability_dir
+            base_filename = os.path.splitext(os.path.basename(args.image_path))[0]
+
+            save_explainability_outputs(
+                original_image=original_image,
+                heatmap=heatmap,
+                output_dir=output_dir,
+                base_filename=base_filename,
+                alpha=0.6,
+                logger=logger,
+            )
+            print(f"Explainability outputs successfully saved to: {output_dir}")
+
+        except Exception as e:
+            logger.error(f"Error generating explainability heatmap: {e}")
+            print(f"Error: Failed to generate explainability outputs: {e}")
 
 
 if __name__ == "__main__":

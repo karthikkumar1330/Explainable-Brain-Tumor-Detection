@@ -32,6 +32,9 @@ class ClassificationConfig:
     log_dir: str = "logs"
     log_filename: str = "classification.log"
 
+    # Explainability Configurations
+    explainability_dir: str = "outputs/explainability"
+
     def get_checkpoint_path(self) -> str:
         """Returns the full path to save/load checkpoints."""
         import os

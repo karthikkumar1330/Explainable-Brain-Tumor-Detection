@@ -83,3 +83,23 @@ class IModelAdapter(ABC):
             filepath: The path to the model weights file.
         """
         pass
+
+
+class IExplainabilityService(ABC):
+    """Interface for generating model explainability maps (e.g., Grad-CAM)."""
+
+    @abstractmethod
+    def generate_heatmap(
+        self, image_tensor: Any, target_class: int
+    ) -> np.ndarray:
+        """Generates a normalized explainability heatmap for a given target class.
+
+        Args:
+            image_tensor: The input image tensor of shape (C, H, W) or (1, C, H, W).
+            target_class: The class index to generate the explanation for.
+
+        Returns:
+            A 2D numpy array representing the normalized heatmap in range [0, 1].
+        """
+        pass
+
