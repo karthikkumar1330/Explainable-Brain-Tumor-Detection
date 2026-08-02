@@ -158,6 +158,10 @@ def main() -> None:
     device_choice = st.sidebar.selectbox("Inference Execution Device", ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"])
     device = torch.device(device_choice)
 
+    # Thread tuning for CPU fallback to avoid thrashing
+    if device_choice == "cpu" and torch.get_num_threads() > 4:
+        torch.set_num_threads(4)
+
     # Database Initialization
     persistence_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)
     persistence_repo.initialize_db()
@@ -374,8 +378,17 @@ def main() -> None:
                     )
                     input_tensor_seg = input_tensor_seg.to(device)
                     
-                    with torch.no_grad():
-                        output_seg = model_seg(input_tensor_seg)
+                    device_type = device.type
+                    is_autocast_supported = device_type in ["cuda", "cpu"]
+                    
+                    with torch.inference_mode():
+                        if is_autocast_supported:
+                            dtype = torch.float16 if device_type == "cuda" else torch.bfloat16
+                            with torch.amp.autocast(device_type=device_type, dtype=dtype):
+                                output_seg = model_seg(input_tensor_seg)
+                        else:
+                            output_seg = model_seg(input_tensor_seg)
+                        
                         if seg_config["deep_supervision"]:
                             output_seg = output_seg[-1]
                         output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()

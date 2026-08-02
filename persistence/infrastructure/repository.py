@@ -21,11 +21,22 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         self.logger = logger or logging.getLogger("db_persistence")
 
     def _get_connection(self) -> sqlite3.Connection:
-        """Creates a database connection with foreign keys enabled."""
+        """Creates a database connection with foreign keys and performance pragmas enabled."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        # Enforce foreign key constraints
+        
+        # Enforce foreign keys
         conn.execute("PRAGMA foreign_keys = ON;")
+        
+        # Optimize writes and read-concurrency using WAL mode
+        try:
+            conn.execute("PRAGMA journal_mode = WAL;")
+            conn.execute("PRAGMA synchronous = NORMAL;")
+            conn.execute("PRAGMA cache_size = -2000;")
+            conn.execute("PRAGMA temp_store = MEMORY;")
+        except Exception:
+            pass
+            
         return conn
 
     def initialize_db(self) -> None:

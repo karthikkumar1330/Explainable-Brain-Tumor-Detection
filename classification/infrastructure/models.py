@@ -115,7 +115,7 @@ class PyTorchModelAdapter(IModelAdapter):
         all_preds = []
         all_targets = []
 
-        with torch.no_grad():
+        with torch.inference_mode():
             for inputs, targets in dataloader:
                 inputs = inputs.to(self.device)
                 targets = targets.to(self.device)
@@ -150,8 +150,17 @@ class PyTorchModelAdapter(IModelAdapter):
 
         image_tensor = image_tensor.to(self.device)
 
-        with torch.no_grad():
-            outputs = self.model(image_tensor)
+        device_type = self.device.type
+        is_autocast_supported = device_type in ["cuda", "cpu"]
+
+        with torch.inference_mode():
+            if is_autocast_supported:
+                dtype = torch.float16 if device_type == "cuda" else torch.bfloat16
+                with torch.amp.autocast(device_type=device_type, dtype=dtype):
+                    outputs = self.model(image_tensor)
+            else:
+                outputs = self.model(image_tensor)
+            
             # Apply softmax to get probabilities
             probs = torch.softmax(outputs, dim=1).squeeze(0).cpu().numpy()
 

@@ -19,9 +19,19 @@ class SQLitePredictionHistoryRepository(IPredictionHistoryRepository):
         self.logger = logger or logging.getLogger("prediction_history_repo")
 
     def _get_connection(self) -> sqlite3.Connection:
-        """Creates a database connection with dictionary rows."""
+        """Creates a database connection with performance pragmas enabled."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        
+        # Optimize read concurrency
+        try:
+            conn.execute("PRAGMA journal_mode = WAL;")
+            conn.execute("PRAGMA synchronous = NORMAL;")
+            conn.execute("PRAGMA cache_size = -2000;")
+            conn.execute("PRAGMA temp_store = MEMORY;")
+        except Exception:
+            pass
+            
         return conn
 
     def search_history(self, criteria: HistorySearchCriteria) -> List[PredictionSummary]:
