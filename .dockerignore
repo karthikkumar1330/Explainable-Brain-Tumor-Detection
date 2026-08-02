@@ -1,0 +1,13 @@
+.git
+.venv
+__pycache__/
+logs/
+outputs/
+uploads/
+datasets/
+inputs/
+.pytest_cache/
+.mypy_cache/
+*.db
+.DS_Store
+Thumbs.db
