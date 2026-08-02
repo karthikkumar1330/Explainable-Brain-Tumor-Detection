@@ -1,19 +1,16 @@
-# Dataset
-inputs/
-
-# Trained models
-models/
-
-# Python cache
+# Python
 __pycache__/
 *.pyc
-
-# Virtual environment
 .venv/
 
-# Model weights
+# Logs
+logs/
+
+# Outputs
+outputs/
+
+# Trained models
 *.pth
-*.pt
 
 # VS Code
 .vscode/

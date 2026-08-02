@@ -7,40 +7,7 @@ import torch.utils.data
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, img_ids, img_dir, mask_dir, img_ext, mask_ext, num_classes, transform=None):
-        """
-        Args:
-            img_ids (list): Image ids.
-            img_dir: Image file directory.
-            mask_dir: Mask file directory.
-            img_ext (str): Image file extension.
-            mask_ext (str): Mask file extension.
-            num_classes (int): Number of classes.
-            transform (Compose, optional): Compose transforms of albumentations. Defaults to None.
-        
-        Note:
-            Make sure to put the files as the following structure:
-            <dataset name>
-            ├── images
-            |   ├── 0a7e06.jpg
-            │   ├── 0aab0a.jpg
-            │   ├── 0b1761.jpg
-            │   ├── ...
-            |
-            └── masks
-                ├── 0
-                |   ├── 0a7e06.png
-                |   ├── 0aab0a.png
-                |   ├── 0b1761.png
-                |   ├── ...
-                |
-                ├── 1
-                |   ├── 0a7e06.png
-                |   ├── 0aab0a.png
-                |   ├── 0b1761.png
-                |   ├── ...
-                ...
-        """
+    def __init__(self, img_ids, img_dir, mask_dir, img_ext, mask_ext, num_classes, transform=None, clahe=True, zscore=True):
         self.img_ids = img_ids
         self.img_dir = img_dir
         self.mask_dir = mask_dir
@@ -48,6 +15,8 @@ class Dataset(torch.utils.data.Dataset):
         self.mask_ext = mask_ext
         self.num_classes = num_classes
         self.transform = transform
+        self.clahe = clahe
+        self.zscore = zscore
 
     def __len__(self):
         return len(self.img_ids)
@@ -56,6 +25,13 @@ class Dataset(torch.utils.data.Dataset):
         img_id = self.img_ids[idx]
         
         img = cv2.imread(os.path.join(self.img_dir, img_id + self.img_ext))
+
+        # Apply CLAHE contrast enhancement if enabled
+        if self.clahe and img is not None:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            clahe_obj = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            cl = clahe_obj.apply(gray)
+            img = cv2.merge([cl, cl, cl])
 
         mask = []
         for i in range(self.num_classes):
@@ -68,9 +44,27 @@ class Dataset(torch.utils.data.Dataset):
             img = augmented['image']
             mask = augmented['mask']
         
-        img = img.astype('float32') / 255
+        # Normalization
+        img = img.astype('float32')
+        if self.zscore:
+            mean = img.mean()
+            std = img.std()
+            img = (img - mean) / (std + 1e-8)
+        else:
+            # Check if Normalize is present in transforms to avoid double-dividing by 255
+            has_normalize = False
+            if self.transform is not None and hasattr(self.transform, 'transforms'):
+                for t in self.transform.transforms:
+                    if t.__class__.__name__ == 'Normalize':
+                        has_normalize = True
+            if not has_normalize:
+                img = img / 255.0
+                
         img = img.transpose(2, 0, 1)
-        mask = mask.astype('float32') / 255
+        
+        # Masks always contain 0 and 255, so we scale them to [0, 1]
+        mask = mask.astype('float32') / 255.0
         mask = mask.transpose(2, 0, 1)
         
         return img, mask, {'img_id': img_id}
+

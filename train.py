@@ -12,7 +12,7 @@ import yaml
 from sklearn.model_selection import train_test_split
 from torch.optim import lr_scheduler
 from tqdm import tqdm
-from albumentations import Compose, OneOf, RandomRotate90, Resize, Normalize, HorizontalFlip, VerticalFlip
+from albumentations import Compose, OneOf, RandomRotate90, Resize, Normalize, HorizontalFlip, VerticalFlip, ShiftScaleRotate, ElasticTransform, GridDistortion, RandomBrightnessContrast, GaussNoise
 import archs
 import losses
 from dataset import Dataset
@@ -255,13 +255,18 @@ def main():
         RandomRotate90(),
         HorizontalFlip(p=0.5),
         VerticalFlip(p=0.5),
+        ShiftScaleRotate(shift_limit=0.15, scale_limit=0.15, rotate_limit=30, p=0.7),
+        OneOf([
+            ElasticTransform(alpha=1, sigma=50, alpha_affine=50, p=0.5),
+            GridDistortion(p=0.5),
+        ], p=0.3),
+        RandomBrightnessContrast(p=0.5),
+        GaussNoise(p=0.3),
         Resize(config['input_h'], config['input_w']),
-        Normalize(),
     ])
 
     val_transform = Compose([
         Resize(config['input_h'], config['input_w']),
-        Normalize(),
     ])
 
     train_dataset = Dataset(
@@ -271,7 +276,9 @@ def main():
         img_ext=config['img_ext'],
         mask_ext=config['mask_ext'],
         num_classes=config['num_classes'],
-        transform=train_transform)
+        transform=train_transform,
+        clahe=True,
+        zscore=True)
     val_dataset = Dataset(
         img_ids=val_img_ids,
         img_dir=os.path.join('inputs', config['dataset'], 'images'),
@@ -279,7 +286,9 @@ def main():
         img_ext=config['img_ext'],
         mask_ext=config['mask_ext'],
         num_classes=config['num_classes'],
-        transform=val_transform)
+        transform=val_transform,
+        clahe=True,
+        zscore=True)
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -314,16 +323,20 @@ def main():
         # evaluate on validation set
         val_log = validate(config, val_loader, model, criterion)
 
-        if config['scheduler'] == 'CosineAnnealingLR':
-            scheduler.step()
-        elif config['scheduler'] == 'ReduceLROnPlateau':
-            scheduler.step(val_log['loss'])
+        # Correct lr scheduler stepping for all schedulers
+        if scheduler is not None:
+            if config['scheduler'] == 'ReduceLROnPlateau':
+                scheduler.step(val_log['loss'])
+            else:
+                scheduler.step()
 
         print('loss %.4f - iou %.4f - val_loss %.4f - val_iou %.4f'
               % (train_log['loss'], train_log['iou'], val_log['loss'], val_log['iou']))
 
+        # Log actual learning rate from optimizer
+        current_lr = optimizer.param_groups[0]['lr']
         log['epoch'].append(epoch)
-        log['lr'].append(config['lr'])
+        log['lr'].append(current_lr)
         log['loss'].append(train_log['loss'])
         log['iou'].append(train_log['iou'])
         log['val_loss'].append(val_log['loss'])

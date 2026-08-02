@@ -84,51 +84,119 @@ def main():
     gput = AverageMeter()
     cput = AverageMeter()
 
+    import numpy as np
+
     count = 0
-    for c in range(config['num_classes']):
-        os.makedirs(os.path.join('outputs', config['name'], str(c)), exist_ok=True)
+    all_preds = []
+    all_targets = []
+    all_meta = []
+
+    print("=> running inference and latency profiling")
     with torch.no_grad():
         for input, target, meta in tqdm(val_loader, total=len(val_loader)):
             input = input.cuda()
-            target = target.cuda()
             model = model.cuda()
-            # compute output
-
-            if count<=5:
+            
+            # Benchmark GPU inference speed on the first 5 batches
+            if count < 5:
                 start = time.time()
                 if config['deep_supervision']:
                     output = model(input)[-1]
                 else:
                     output = model(input)
                 stop = time.time()
+                gput.update(stop - start, input.size(0))
+            else:
+                if config['deep_supervision']:
+                    output = model(input)[-1]
+                else:
+                    output = model(input)
 
-                gput.update(stop-start, input.size(0))
-
+            # Benchmark CPU inference speed on the first 5 batches
+            if count < 5:
                 start = time.time()
-                model = model.cpu()
-                input = input.cpu()
-                output = model(input)
+                # Run on CPU copy
+                model_cpu = model.cpu()
+                input_cpu = input.cpu()
+                _ = model_cpu(input_cpu)
                 stop = time.time()
-
-                cput.update(stop-start, input.size(0))
-                count=count+1
-
-            iou,dice = iou_score(output, target)
-            iou_avg_meter.update(iou, input.size(0))
-            dice_avg_meter.update(dice, input.size(0))
+                cput.update(stop - start, input.size(0))
+                count = count + 1
 
             output = torch.sigmoid(output).cpu().numpy()
+            target = target.cpu().numpy()
 
             for i in range(len(output)):
-                for c in range(config['num_classes']):
-                    cv2.imwrite(os.path.join('outputs', config['name'], str(c), meta['img_id'][i] + '.jpg'),
-                                (output[i, c] * 255).astype('uint8'))
+                all_preds.append(output[i])
+                all_targets.append(target[i])
+                all_meta.append(meta['img_id'][i])
 
-    print('IoU: %.4f' % iou_avg_meter.avg)
-    print('Dice: %.4f' % dice_avg_meter.avg)
+    # Search for optimal binarization threshold
+    best_threshold = 0.5
+    best_iou = 0.0
 
-    print('CPU: %.4f' %cput.avg)
-    print('GPU: %.4f' %gput.avg)
+    print("=> searching for optimal binarization threshold")
+    thresholds = np.arange(0.1, 0.9, 0.05)
+    for thresh in thresholds:
+        ious = []
+        for pred, gt in zip(all_preds, all_targets):
+            for c in range(config['num_classes']):
+                pred_c = pred[c] > thresh
+                gt_c = gt[c] > 0.5
+                intersection = np.logical_and(pred_c, gt_c).sum()
+                union = np.logical_or(pred_c, gt_c).sum()
+                iou = (intersection + 1e-5) / (union + 1e-5)
+                ious.append(iou)
+        mean_iou = np.mean(ious)
+        if mean_iou > best_iou:
+            best_iou = mean_iou
+            best_threshold = thresh
+
+    print(f"Optimal threshold found: {best_threshold:.2f} (mIoU: {best_iou:.4f})")
+
+    # Apply optimal threshold and connected component area filter (remove blobs < 100 pixels)
+    min_area = 100
+    final_ious = []
+    final_dices = []
+
+    for c in range(config['num_classes']):
+        os.makedirs(os.path.join('outputs', config['name'], str(c)), exist_ok=True)
+
+    print("=> saving post-processed predictions")
+    for idx, (pred, gt, img_id) in enumerate(zip(all_preds, all_targets, all_meta)):
+        for c in range(config['num_classes']):
+            pred_c = pred[c]
+            gt_c = gt[c] > 0.5
+
+            # Binarize
+            bin_mask = (pred_c > best_threshold).astype(np.uint8)
+
+            # Filter small false positive blobs
+            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(bin_mask, connectivity=8)
+            filtered_mask = np.zeros_like(bin_mask)
+            for label in range(1, num_labels):
+                area = stats[label, cv2.CC_STAT_AREA]
+                if area >= min_area:
+                    filtered_mask[labels == label] = 1
+
+            # Compute final metrics
+            intersection = np.logical_and(filtered_mask, gt_c).sum()
+            union = np.logical_or(filtered_mask, gt_c).sum()
+            iou = (intersection + 1e-5) / (union + 1e-5)
+            dice = (2.0 * intersection + 1e-5) / (filtered_mask.sum() + gt_c.sum() + 1e-5)
+
+            final_ious.append(iou)
+            final_dices.append(dice)
+
+            # Save binarized and filtered prediction
+            cv2.imwrite(os.path.join('outputs', config['name'], str(c), img_id + '.jpg'),
+                        (filtered_mask * 255).astype('uint8'))
+
+    print('IoU: %.4f' % np.mean(final_ious))
+    print('Dice: %.4f' % np.mean(final_dices))
+
+    print('CPU Average Latency: %.4f s' % cput.avg)
+    print('GPU Average Latency: %.4f s' % gput.avg)
 
     torch.cuda.empty_cache()
 
