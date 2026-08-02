@@ -98,3 +98,59 @@ This code-base uses certain code-blocks and helper functions from [UNet++](https
   year={2022}
 }
 ```
+# Dashboard Module (Phase 16)
+
+## Dashboard Features
+
+The project now includes a modern healthcare analytics dashboard.
+
+### Features
+
+- Analytics Dashboard
+- SQLite Database Integration
+- Patient Prediction History
+- Diagnosis Distribution Chart
+- Severity Distribution Chart
+- Recent Diagnostic Analyses
+- Patient Search
+- Grad-CAM Visualization Viewer
+- UNeXt Segmentation Mask Viewer
+- Clinical Report Viewer
+- PDF Report Download
+
+---
+
+## Dashboard Statistics
+
+The dashboard displays:
+
+- Patients Screened
+- Scans Analyzed
+- Active Tumor Cases
+- High Risk / Critical Cases
+
+---
+
+## Dashboard APIs
+
+| API | Purpose |
+|------|---------|
+| `/api/analytics` | Dashboard statistics |
+| `/api/history` | Prediction history |
+| `/api/search` | Search patients |
+| `/api/report/<id>/pdf` | Download PDF report |
+| `/api/report/<id>/visuals/<type>` | View Grad-CAM and Segmentation images |
+
+---
+
+## Run Dashboard
+
+```bash
+python run_dashboard.py --db-path outputs/clinical_reports.db --port 5000
+```
+
+Open in browser:
+
+```
+http://localhost:5000
+```

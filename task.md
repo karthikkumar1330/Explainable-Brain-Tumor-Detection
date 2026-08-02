@@ -1,8 +1,7 @@
-# Tasks - Prediction History Module
+# Tasks - Healthcare Dashboard Module
 
-- `[x]` Create `prediction_history/domain/entities.py` (HistorySearchCriteria, PredictionSummary)
-- `[x]` Create `prediction_history/domain/interfaces.py` (IPredictionHistoryRepository interface)
-- `[x]` Create `prediction_history/application/use_cases.py` (SearchHistoryUseCase, RetrieveReportUseCase)
-- `[x]` Create `prediction_history/infrastructure/repository.py` (SQLitePredictionHistoryRepository querying SQLite)
-- `[x]` Create `prediction_history_cli.py` script in the project root to support CLI search filters and PDF report exports
-- `[x]` Verify execution by running CLI scripts and inspecting files
+- `[x]` Install Flask package in virtual environment using pip
+- `[x]` Create `dashboard/infrastructure/web_server.py` (Flask server exposing APIs and streaming PDFs/visuals)
+- `[x]` Create `dashboard/presentation/templates/index.html` (Responsive Tailwind CSS + Chart.js medical UI)
+- `[x]` Create `run_dashboard.py` startup script in the project root
+- `[x]` Verify execution by running local server, calling API endpoints, and opening index page in browser

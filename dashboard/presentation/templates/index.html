@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AuraScan AI - Brain MRI Analysis Portal</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #090d16;
+        }
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(51, 65, 85, 0.4);
+        }
+        .text-accent {
+            color: #38bdf8;
+        }
+        .bg-accent {
+            background-color: #0284c7;
+        }
+        .bg-accent:hover {
+            background-color: #0369a1;
+        }
+    </style>
+</head>
+<body class="text-slate-100 min-h-screen flex flex-col md:flex-row">
+
+    <!-- 1. SIDEBAR -->
+    <aside class="w-full md:w-64 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800/80 p-5 flex flex-col justify-between shrink-0">
+        <div>
+            <!-- Logo Header -->
+            <div class="flex items-center space-x-3 mb-8">
+                <div class="bg-sky-500 text-slate-900 p-2.5 rounded-xl font-bold flex items-center justify-center shadow-lg shadow-sky-500/20">
+                    <i class="fa-solid fa-brain text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight tracking-wide">AuraScan <span class="text-sky-400">AI</span></h1>
+                    <span class="text-[10px] text-slate-400 font-medium uppercase tracking-widest">MRI Portal</span>
+                </div>
+            </div>
+
+            <!-- Database Status Indicator -->
+            <div class="flex items-center space-x-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800/50 mb-6">
+                <span class="relative flex h-2.5 w-2.5">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                </span>
+                <span class="text-xs text-slate-300 font-semibold">SQLite Database Connected</span>
+            </div>
+
+            <!-- Navigation Links -->
+            <nav class="space-y-1.5">
+                <button onclick="switchTab('analytics')" id="nav-analytics" class="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left text-sm font-semibold transition-all duration-200 bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                    <i class="fa-solid fa-chart-line text-lg w-5"></i>
+                    <span>Dashboard</span>
+                </button>
+                <button onclick="switchTab('database')" id="nav-database" class="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50">
+                    <i class="fa-solid fa-circle-h text-lg w-5"></i>
+                    <span>Patient database</span>
+                </button>
+            </nav>
+        </div>
+
+        <!-- System Footer -->
+        <div class="mt-8 pt-4 border-t border-slate-800/50 text-[10px] text-slate-500 text-center font-medium">
+            <span>AI Diagnostic Engine v1.0.0</span>
+        </div>
+    </aside>
+
+    <!-- 2. MAIN CONTENT AREA -->
+    <main class="flex-1 flex flex-col overflow-y-auto max-h-screen">
+        <!-- TOP BAR -->
+        <header class="h-16 border-b border-slate-800/80 px-6 flex items-center justify-between bg-slate-900/50 backdrop-blur-md shrink-0">
+            <h2 id="page-title" class="font-bold text-lg text-slate-100">Analytics Dashboard</h2>
+            <div class="flex items-center space-x-4">
+                <span class="text-xs text-slate-400 font-medium">Admin Portal</span>
+                <div class="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700/80">
+                    <i class="fa-solid fa-user-md text-sky-400 text-sm"></i>
+                </div>
+            </div>
+        </header>
+
+        <!-- DASHBOARD CONTAINER -->
+        <div class="p-6 space-y-6 flex-1">
+            
+            <!-- ================= TAB 1: ANALYTICS ================= -->
+            <div id="tab-analytics" class="space-y-6">
+                <!-- A. STATS CARDS -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <!-- Total Patients -->
+                    <div class="glass-panel p-4 rounded-xl flex items-center justify-between shadow-xl transition-all duration-200 hover:scale-[1.02]">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Patients Screened</span>
+                            <h3 id="stat-patients" class="text-3xl font-extrabold mt-1 text-slate-100">0</h3>
+                        </div>
+                        <div class="h-12 w-12 rounded-lg bg-sky-500/10 text-sky-400 flex items-center justify-center text-xl">
+                            <i class="fa-solid fa-hospital-user"></i>
+                        </div>
+                    </div>
+                    <!-- Total Scans -->
+                    <div class="glass-panel p-4 rounded-xl flex items-center justify-between shadow-xl transition-all duration-200 hover:scale-[1.02]">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Scans Analyzed</span>
+                            <h3 id="stat-scans" class="text-3xl font-extrabold mt-1 text-slate-100">0</h3>
+                        </div>
+                        <div class="h-12 w-12 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-xl">
+                            <i class="fa-solid fa-x-ray"></i>
+                        </div>
+                    </div>
+                    <!-- Active Tumor Cases -->
+                    <div class="glass-panel p-4 rounded-xl flex items-center justify-between shadow-xl transition-all duration-200 hover:scale-[1.02]">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Active Tumor Cases</span>
+                            <h3 id="stat-tumors" class="text-3xl font-extrabold mt-1 text-amber-500">0</h3>
+                        </div>
+                        <div class="h-12 w-12 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center text-xl">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                        </div>
+                    </div>
+                    <!-- Critical Cases -->
+                    <div class="glass-panel p-4 rounded-xl flex items-center justify-between shadow-xl transition-all duration-200 hover:scale-[1.02]">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">High Risk / Critical</span>
+                            <h3 id="stat-critical" class="text-3xl font-extrabold mt-1 text-red-500">0</h3>
+                        </div>
+                        <div class="h-12 w-12 rounded-lg bg-red-500/10 text-red-500 flex items-center justify-center text-xl">
+                            <i class="fa-solid fa-skull-crossbones"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- B. CHARTS GRID -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Pie Chart: Diagnosis Distribution -->
+                    <div class="glass-panel p-5 rounded-xl flex flex-col justify-between h-[300px]">
+                        <h4 class="font-bold text-sm text-slate-300 uppercase tracking-wider mb-2">Diagnosis Distributions</h4>
+                        <div class="relative flex-1 flex items-center justify-center max-h-[220px]">
+                            <canvas id="chart-diagnosis"></canvas>
+                        </div>
+                    </div>
+                    <!-- Bar Chart: Severity Distribution -->
+                    <div class="glass-panel p-5 rounded-xl flex flex-col justify-between h-[300px]">
+                        <h4 class="font-bold text-sm text-slate-300 uppercase tracking-wider mb-2">Severity Breakdown</h4>
+                        <div class="relative flex-1 flex items-center justify-center max-h-[220px]">
+                            <canvas id="chart-severity"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- C. RECENT SCAN PREDICTIONS -->
+                <div class="glass-panel rounded-xl overflow-hidden shadow-xl">
+                    <div class="px-5 py-4 border-b border-slate-800/80 flex items-center justify-between">
+                        <h4 class="font-bold text-sm text-slate-300 uppercase tracking-wider">Recent Diagnostic Analyses</h4>
+                        <button onclick="fetchAnalyticsAndHistory()" class="text-xs text-sky-400 font-semibold hover:underline">
+                            <i class="fa-solid fa-rotate-right mr-1"></i> Refresh list
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm border-collapse">
+                            <thead>
+                                <tr class="bg-slate-900/60 border-b border-slate-800/80 text-slate-400 font-bold">
+                                    <th class="p-4">Report ID</th>
+                                    <th class="p-4">Patient ID</th>
+                                    <th class="p-4">Patient Name</th>
+                                    <th class="p-4">Scan Date</th>
+                                    <th class="p-4">Diagnosis</th>
+                                    <th class="p-4">Severity</th>
+                                    <th class="p-4">Confidence</th>
+                                    <th class="p-4 text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-table-body" class="divide-y divide-slate-800/40">
+                                <tr>
+                                    <td colspan="8" class="p-8 text-center text-slate-400">Loading records...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= TAB 2: DATABASE SEARCH ================= -->
+            <div id="tab-database" class="space-y-6 hidden">
+                <!-- A. SEARCH BAR -->
+                <div class="glass-panel p-5 rounded-xl shadow-xl flex flex-col sm:flex-row items-center gap-4">
+                    <div class="relative w-full sm:flex-1">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                        <input id="search-input" onkeyup="if(event.key==='Enter') searchPatients()" type="text" placeholder="Search scanning records by Patient ID..." class="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-500">
+                    </div>
+                    <button onclick="searchPatients()" class="w-full sm:w-auto bg-accent text-slate-100 text-sm font-semibold px-6 py-2.5 rounded-lg transition shadow-md shadow-sky-500/10">
+                        Search Database
+                    </button>
+                </div>
+
+                <!-- B. PATIENT RESULTS GRID -->
+                <div class="glass-panel rounded-xl overflow-hidden shadow-xl">
+                    <div class="px-5 py-4 border-b border-slate-800/80">
+                        <h4 class="font-bold text-sm text-slate-300 uppercase tracking-wider">Patient History & Scan Records</h4>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm border-collapse">
+                            <thead>
+                                <tr class="bg-slate-900/60 border-b border-slate-800/80 text-slate-400 font-bold">
+                                    <th class="p-4">Report ID</th>
+                                    <th class="p-4">Patient ID</th>
+                                    <th class="p-4">Patient Name</th>
+                                    <th class="p-4">Scan Date</th>
+                                    <th class="p-4">Diagnosis</th>
+                                    <th class="p-4">Severity</th>
+                                    <th class="p-4">Confidence</th>
+                                    <th class="p-4 text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="search-table-body" class="divide-y divide-slate-800/40">
+                                <tr>
+                                    <td colspan="8" class="p-8 text-center text-slate-400">Enter a Patient ID above and click search.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- ================= 3. MODALS ================= -->
+    <!-- A. DETAILS MODAL (Segmentation & Grad-CAM visual overlays) -->
+    <div id="details-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+        <div class="glass-panel w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <!-- Header -->
+            <div class="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between">
+                <div>
+                    <h3 id="modal-title" class="font-bold text-lg text-slate-100">Patient MRI Visual Analysis</h3>
+                    <span id="modal-patient-meta" class="text-xs text-slate-400">ID: PATIENT_UNK | Age: 0 | Gender: Unknown</span>
+                </div>
+                <button onclick="closeModal()" class="h-8 w-8 text-slate-400 hover:text-slate-200 rounded-lg flex items-center justify-center hover:bg-slate-800/50">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Body -->
+            <div class="p-6 overflow-y-auto space-y-6 flex-1">
+                <!-- Visual overlays -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Overlay 1: Grad-CAM overlay -->
+                    <div class="bg-slate-950 p-3 rounded-xl border border-slate-800/50 flex flex-col items-center">
+                        <span class="text-xs font-bold text-slate-300 uppercase mb-2">Grad-CAM Overlay (EfficientNet-B0)</span>
+                        <div class="h-60 w-60 rounded-lg overflow-hidden border border-slate-800 flex items-center justify-center bg-slate-900">
+                            <img id="modal-overlay-img" src="" alt="Grad-CAM Overlay" class="max-h-full max-w-full">
+                        </div>
+                    </div>
+                    <!-- Overlay 2: Segmentation mask -->
+                    <div class="bg-slate-950 p-3 rounded-xl border border-slate-800/50 flex flex-col items-center">
+                        <span class="text-xs font-bold text-slate-300 uppercase mb-2">Segmentation Mask (UNeXt)</span>
+                        <div class="h-60 w-60 rounded-lg overflow-hidden border border-slate-800 flex items-center justify-center bg-slate-900">
+                            <img id="modal-mask-img" src="" alt="Segmentation Mask" class="max-h-full max-w-full">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Text stats -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800/50">
+                        <h4 class="font-bold text-xs uppercase tracking-wider text-slate-400 mb-2">Diagnostic Findings</h4>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between"><span class="text-slate-400">Diagnosis:</span><span id="modal-diag" class="font-semibold text-slate-100">Meningioma</span></div>
+                            <div class="flex justify-between"><span class="text-slate-400">Confidence:</span><span id="modal-conf" class="font-semibold text-slate-100">92.00%</span></div>
+                            <div class="flex justify-between"><span class="text-slate-400">Rule-Based Severity:</span><span id="modal-severity" class="font-semibold text-red-400">High</span></div>
+                            <div class="flex justify-between"><span class="text-slate-400">Tumor Physical Area:</span><span id="modal-area" class="font-semibold text-slate-100">0.00 mm²</span></div>
+                        </div>
+                    </div>
+                    <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800/50">
+                        <h4 class="font-bold text-xs uppercase tracking-wider text-slate-400 mb-2">Decision Rule Description</h4>
+                        <p id="modal-rule-desc" class="text-xs text-slate-300 leading-relaxed">
+                            No rules matching this diagnostic category.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="px-6 py-4 border-t border-slate-800/80 flex items-center justify-end space-x-3 bg-slate-900/20">
+                <a id="modal-pdf-link" href="" target="_blank" class="bg-accent text-slate-100 text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center space-x-1.5 transition shadow-lg shadow-sky-500/10">
+                    <i class="fa-solid fa-file-pdf"></i>
+                    <span>Print PDF Report</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 4. JAVASCRIPT ================= -->
+    <script>
+        // Global charts registry to allow dynamic redrawing
+        let diagnosisChart = null;
+        let severityChart = null;
+
+        // On Page Load
+        document.addEventListener("DOMContentLoaded", () => {
+            fetchAnalyticsAndHistory();
+        });
+
+        // Toggle Tabs
+        function switchTab(tabId) {
+            const tabs = ['analytics', 'database'];
+            tabs.forEach(t => {
+                const elTab = document.getElementById(`tab-${t}`);
+                const elNav = document.getElementById(`nav-${t}`);
+                if (t === tabId) {
+                    elTab.classList.remove('hidden');
+                    elNav.className = "w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left text-sm font-semibold transition-all duration-200 bg-sky-500/10 text-sky-400 border border-sky-500/20";
+                } else {
+                    elTab.classList.add('hidden');
+                    elNav.className = "w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50";
+                }
+            });
+
+            // Update title
+            const titles = { 'analytics': 'Analytics Dashboard', 'database': 'Patient Database Explorer' };
+            document.getElementById("page-title").innerText = titles[tabId];
+        }
+
+        // Fetch Stats Cards and Dynamic Charts data
+        async function fetchAnalyticsAndHistory() {
+            try {
+                // 1. Fetch Stats Cards & Charts Data
+                const resStats = await fetch("/api/analytics");
+                const stats = await resStats.json();
+                
+                // Update stats cards
+                document.getElementById("stat-patients").innerText = stats.total_patients || 0;
+                document.getElementById("stat-scans").innerText = stats.total_scans || 0;
+
+                // Total active tumor cases count (Glioma + Meningioma + Pituitary)
+                let activeTumors = 0;
+                const diagDist = stats.classification_distribution || {};
+                activeTumors += (diagDist["Glioma"] || 0);
+                activeTumors += (diagDist["Meningioma"] || 0);
+                activeTumors += (diagDist["Pituitary"] || 0);
+                document.getElementById("stat-tumors").innerText = activeTumors;
+
+                // Critical counts (Medium & High severity)
+                const sevDist = stats.severity_distribution || {};
+                let critical = (sevDist["Medium"] || 0) + (sevDist["High"] || 0);
+                document.getElementById("stat-critical").innerText = critical;
+
+                // Redraw Doughnut Chart
+                drawDiagnosisChart(stats.classification_distribution || {});
+                // Redraw Bar Chart
+                drawSeverityChart(stats.severity_distribution || {});
+
+                // 2. Fetch Recent scan list
+                const resHistory = await fetch("/api/history");
+                const history = await resHistory.json();
+                populateTable("history-table-body", history);
+            } catch (err) {
+                console.error("Failed to load dashboard statistics:", err);
+            }
+        }
+
+        // Render diagnosis doughnut widget
+        function drawDiagnosisChart(data) {
+            const ctx = document.getElementById("chart-diagnosis").getContext("2d");
+            if (diagnosisChart) diagnosisChart.destroy();
+
+            const labels = Object.keys(data);
+            const values = Object.values(data);
+
+            if (labels.length === 0) {
+                labels.push("No data");
+                values.push(1);
+            }
+
+            diagnosisChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: ['#2980b9', '#16a085', '#d35400', '#2c3e50'],
+                        borderColor: '#0f172a',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: { color: '#cbd5e1', font: { size: 10 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render severity counts horizontal bar chart
+        function drawSeverityChart(data) {
+            const ctx = document.getElementById("chart-severity").getContext("2d");
+            if (severityChart) severityChart.destroy();
+
+            const labels = Object.keys(data);
+            const values = Object.values(data);
+
+            if (labels.length === 0) {
+                labels.push("No data");
+                values.push(0);
+            }
+
+            severityChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Scans',
+                        data: values,
+                        backgroundColor: ['#27ae60', '#f39c12', '#c0392b'],
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { color: '#334155' }, ticks: { color: '#cbd5e1' } },
+                        y: { grid: { display: false }, ticks: { color: '#cbd5e1' } }
+                    }
+                }
+            });
+        }
+
+        // Populate table logic
+        function populateTable(tbodyId, records) {
+            const tbody = document.getElementById(tbodyId);
+            tbody.innerHTML = "";
+
+            if (records.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-500 font-medium">No records found.</td></tr>`;
+                return;
+            }
+
+            records.forEach(r => {
+                const confStr = `${(r.confidence_score * 100).toFixed(2)}%`;
+                const severityStyle = r.rule_based_severity.toLowerCase() === 'high' ? 'text-red-500 font-semibold' :
+                                      r.rule_based_severity.toLowerCase() === 'medium' ? 'text-amber-500 font-semibold' :
+                                      'text-emerald-500';
+
+                tbody.innerHTML += `
+                <tr class="hover:bg-slate-900/40 transition">
+                    <td class="p-4 font-bold text-slate-300">#${r.report_id}</td>
+                    <td class="p-4 text-slate-400 font-semibold">${r.patient_id}</td>
+                    <td class="p-4 text-slate-300">${r.patient_name}</td>
+                    <td class="p-4 text-slate-400 font-medium">${r.scan_date}</td>
+                    <td class="p-4 font-bold">${r.predicted_class}</td>
+                    <td class="p-4"><span class="${severityStyle}">${r.rule_based_severity}</span></td>
+                    <td class="p-4 text-slate-300 font-medium">${confStr}</td>
+                    <td class="p-4 text-center">
+                        <div class="flex items-center justify-center space-x-2">
+                            <button onclick="viewDetails(${r.report_id})" class="text-xs bg-slate-800 hover:bg-slate-700/80 text-slate-300 font-bold px-3 py-1.5 rounded-lg border border-slate-700/50 transition">
+                                <i class="fa-solid fa-eye mr-1"></i> Visuals
+                            </button>
+                            <a href="/api/report/${r.report_id}/pdf" target="_blank" class="text-xs bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 font-bold px-3 py-1.5 rounded-lg border border-sky-500/20 transition">
+                                <i class="fa-solid fa-file-pdf mr-1"></i> PDF
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                `;
+            });
+        }
+
+        // Run patient history query search
+        async function searchPatients() {
+            const query = document.getElementById("search-input").value.trim();
+            const tbody = document.getElementById("search-table-body");
+            tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-400">Searching scanning history...</td></tr>`;
+            try {
+                const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                const data = await res.json();
+                populateTable("search-table-body", data);
+            } catch (err) {
+                console.error("Failed to query patients:", err);
+                tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-red-500 font-bold">Failed to connect to database query API.</td></tr>`;
+            }
+        }
+
+        // View dynamic MRI scan details inside modal
+        async function viewDetails(reportId) {
+            try {
+                const res = await fetch(`/api/report/${reportId}`);
+                const data = await res.json();
+                if (data.error) {
+                    alert("Report details could not be loaded: " + data.error);
+                    return;
+                }
+
+                document.getElementById("modal-title").innerText = `Diagnostic Report Details: #${data.report_id}`;
+                document.getElementById("modal-patient-meta").innerText = `Patient ID: ${data.patient_id} | Name: ${data.patient_name}`;
+                document.getElementById("modal-diag").innerText = data.predicted_class;
+                document.getElementById("modal-conf").innerText = `${(data.confidence_score * 100).toFixed(2)}%`;
+                
+                // Color code severity in modal
+                const elSev = document.getElementById("modal-severity");
+                elSev.innerText = data.rule_based_severity;
+                elSev.className = data.rule_based_severity.toLowerCase() === 'high' ? 'font-bold text-red-500' :
+                                  data.rule_based_severity.toLowerCase() === 'medium' ? 'font-bold text-amber-500' :
+                                  'font-bold text-emerald-500';
+
+                document.getElementById("modal-area").innerText = `${data.tumor_area_mm2.toFixed(2)} mm²`;
+                document.getElementById("modal-rule-desc").innerText = data.severity_rule_description;
+                document.getElementById("modal-pdf-link").href = `/api/report/${data.report_id}/pdf`;
+
+                // Set image sources
+                document.getElementById("modal-overlay-img").src = `/api/report/${data.report_id}/visuals/overlay`;
+                document.getElementById("modal-mask-img").src = `/api/report/${data.report_id}/visuals/mask`;
+
+                // Show modal
+                document.getElementById("details-modal").classList.remove("hidden");
+            } catch (err) {
+                console.error("Failed to retrieve visual assets:", err);
+                alert("Failed to load clinical report overlays.");
+            }
+        }
+
+        // Close modal helper
+        function closeModal() {
+            document.getElementById("details-modal").classList.add("hidden");
+            document.getElementById("modal-overlay-img").src = "";
+            document.getElementById("modal-mask-img").src = "";
+        }
+    </script>
+</body>
+</html>
