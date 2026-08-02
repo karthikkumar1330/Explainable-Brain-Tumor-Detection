@@ -114,6 +114,12 @@ def parse_args() -> argparse.Namespace:
         default="outputs/clinical_reports",
         help="Destination directory for visual and written reports",
     )
+    parser.add_argument(
+        "--db-path",
+        type=str,
+        default="outputs/clinical_reports.db",
+        help="Path to SQLite database file for report persistence",
+    )
     return parser.parse_args()
 
 
@@ -367,6 +373,18 @@ def main() -> None:
         generator = MarkdownJSONReportGenerator()
         report_use_case = GenerateIntegratedReportUseCase(report_generator=generator, logger=logger)
         md_file, json_file, pdf_file = report_use_case.execute(report=clinical_report, output_dir=args.output_dir)
+
+        # Step 7: Persist report to SQLite Database
+        logger.info("Step 7: Persisting findings to database...")
+        from persistence.infrastructure.repository import SQLitePersistenceRepository
+        try:
+            db_repo = SQLitePersistenceRepository(db_path=args.db_path, logger=logger)
+            db_repo.initialize_db()
+            db_report_id = db_repo.save_report(clinical_report)
+            logger.info(f"Report findings successfully persisted in SQLite (Record ID: {db_report_id}).")
+        except Exception as db_err:
+            logger.error(f"Failed to persist report to SQLite: {db_err}")
+            print(f"Warning: Could not save report to database: {db_err}")
 
         # 9. Display pipeline complete summary to console
         print("\n" + "=" * 60)
