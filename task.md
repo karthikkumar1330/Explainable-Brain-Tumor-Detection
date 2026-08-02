@@ -1,7 +1,8 @@
-# Tasks - AI Healthcare Performance Optimization Module
+# Tasks - DevOps Local and Cloud Deployment Module
 
-- `[x]` Optimize `classification/infrastructure/models.py` (Use `inference_mode` and AMP autocast)
-- `[x]` Optimize `app.py` (Limit CPU threads and optimize UNeXt segmentation inference mode)
-- `[x]` Optimize `api/infrastructure/routes.py` (Limit CPU threads and UNeXt autocast routes)
-- `[x]` Optimize database connection settings (WAL mode and cache pragmas) in both repositories
-- `[x]` Verify execution by running the unittest suite
+- `[ ]` Create `app_config.py` centralizing environment loading parameters
+- `[ ]` Create `.env.example` file in the project root folder
+- `[ ]` Create `requirements.txt` containing package dependencies
+- `[ ]` Create `Dockerfile` configuring a python:3.11-slim container with OpenGL system libraries
+- `[ ]` Create `docker-compose.yml` definingStreamlit, FastAPI REST, and Flask services
+- `[ ]` Verify execution by running checks on app_config imports and executing the test suite

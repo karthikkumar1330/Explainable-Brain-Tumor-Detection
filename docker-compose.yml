@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # 1. Streamlit Clinical Client Portal
+  streamlit:
+    build: .
+    container_name: aurascan_streamlit
+    ports:
+      - "8501:8501"
+    volumes:
+      - aurascan_data:/app/outputs
+    environment:
+      - DATABASE_PATH=outputs/clinical_reports.db
+      - REPORTS_DIR=outputs/clinical_reports
+      - TEMP_DIR=outputs/temp_uploads
+    restart: always
+
+  # 2. FastAPI Machine Learning REST API
+  api:
+    build: .
+    container_name: aurascan_api
+    command: python run_api.py --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - aurascan_data:/app/outputs
+    environment:
+      - DATABASE_PATH=outputs/clinical_reports.db
+      - REPORTS_DIR=outputs/clinical_reports
+      - TEMP_DIR=outputs/temp_uploads
+    restart: always
+
+  # 3. Flask Diagnostics Dashboard
+  dashboard:
+    build: .
+    container_name: aurascan_dashboard
+    command: python run_dashboard.py --host 0.0.0.0 --port 5000
+    ports:
+      - "5000:5000"
+    volumes:
+      - aurascan_data:/app/outputs
+    environment:
+      - DATABASE_PATH=outputs/clinical_reports.db
+    restart: always
+
+volumes:
+  aurascan_data:

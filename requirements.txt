@@ -1,0 +1,22 @@
+# Deep Learning and Imaging Core
+torch>=2.0.0
+torchvision
+timm
+albumentations
+opencv-python-headless
+pyyaml
+
+# Data Processing & Visualization
+pandas
+matplotlib
+reportlab
+
+# REST API & Dashboard Servers
+fastapi
+uvicorn
+pydantic
+python-multipart
+flask
+
+# Client Interface
+streamlit
