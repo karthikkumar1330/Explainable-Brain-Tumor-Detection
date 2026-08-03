@@ -721,6 +721,30 @@ def main() -> None:
 
                     timeline["Comparison"] = time.time() - t_endpoint_start
 
+                    # Generate Clinical Insight (B6.15)
+                    from clinical_insight.application.use_cases import GenerateClinicalInsightUseCase
+                    insight_use_case = GenerateClinicalInsightUseCase()
+                    
+                    solidity_val = None
+                    circularity_val = None
+                    if segmentation_metrics and getattr(segmentation_metrics, "stats", None) is not None:
+                        solidity_val = segmentation_metrics.stats.solidity
+                        circularity_val = segmentation_metrics.stats.circularity
+                        
+                    clinical_insight_res = insight_use_case.execute(
+                        predicted_class=classification_result.class_name,
+                        confidence_score=classification_result.confidence_score,
+                        is_calibrated=is_cal,
+                        probabilities=classification_result.probabilities,
+                        tumor_area_mm2=segmentation_metrics.tumor_area_mm2,
+                        pixel_count=segmentation_metrics.pixel_count,
+                        solidity=solidity_val,
+                        circularity=circularity_val,
+                        xai_method=xai_param,
+                        xai_overlap_percentage=xai_result.overlap_percentage,
+                        longitudinal_comparison=comparison_result
+                    )
+
                     clinical_report = ClinicalReport(
                         patient_info=patient_info,
                         processing_summary=processing_summary,
@@ -737,6 +761,7 @@ def main() -> None:
                         xai_overlap_percentage=xai_result.overlap_percentage,
                         longitudinal_comparison=comparison_result,
                         quality_warnings=quality_warnings,
+                        clinical_insight=clinical_insight_res,
                     )
 
                     timeline["Clinical Report"] = time.time() - t_endpoint_start
@@ -746,6 +771,16 @@ def main() -> None:
                     md_file, json_file, pdf_file = report_use_case.execute(report=clinical_report, output_dir=OUTPUT_REPORTS_DIR)
 
                     timeline["PDF"] = time.time() - t_endpoint_start
+
+                    # Run Email Reporter (B6.15)
+                    from clinical_reporting.infrastructure.email_sender import ClinicalEmailReporter
+                    email_reporter = ClinicalEmailReporter(logger=logging.getLogger("streamlit_app"))
+                    recipient_email = f"{ref_physician.replace(' ', '_').lower()}@hospital.org"
+                    email_reporter.send_report_email(
+                        report=clinical_report,
+                        recipient_email=recipient_email,
+                        output_dir=OUTPUT_REPORTS_DIR
+                    )
 
                     # 7. Persist to SQLite Database
                     db_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)
@@ -867,6 +902,29 @@ def main() -> None:
                     st.metric("Model Confidence Score", f"{classification_result.confidence_score:.2%}")
                 with res_col3:
                     st.metric("AI Severity Category", severity_assessment.category.value.upper())
+
+                # Clinical Insight Summary Block (B6.15)
+                if clinical_insight_res is not None:
+                    st.markdown("### 🔍 AI Clinical Insights & Recommendations")
+                    st.markdown(f"""
+                        <div style="background-color: #0f172a; border-left: 5px solid #10b981; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                            <h4 style="margin: 0 0 6px 0; color: #f8fafc; font-size: 14px; font-weight: 700;">AI Summary Narrative</h4>
+                            <p style="margin: 0; color: #cbd5e1; font-size: 13px; line-height: 1.5;">{clinical_insight_res.summary_narrative}</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    ci_col1, ci_col2 = st.columns(2)
+                    with ci_col1:
+                        st.markdown("**Key Findings:**")
+                        for f in clinical_insight_res.key_findings:
+                            st.write(f"- {f}")
+                    with ci_col2:
+                        st.markdown("**Clinical Recommendations:**")
+                        for r in clinical_insight_res.recommendations:
+                            st.write(f"- {r}")
+                            
+                    st.warning(f"**Educational Disclaimer:** {clinical_insight_res.disclaimer}")
+                    st.divider()
 
                  # If confidence is calibrated, display calibration info
                 is_calibrated = getattr(classification_result, "is_calibrated", False)

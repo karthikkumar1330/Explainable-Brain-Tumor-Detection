@@ -652,6 +652,30 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
         )
         quality_warnings = engine_result["warnings"]
 
+        # Generate Clinical Insight (B6.15)
+        from clinical_insight.application.use_cases import GenerateClinicalInsightUseCase
+        insight_use_case = GenerateClinicalInsightUseCase()
+        
+        solidity_val = None
+        circularity_val = None
+        if segmentation_metrics and getattr(segmentation_metrics, "stats", None) is not None:
+            solidity_val = segmentation_metrics.stats.solidity
+            circularity_val = segmentation_metrics.stats.circularity
+            
+        clinical_insight_res = insight_use_case.execute(
+            predicted_class=classification_result.class_name,
+            confidence_score=classification_result.confidence_score,
+            is_calibrated=is_cal,
+            probabilities=classification_result.probabilities,
+            tumor_area_mm2=segmentation_metrics.tumor_area_mm2,
+            pixel_count=segmentation_metrics.pixel_count,
+            solidity=solidity_val,
+            circularity=circularity_val,
+            xai_method=xai_param,
+            xai_overlap_percentage=xai_result.overlap_percentage,
+            longitudinal_comparison=None
+        )
+
         clinical_report = ClinicalReport(
             patient_info=patient_info,
             processing_summary=processing_summary,
@@ -667,6 +691,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
             xai_explanation_text=xai_result.explanation_text,
             xai_overlap_percentage=xai_result.overlap_percentage,
             quality_warnings=quality_warnings,
+            clinical_insight=clinical_insight_res,
         )
 
         timeline["Clinical Report"] = time.time() - t_endpoint_start
@@ -676,6 +701,16 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
         md_file, json_file, pdf_file = report_use_case.execute(report=clinical_report, output_dir=OUTPUT_REPORTS_DIR)
 
         timeline["PDF"] = time.time() - t_endpoint_start
+
+        # Run Email Reporter (B6.15)
+        from clinical_reporting.infrastructure.email_sender import ClinicalEmailReporter
+        email_reporter = ClinicalEmailReporter(logger=logger)
+        recipient_email = f"{intake.ref_physician.replace(' ', '_').lower()}@hospital.org"
+        email_reporter.send_report_email(
+            report=clinical_report,
+            recipient_email=recipient_email,
+            output_dir=OUTPUT_REPORTS_DIR
+        )
 
         # 7. Database Persistence
         db_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)

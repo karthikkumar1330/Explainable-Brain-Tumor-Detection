@@ -242,6 +242,51 @@ class ReportLabPDFGenerator:
             story.append(warning_table)
             story.append(Spacer(1, 10))
 
+        # AI Clinical Insights & Recommendations (B6.15)
+        if getattr(report, "clinical_insight", None) is not None:
+            ci = report.clinical_insight
+            story.append(Paragraph("AI Clinical Insights & Recommendations", h2_style))
+            
+            insight_body_style = ParagraphStyle(
+                name='InsightBody',
+                parent=body_style,
+                fontSize=9,
+                leading=12,
+            )
+            
+            # Narrative callout box
+            narrative_table = Table([[Paragraph(ci.summary_narrative, insight_body_style)]], colWidths=[504])
+            narrative_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#EBF5FB")),
+                ('PADDING', (0, 0), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#AED6F1")),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            story.append(narrative_table)
+            story.append(Spacer(1, 10))
+            
+            # Key Findings & Recommendations Table
+            bullets_data = []
+            bullets_data.append([Paragraph("<b>Key Findings:</b>", meta_label_style), Paragraph("<b>Clinical Recommendations:</b>", meta_label_style)])
+            
+            findings_bullet_text = "<br/>".join(f"• {f}" for f in ci.key_findings)
+            recs_bullet_text = "<br/>".join(f"• {r}" for r in ci.recommendations)
+            
+            bullets_data.append([
+                Paragraph(findings_bullet_text, insight_body_style),
+                Paragraph(recs_bullet_text, insight_body_style)
+            ])
+            
+            bullets_table = Table(bullets_data, colWidths=[252, 252])
+            bullets_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#FDFEFE")),
+                ('PADDING', (0, 0), (-1, -1), 6),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#E5E7E9")),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ]))
+            story.append(bullets_table)
+            story.append(Spacer(1, 15))
+
         story.append(Spacer(1, 5))
 
         # 4. Quantitative Morphological Analysis Table (if tumor exists)

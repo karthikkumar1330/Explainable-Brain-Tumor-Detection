@@ -158,6 +158,15 @@ class MarkdownJSONReportGenerator(IClinicalReportGenerator):
         if getattr(report, "quality_warnings", None) is not None:
             payload["quality_warnings"] = report.quality_warnings
 
+        if getattr(report, "clinical_insight", None) is not None:
+            ci = report.clinical_insight
+            payload["clinical_insight"] = {
+                "summary_narrative": ci.summary_narrative,
+                "key_findings": ci.key_findings,
+                "recommendations": ci.recommendations,
+                "disclaimer": ci.disclaimer,
+            }
+
         return payload
 
 
@@ -298,6 +307,10 @@ class MarkdownJSONReportGenerator(IClinicalReportGenerator):
                 warnings_section += f"- ⚠️ {warning}  \n"
             warnings_section += "\n---\n\n"
 
+        clinical_insight_section = ""
+        if getattr(report, "clinical_insight", None) is not None:
+            clinical_insight_section = report.clinical_insight.to_markdown() + "\n---\n\n"
+
         content = f"""# INTEGRATED CLINICAL BRAIN MRI REPORT
 
 ## Patient Demographics
@@ -309,7 +322,7 @@ class MarkdownJSONReportGenerator(IClinicalReportGenerator):
 
 ---
 
-{warnings_section}## Clinical Classification Summary
+{warnings_section}{clinical_insight_section}## Clinical Classification Summary
 - **Primary Diagnosis:** **{report.classification.class_name}**
 {calibration_text}
 - **Differential Classification Probabilities:**

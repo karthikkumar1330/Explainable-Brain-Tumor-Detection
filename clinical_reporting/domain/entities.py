@@ -4,6 +4,7 @@ from tumor_analysis.domain.entities import TumorAnalysisResult
 from severity_assessment.domain.entities import SeverityAssessment
 from classification.domain.entities import PredictionResult
 from longitudinal_analysis.domain.entities import LongitudinalComparison
+from clinical_insight.domain.entities import ClinicalInsight
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,7 @@ class ClinicalReport:
     xai_overlap_percentage: Optional[float] = None
     longitudinal_comparison: Optional[LongitudinalComparison] = None
     quality_warnings: Optional[List[str]] = None
+    clinical_insight: Optional[ClinicalInsight] = None
 
 
 
