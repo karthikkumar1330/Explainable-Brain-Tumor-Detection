@@ -391,7 +391,49 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
         cls_warnings = []
         active_cls_device = str(device)
         try:
-            classification_result = predict_use_case.execute(image_tensor_cls)
+            if getattr(intake, "ensemble_mode", False):
+                from research_framework.application.registry import ModelRegistry
+                from research_framework.application.ensemble import EnsembleEngine
+                
+                registry = ModelRegistry(default_checkpoint_path=CLS_CHECKPOINT)
+                predictions = registry.predict_all(image_tensor_cls, device=device)
+                
+                # Fetch baseline prediction specifically to keep classification_result populated
+                prod_pred = next((p for p in predictions if p.model_name == "efficientnet_b0"), None)
+                if prod_pred:
+                    uncal_conf = getattr(prod_pred, "uncalibrated_confidence_score", prod_pred.confidence)
+                    classification_result = PredictionResult(
+                        label=["Glioma", "Meningioma", "Pituitary", "No Tumor"].index(prod_pred.predicted_class),
+                        class_name=prod_pred.predicted_class,
+                        confidence_score=prod_pred.confidence,
+                        probabilities=prod_pred.probabilities,
+                        uncalibrated_confidence_score=uncal_conf,
+                        uncalibrated_probabilities=prod_pred.probabilities,
+                        is_calibrated=False
+                    )
+                else:
+                    classification_result = predict_use_case.execute(image_tensor_cls)
+
+                engine = EnsembleEngine()
+                ensemble_res = engine.compute_ensemble(predictions)
+                
+                # Swap production result with ensemble prediction
+                class_to_label = {"Glioma": 0, "Meningioma": 1, "Pituitary": 2, "No Tumor": 3}
+                ensemble_label = class_to_label.get(ensemble_res.predicted_class, 3)
+                
+                classification_result = PredictionResult(
+                    label=ensemble_label,
+                    class_name=ensemble_res.predicted_class,
+                    confidence_score=ensemble_res.confidence,
+                    probabilities=ensemble_res.probabilities,
+                    uncalibrated_confidence_score=classification_result.uncalibrated_confidence_score,
+                    uncalibrated_probabilities=classification_result.uncalibrated_probabilities,
+                    calibration_method="Ensemble (Soft Voting)",
+                    calibration_parameters={"num_models": len(predictions)},
+                    is_calibrated=True
+                )
+            else:
+                classification_result = predict_use_case.execute(image_tensor_cls)
         except Exception as e:
             logger.warning(f"Classification failed on {device}: {e}. Retrying with CPU fallback...")
             try:
@@ -768,6 +810,16 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
         except Exception as audit_err:
             logger.error(f"Failed to record AI Audit Log: {audit_err}")
 
+        ensemble_data = None
+        if getattr(intake, "ensemble_mode", False) and 'ensemble_res' in locals():
+            ensemble_data = {
+                "predicted_class": ensemble_res.predicted_class,
+                "confidence": ensemble_res.confidence,
+                "probabilities": ensemble_res.probabilities,
+                "agreement_level": ensemble_res.agreement_metrics.level if ensemble_res.agreement_metrics else "N/A",
+                "cosine_similarity": ensemble_res.agreement_metrics.cosine_similarity if ensemble_res.agreement_metrics else 1.0
+            }
+
         return {
             "report_id": report_db_id,
             "patient_id": intake.patient_id,
@@ -780,6 +832,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
             "xai_explanation": xai_result.explanation_text,
             "xai_overlap_percentage": xai_result.overlap_percentage,
             "quality_warnings": quality_warnings,
+            "ensemble": ensemble_data,
             "files": {
                 "pdf": pdf_file,
                 "json": json_file,

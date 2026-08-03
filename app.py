@@ -320,6 +320,9 @@ def main() -> None:
             ref_physician = st.text_input("Referring Physician", value="Dr. Sarah Smith")
             pixel_spacing = st.number_input("MRI Pixel Spacing (mm)", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
 
+            st.markdown("##### Research Configuration")
+            research_ensemble_mode = st.checkbox("Enable Multi-Model Research Mode", value=False, help="Runs parallel ResNet-18 & MobileNet-V3 models to calculate ensemble predictions and check consensus metrics.")
+
             st.divider()
             uploaded_file = st.file_uploader("Upload MRI Brain Scan (PNG/JPG/TIF)", type=["png", "jpg", "jpeg", "tif", "tiff"])
 
@@ -398,7 +401,49 @@ def main() -> None:
                     cls_warnings = []
                     active_cls_device = str(device)
                     try:
-                        classification_result = predict_use_case.execute(image_tensor_cls)
+                        ensemble_res = None
+                        if research_ensemble_mode:
+                            from research_framework.application.registry import ModelRegistry
+                            from research_framework.application.ensemble import EnsembleEngine
+                            
+                            registry = ModelRegistry(default_checkpoint_path=CLS_CHECKPOINT)
+                            predictions = registry.predict_all(image_tensor_cls, device=device_choice)
+                            
+                            prod_pred = next((p for p in predictions if p.model_name == "efficientnet_b0"), None)
+                            if prod_pred:
+                                uncal_conf = getattr(prod_pred, "uncalibrated_confidence_score", prod_pred.confidence)
+                                classification_result = PredictionResult(
+                                    label=["Glioma", "Meningioma", "Pituitary", "No Tumor"].index(prod_pred.predicted_class),
+                                    class_name=prod_pred.predicted_class,
+                                    confidence_score=prod_pred.confidence,
+                                    probabilities=prod_pred.probabilities,
+                                    uncalibrated_confidence_score=uncal_conf,
+                                    uncalibrated_probabilities=prod_pred.probabilities,
+                                    is_calibrated=False
+                                )
+                            else:
+                                classification_result = predict_use_case.execute(image_tensor_cls)
+                                
+                            engine = EnsembleEngine()
+                            ensemble_res = engine.compute_ensemble(predictions)
+                            
+                            # Swap production prediction with ensemble result
+                            class_to_label = {"Glioma": 0, "Meningioma": 1, "Pituitary": 2, "No Tumor": 3}
+                            ensemble_label = class_to_label.get(ensemble_res.predicted_class, 3)
+                            
+                            classification_result = PredictionResult(
+                                label=ensemble_label,
+                                class_name=ensemble_res.predicted_class,
+                                confidence_score=ensemble_res.confidence,
+                                probabilities=ensemble_res.probabilities,
+                                uncalibrated_confidence_score=classification_result.uncalibrated_confidence_score,
+                                uncalibrated_probabilities=classification_result.uncalibrated_probabilities,
+                                calibration_method="Ensemble (Soft Voting)",
+                                calibration_parameters={"num_models": len(predictions)},
+                                is_calibrated=True
+                            )
+                        else:
+                            classification_result = predict_use_case.execute(image_tensor_cls)
                     except Exception as e:
                         logging.getLogger("streamlit_app").warning(f"Classification failed on {device}: {e}. Retrying with CPU fallback...")
                         try:
@@ -924,6 +969,59 @@ def main() -> None:
                             st.write(f"- {r}")
                             
                     st.warning(f"**Educational Disclaimer:** {clinical_insight_res.disclaimer}")
+                    st.divider()
+
+                # Multi-Model Research Benchmarks Comparison Panel (B6.15)
+                if research_ensemble_mode and 'ensemble_res' in locals() and ensemble_res is not None:
+                    st.markdown("### 📊 Multi-Model Research Benchmarks & Agreement")
+                    
+                    # Render agreement status scorecard
+                    am = ensemble_res.agreement_metrics
+                    if am:
+                        color = "#27ae60" if "HIGH" in am.level else "#f39c12" if "MODERATE" in am.level else "#c0392b"
+                        st.markdown(f"""
+                            <div style="background-color: #0f172a; border-left: 5px solid {color}; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                                <h4 style="margin: 0 0 4px 0; color: #f8fafc; font-size: 14px; font-weight: 700;">Model Agreement Status: <span style="color: {color};">{am.level}</span></h4>
+                                <p style="margin: 0 0 8px 0; color: #cbd5e1; font-size: 13px; line-height: 1.4;">{am.message}</p>
+                                <span style="font-size: 12px; color: #94a3b8;"><b>Cosine Similarity:</b> {am.cosine_similarity:.4f} | <b>JS Divergence:</b> {am.jensen_shannon_divergence:.4f}</span>
+                            </div>
+                        """, unsafe_allow_html=True)
+                    
+                    # Comparative metrics table
+                    comp_rows = []
+                    for ip in ensemble_res.individual_predictions:
+                        comp_rows.append({
+                            "Model Profile": ip.model_name.upper(),
+                            "Architecture": "EfficientNet-B0" if ip.model_name == "efficientnet_b0" else "ResNet-18" if ip.model_name == "resnet18" else "MobileNet-V3",
+                            "Predicted Class": ip.predicted_class,
+                            "Confidence": f"{ip.confidence:.2%}",
+                            "Inference Latency": f"{ip.runtime_sec:.3f} s"
+                        })
+                    st.table(comp_rows)
+                    
+                    # Comparative probabilities bar chart
+                    fig, ax = plt.subplots(figsize=(8, 4))
+                    fig.patch.set_facecolor('none')
+                    ax.set_facecolor('none')
+                    
+                    classes = ["Glioma", "Meningioma", "No Tumor", "Pituitary"]
+                    x_indices = np.arange(len(classes))
+                    width = 0.25
+                    
+                    for idx, ip in enumerate(ensemble_res.individual_predictions):
+                        probs_list = [ip.probabilities.get(c, 0.0) for c in classes]
+                        ax.bar(x_indices + (idx - 1) * width, probs_list, width, label=ip.model_name.upper())
+                        
+                    ax.set_ylabel("Probability", color="#cbd5e1", fontsize=9)
+                    ax.set_title("Probability Distribution Comparison", color="#cbd5e1", fontsize=10)
+                    ax.set_xticks(x_indices)
+                    ax.set_xticklabels(classes, rotation=15)
+                    ax.tick_params(colors="#cbd5e1", labelsize=8)
+                    ax.legend(facecolor='#1e293b', edgecolor='#334155', labelcolor='#cbd5e1', fontsize=8)
+                    ax.grid(axis='y', linestyle='--', alpha=0.3)
+                    
+                    st.pyplot(fig)
+                    plt.close(fig)
                     st.divider()
 
                  # If confidence is calibrated, display calibration info
