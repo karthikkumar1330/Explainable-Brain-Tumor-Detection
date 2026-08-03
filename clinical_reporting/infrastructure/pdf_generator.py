@@ -166,10 +166,34 @@ class ReportLabPDFGenerator:
 
         # 3. Diagnostic Results Block
         story.append(Paragraph("Diagnostic Summary", h2_style))
+        
+        is_calibrated = getattr(report.classification, "is_calibrated", False)
         diag_data = [
-            [Paragraph("Primary Classification Diagnosis:", meta_label_style), Paragraph(f"<b>{report.classification.class_name}</b>", body_style)],
-            [Paragraph("Model Classification Confidence:", meta_label_style), Paragraph(f"{report.classification.confidence_score:.4%}", body_style)]
+            [Paragraph("Primary Classification Diagnosis:", meta_label_style), Paragraph(f"<b>{report.classification.class_name}</b>", body_style)]
         ]
+        if is_calibrated:
+            diag_data.append([
+                Paragraph("Model Classification Confidence (Calibrated):", meta_label_style),
+                Paragraph(f"<b>{report.classification.confidence_score:.4%}</b>", body_style)
+            ])
+            diag_data.append([
+                Paragraph("Model Classification Confidence (Uncalibrated):", meta_label_style),
+                Paragraph(f"{report.classification.uncalibrated_confidence_score:.4%}", body_style)
+            ])
+            # Add method and parameters
+            method = getattr(report.classification, "calibration_method", "N/A")
+            params = getattr(report.classification, "calibration_parameters", {})
+            param_str = ", ".join(f"{k}={v:.3f}" if isinstance(v, float) else f"{k}={v}" for k, v in params.items())
+            diag_data.append([
+                Paragraph("Confidence Calibration Method:", meta_label_style),
+                Paragraph(f"{method} ({param_str})", body_style)
+            ])
+        else:
+            diag_data.append([
+                Paragraph("Model Classification Confidence:", meta_label_style),
+                Paragraph(f"{report.classification.confidence_score:.4%}", body_style)
+            ])
+
         if report.severity_assessment is not None:
             diag_data.append([
                 Paragraph("AI Severity Risk Category:", meta_label_style),
@@ -221,7 +245,153 @@ class ReportLabPDFGenerator:
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ]))
             story.append(morph_table)
+            story.append(Spacer(1, 10))
+
+            # Add segmentation quality table if post-processing was run
+            is_post_processed = getattr(report.segmentation_metrics, "post_processing_applied", False)
+            if is_post_processed:
+                q_score = report.segmentation_metrics.quality_score
+                q_cat = report.segmentation_metrics.quality_category
+                steps = ", ".join(report.segmentation_metrics.post_processing_metadata.get("steps_applied", []))
+                
+                story.append(Paragraph("Segmentation Quality Assessment", ParagraphStyle('q_sub', parent=h2_style, fontSize=11, leading=13)))
+                quality_data = [
+                    [Paragraph("Segmentation Quality Score:", meta_label_style), Paragraph(f"<b>{q_score:.2%} ({q_cat})</b>", body_style)],
+                    [Paragraph("Morphological Filters Applied:", meta_label_style), Paragraph(steps, body_style)]
+                ]
+                quality_table = Table(quality_data, colWidths=[180, 324])
+                quality_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#EAEDED")),
+                    ('PADDING', (0, 0), (-1, -1), 5),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#BDC3C7")),
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ]))
+                story.append(quality_table)
+                story.append(Spacer(1, 15))
+            else:
+                story.append(Spacer(1, 15))
+
+            # Add detailed morphometrics table if stats exist
+            if getattr(report.segmentation_metrics, "stats", None) is not None:
+                s = report.segmentation_metrics.stats
+                story.append(Paragraph("Tumor Morphometry & Region Properties", ParagraphStyle('m_sub', parent=h2_style, fontSize=11, leading=13)))
+                morph_detail_data = [
+                    [
+                        Paragraph("<b>Property</b>", meta_label_style),
+                        Paragraph("<b>Value</b>", meta_label_style),
+                        Paragraph("<b>Property</b>", meta_label_style),
+                        Paragraph("<b>Value</b>", meta_label_style),
+                    ],
+                    [
+                        Paragraph("Perimeter", body_style), Paragraph(f"{s.perimeter_mm:.2f} mm", body_style),
+                        Paragraph("Bounding Box Width", body_style), Paragraph(f"{s.bbox_w_mm:.2f} mm ({s.bbox_w_px} px)", body_style),
+                    ],
+                    [
+                        Paragraph("Major Axis Length", body_style), Paragraph(f"{s.major_axis_mm:.2f} mm", body_style),
+                        Paragraph("Bounding Box Height", body_style), Paragraph(f"{s.bbox_h_mm:.2f} mm ({s.bbox_h_px} px)", body_style),
+                    ],
+                    [
+                        Paragraph("Minor Axis Length", body_style), Paragraph(f"{s.minor_axis_mm:.2f} mm", body_style),
+                        Paragraph("Bounding Box X/Y Offset", body_style), Paragraph(f"X={s.bbox_x_px}, Y={s.bbox_y_px} px", body_style),
+                    ],
+                    [
+                        Paragraph("Solidity Index", body_style), Paragraph(f"{s.solidity:.4f}", body_style),
+                        Paragraph("Eccentricity", body_style), Paragraph(f"{s.eccentricity:.4f}", body_style),
+                    ],
+                    [
+                        Paragraph("Circularity Index", body_style), Paragraph(f"{s.circularity:.4f}", body_style),
+                        Paragraph("Orientation Angle", body_style), Paragraph(f"{s.orientation_deg:.1f}°", body_style),
+                    ]
+                ]
+                morph_detail_table = Table(morph_detail_data, colWidths=[130, 122, 130, 122])
+                morph_detail_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#2C3E50")),
+                    ('PADDING', (0, 0), (-1, -1), 5),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#BDC3C7")),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ]))
+                story.append(morph_detail_table)
+                story.append(Spacer(1, 15))
+
+        # Explainable AI (XAI 2.0) Section
+        if getattr(report, "xai_method", None) is not None:
+            story.append(Paragraph("Explainable AI (XAI 2.0) Analysis", h2_style))
+            method_display = (
+                "Grad-CAM"
+                if report.xai_method == "gradcam"
+                else "Grad-CAM++"
+                if report.xai_method in ["gradcam_plus_plus", "gradcam++"]
+                else "EigenCAM"
+            )
+            overlap_str = f"{report.xai_overlap_percentage:.2%}" if report.xai_overlap_percentage is not None else "N/A"
+            xai_data = [
+                [Paragraph("Active Explanation Method:", meta_label_style), Paragraph(method_display, body_style)],
+                [Paragraph("Lesion Spatial Overlap:", meta_label_style), Paragraph(overlap_str, body_style)],
+                [Paragraph("Clinical Interpretation:", meta_label_style), Paragraph(report.xai_explanation_text, body_style)]
+            ]
+            xai_table = Table(xai_data, colWidths=[180, 324])
+            xai_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#EAEDED")),
+                ('PADDING', (0, 0), (-1, -1), 5),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#BDC3C7")),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ]))
+            story.append(xai_table)
             story.append(Spacer(1, 15))
+
+        # Longitudinal Scan Comparison & Evolution
+        if getattr(report, "longitudinal_comparison", None) is not None:
+            lc = report.longitudinal_comparison
+            story.append(Paragraph("Longitudinal Scan Comparison & Evolution", h2_style))
+            
+            comp_details = [
+                [Paragraph("<b>Evolution Status</b>", meta_label_style), Paragraph(lc.progression_status.upper(), body_style)],
+                [Paragraph("<b>Scan Dates</b>", meta_label_style), Paragraph(f"Previous: {lc.previous_scan_date} | Current: {lc.current_scan_date}", body_style)],
+                [Paragraph("<b>Follow-up Summary</b>", meta_label_style), Paragraph(lc.summary_text, body_style)],
+                [
+                    Paragraph("<b>Quantitative Deltas</b>", meta_label_style),
+                    Paragraph(
+                        f"Area Delta: {lc.area_delta_mm2:+.2f} mm² ({lc.area_percentage_change:+.1f}%)<br/>"
+                        f"Classification Shift: {lc.previous_class} -> {lc.current_class}<br/>"
+                        f"Confidence Delta: {lc.confidence_delta:+.2%}<br/>"
+                        f"Brain Occupancy Delta: {lc.pct_brain_delta:+.4f}%",
+                        body_style
+                    )
+                ]
+            ]
+            
+            if lc.perimeter_delta_mm is not None:
+                shape_text = (
+                    f"<br/>Perimeter Delta: {lc.perimeter_delta_mm:+.2f} mm<br/>"
+                    f"Major Axis Delta: {lc.major_axis_delta_mm:+.2f} mm | Minor Axis Delta: {lc.minor_axis_delta_mm:+.2f} mm<br/>"
+                    f"Solidity Delta: {lc.solidity_delta:+.4f} | Circularity Delta: {lc.circularity_delta:+.4f}"
+                )
+                comp_details[3][1] = Paragraph(
+                    f"Area Delta: {lc.area_delta_mm2:+.2f} mm² ({lc.area_percentage_change:+.1f}%)<br/>"
+                    f"Classification Shift: {lc.previous_class} -> {lc.current_class}<br/>"
+                    f"Confidence Delta: {lc.confidence_delta:+.2%}<br/>"
+                    f"Brain Occupancy Delta: {lc.pct_brain_delta:+.4f}%" + shape_text,
+                    body_style
+                )
+
+            comp_table = Table(comp_details, colWidths=[130, 374])
+            comp_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#F2F4F4")),
+                ('PADDING', (0, 0), (-1, -1), 6),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#BDC3C7")),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ]))
+            story.append(comp_table)
+            story.append(Spacer(1, 15))
+            
+            if lc.comparison_canvas_path and os.path.exists(lc.comparison_canvas_path):
+                story.append(Paragraph("Longitudinal Visual Progression Overlay", ParagraphStyle('lc_sub', parent=h2_style, fontSize=11, leading=13)))
+                from reportlab.platypus import Image as RLImage
+                try:
+                    story.append(RLImage(lc.comparison_canvas_path, width=504, height=168))
+                    story.append(Spacer(1, 15))
+                except Exception:
+                    pass
 
         # 5. Visual Scans Section (Grad-CAM & Segmentation Mask side-by-side)
         visual_flowables = []
@@ -268,6 +438,18 @@ class ReportLabPDFGenerator:
                     ('PADDING', (0, 0), (-1, -1), 2),
                 ]))
                 visual_flowables.append(img_table)
+
+            if getattr(report, "comparison_image_path", None) and os.path.exists(report.comparison_image_path):
+                img_comp = Image(report.comparison_image_path, width=480, height=160)
+                comp_caption = Paragraph("<font size=8><b>Fig 3:</b> Segmentation Post-Processing Comparison: Original | Initial UNeXt Mask (Red) | Post-Processed Mask (Green)</font>", ParagraphStyle('cap_c', parent=body_style, alignment=1))
+                comp_tbl = Table([[img_comp], [comp_caption]], colWidths=[504])
+                comp_tbl.setStyle(TableStyle([
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('PADDING', (0, 0), (-1, -1), 2),
+                ]))
+                visual_flowables.append(Spacer(1, 10))
+                visual_flowables.append(comp_tbl)
 
             visual_flowables.append(Spacer(1, 15))
 

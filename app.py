@@ -158,6 +158,15 @@ def main() -> None:
     device_choice = st.sidebar.selectbox("Inference Execution Device", ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"])
     device = torch.device(device_choice)
 
+    # Explainability method selector (XAI 2.0)
+    xai_method = st.sidebar.selectbox(
+        "Explainability Method (XAI 2.0)",
+        ["Grad-CAM", "Grad-CAM++", "EigenCAM"],
+        index=0,
+        help="Select the model explanation algorithm to visualize activation patterns."
+    )
+
+
     # Thread tuning for CPU fallback to avoid thrashing
     if device_choice == "cpu" and torch.get_num_threads() > 4:
         torch.set_num_threads(4)
@@ -343,32 +352,30 @@ def main() -> None:
                     classification_result = predict_use_case.execute(image_tensor_cls)
                     cls_latency = time.time() - t_cls
 
-                    # 2. Run Explainability (Grad-CAM)
+                    # 2. Run Explainability (XAI 2.0 Engine)
                     t_cam = time.time()
-                    explain_service = GradCAMService(
+                    from explainable_ai.infrastructure.services import PyTorchXAIEngine
+                    from explainable_ai.application.use_cases import GenerateExplanationUseCase
+                    from explainable_ai.infrastructure.visualization import overlay_tumor_contour
+
+                    # Map selected XAI method
+                    xai_param = "gradcam"
+                    if xai_method == "Grad-CAM++":
+                        xai_param = "gradcam_plus_plus"
+                    elif xai_method == "EigenCAM":
+                        xai_param = "eigencam"
+
+                    xai_engine = PyTorchXAIEngine(
                         model=model_cls,
                         target_layer=model_cls.backbone.features[8],
                         device=device
                     )
-                    explain_use_case = ExplainPredictionUseCase(
-                        predict_use_case=predict_use_case,
-                        explain_service=explain_service,
-                        logger=logging.getLogger("streamlit_app")
+                    # We generate the raw heatmap first
+                    heatmap = xai_engine.generate_explanation(
+                        image_tensor=image_tensor_cls,
+                        target_class=classification_result.label,
+                        method=xai_param
                     )
-                    _, heatmap = explain_use_case.execute(image_tensor_cls, target_class=classification_result.label)
-                    
-                    os.makedirs(OUTPUT_REPORTS_DIR, exist_ok=True)
-                    base_cam_name = f"{patient_id}_gradcam"
-                    save_explainability_outputs(
-                        original_image=original_image,
-                        heatmap=heatmap,
-                        output_dir=OUTPUT_REPORTS_DIR,
-                        base_filename=base_cam_name,
-                        alpha=0.6,
-                        logger=logging.getLogger("streamlit_app")
-                    )
-                    heatmap_path = os.path.join(OUTPUT_REPORTS_DIR, f"{base_cam_name}_heatmap.png")
-                    overlay_path = os.path.join(OUTPUT_REPORTS_DIR, f"{base_cam_name}_overlay.png")
                     cam_latency = time.time() - t_cam
 
                     # 3. Run Segmentation (UNeXt)
@@ -396,26 +403,58 @@ def main() -> None:
                     # Binarize
                     bin_mask = (output_seg > 0.5).astype(np.uint8)
 
-                    # Post-process: connected components area filter >= 100 pixels
-                    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
-                        bin_mask, connectivity=8
-                    )
-                    filtered_mask = np.zeros_like(bin_mask)
-                    for label in range(1, num_labels):
-                        area = stats[label, cv2.CC_STAT_AREA]
-                        if area >= 100:
-                            filtered_mask[labels == label] = 1
-
-                    # Resize to original MRI size
+                    # Resize to original MRI scale so post-processing runs at native resolution
                     orig_h, orig_w = original_image.shape[:2]
-                    final_mask = cv2.resize(
-                        filtered_mask, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST
-                    )
+                    bin_mask_resized = cv2.resize(bin_mask, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST)
+                    prob_map_resized = cv2.resize(output_seg, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+
+                    # Run modular post-processing pipeline
+                    from segmentation_postprocessing.infrastructure.processors import MedicalImagePostProcessor
+                    from segmentation_postprocessing.application.use_cases import PostProcessSegmentationUseCase
+                    from segmentation_postprocessing.infrastructure.visualization import create_segmentation_comparison_image
+
+                    post_proc = MedicalImagePostProcessor()
+                    post_proc_use_case = PostProcessSegmentationUseCase(post_processor=post_proc)
+                    final_mask, post_proc_meta = post_proc_use_case.execute(bin_mask_resized, prob_map_resized)
 
                     # Save mask
                     mask_path = os.path.join(OUTPUT_REPORTS_DIR, f"{patient_id}_segmentation_mask.jpg")
                     cv2.imwrite(mask_path, (final_mask * 255).astype(np.uint8))
+
+                    # Generate comparison visualization
+                    comparison_path = os.path.join(OUTPUT_REPORTS_DIR, f"{patient_id}_segmentation_comparison.png")
+                    create_segmentation_comparison_image(
+                        original_image=original_image,
+                        before_mask=bin_mask_resized,
+                        after_mask=final_mask,
+                        output_path=comparison_path
+                    )
                     seg_latency = time.time() - t_seg
+
+                    # Run post-segmentation XAI analysis
+                    xai_use_case = GenerateExplanationUseCase(xai_engine=xai_engine)
+                    xai_result = xai_use_case.execute(
+                        image_tensor=image_tensor_cls,
+                        target_class=classification_result.label,
+                        method=xai_param,
+                        tumor_mask=final_mask
+                    )
+
+                    # Save explanation visualizations with boundary overlays
+                    os.makedirs(OUTPUT_REPORTS_DIR, exist_ok=True)
+                    base_cam_name = f"{patient_id}_gradcam"
+                    
+                    from classification.infrastructure.visualization import overlay_heatmap
+                    raw_overlay = overlay_heatmap(original_image, heatmap, alpha=0.6)
+                    overlay_with_contour = overlay_tumor_contour(raw_overlay, final_mask)
+                    
+                    heatmap_path = os.path.join(OUTPUT_REPORTS_DIR, f"{base_cam_name}_heatmap.png")
+                    overlay_path = os.path.join(OUTPUT_REPORTS_DIR, f"{base_cam_name}_overlay.png")
+                    
+                    heatmap_uint8 = np.uint8(255 * cv2.resize(heatmap, (original_image.shape[1], original_image.shape[0])))
+                    heatmap_color = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
+                    cv2.imwrite(heatmap_path, heatmap_color)
+                    cv2.imwrite(overlay_path, overlay_with_contour)
 
                     # 4. Morphological Analysis
                     morph_analyzer = OpenCVTumorAnalyzer(low_thresh=1.0, med_thresh=5.0, high_thresh=15.0)
@@ -428,6 +467,16 @@ def main() -> None:
                         pixel_spacing_mm=pixel_spacing,
                     )
                     segmentation_metrics = clinical_data.analysis
+
+                    # Enrich segmentation_metrics with post-processing details
+                    from dataclasses import replace
+                    segmentation_metrics = replace(
+                        segmentation_metrics,
+                        quality_score=post_proc_meta["quality_score"],
+                        quality_category=post_proc_meta["quality_category"],
+                        post_processing_applied=True,
+                        post_processing_metadata=post_proc_meta
+                    )
 
                     # 5. Rule-Based Severity Assessment
                     severity_classifier = RuleBasedSeverityClassifier()
@@ -460,6 +509,52 @@ def main() -> None:
                         explainability_latency_sec=cam_latency,
                     )
 
+                    # Run Longitudinal Scan Comparison
+                    from longitudinal_analysis.infrastructure.services import OpenCVLongitudinalAnalyzer
+                    from longitudinal_analysis.application.use_cases import CompareScansUseCase
+
+                    comparison_result = None
+                    try:
+                        long_analyzer = OpenCVLongitudinalAnalyzer()
+                        compare_use_case = CompareScansUseCase(analyzer=long_analyzer, db_path=DEFAULT_DB_PATH)
+                        
+                        curr_payload_dict = {
+                            "patient": {
+                                "patient_id": patient_id,
+                                "scan_date": scan_date_str
+                            },
+                            "classification": {
+                                "predicted_class": classification_result.class_name,
+                                "confidence_score": classification_result.confidence_score
+                            },
+                            "segmentation": {
+                                "tumor_area_mm2": segmentation_metrics.tumor_area_mm2 if segmentation_metrics else 0.0,
+                                "tumor_percentage_brain": segmentation_metrics.tumor_percentage_brain if segmentation_metrics else 0.0,
+                                "shape_statistics": {
+                                    "perimeter_mm": segmentation_metrics.stats.perimeter_mm if (segmentation_metrics and segmentation_metrics.stats) else None,
+                                    "solidity": segmentation_metrics.stats.solidity if (segmentation_metrics and segmentation_metrics.stats) else None,
+                                    "circularity": segmentation_metrics.stats.circularity if (segmentation_metrics and segmentation_metrics.stats) else None,
+                                    "major_axis_mm": segmentation_metrics.stats.major_axis_mm if (segmentation_metrics and segmentation_metrics.stats) else None,
+                                    "minor_axis_mm": segmentation_metrics.stats.minor_axis_mm if (segmentation_metrics and segmentation_metrics.stats) else None,
+                                    "bbox_w_mm": segmentation_metrics.stats.bbox_w_mm if (segmentation_metrics and segmentation_metrics.stats) else None,
+                                    "bbox_h_mm": segmentation_metrics.stats.bbox_h_mm if (segmentation_metrics and segmentation_metrics.stats) else None,
+                                }
+                            },
+                            "files": {
+                                "original_image": temp_image_path,
+                                "segmentation_mask": mask_path
+                            }
+                        }
+                        
+                        comp_canvas_path = os.path.join(OUTPUT_REPORTS_DIR, f"{patient_id}_longitudinal_comparison.png")
+                        comparison_result = compare_use_case.execute(
+                            patient_id=patient_id,
+                            current_report_data=curr_payload_dict,
+                            output_image_path=comp_canvas_path
+                        )
+                    except Exception as comp_err:
+                        logging.getLogger("streamlit_app").error(f"Longitudinal comparison calculation failed: {comp_err}")
+
                     clinical_report = ClinicalReport(
                         patient_info=patient_info,
                         processing_summary=processing_summary,
@@ -470,6 +565,11 @@ def main() -> None:
                         heatmap_image_path=heatmap_path,
                         overlay_image_path=overlay_path,
                         segmentation_mask_path=mask_path,
+                        comparison_image_path=comparison_path,
+                        xai_method=xai_param,
+                        xai_explanation_text=xai_result.explanation_text,
+                        xai_overlap_percentage=xai_result.overlap_percentage,
+                        longitudinal_comparison=comparison_result,
                     )
 
                     generator = MarkdownJSONReportGenerator()
@@ -497,6 +597,44 @@ def main() -> None:
                 with res_col3:
                     st.metric("AI Severity Category", severity_assessment.category.value.upper())
 
+                 # If confidence is calibrated, display calibration info
+                is_calibrated = getattr(classification_result, "is_calibrated", False)
+                if is_calibrated:
+                    cal_params = classification_result.calibration_parameters or {}
+                    param_str = ", ".join(f"{k}={v:.3f}" if isinstance(v, float) else f"{k}={v}" for k, v in cal_params.items())
+                    st.info(f"**Confidence Calibration Active:**\n"
+                            f"- Calibrated Confidence: **{classification_result.confidence_score:.2%}**\n"
+                            f"- Uncalibrated Confidence: **{classification_result.uncalibrated_confidence_score:.2%}**\n"
+                            f"- Calibration Method: **{classification_result.calibration_method}** ({param_str})")
+
+                # If post-processing was applied, display segmentation quality details
+                if segmentation_metrics is not None and getattr(segmentation_metrics, "post_processing_applied", False):
+                    q_score = segmentation_metrics.quality_score
+                    q_cat = segmentation_metrics.quality_category
+                    q_color = "#10b981" if q_cat == "HIGH" else "#f59e0b" if q_cat == "MEDIUM" else "#ef4444"
+                    st.markdown(f"""
+                        <div style="background-color: #0f172a; border-left: 5px solid {q_color}; padding: 15px; border-radius: 8px; margin-top: 10px; margin-bottom: 10px;">
+                            <h4 style="margin: 0; color: #f8fafc; font-size: 14px; font-weight: 700;">AI Segmentation Quality Assessment</h4>
+                            <p style="margin: 6px 0 0 0; color: #cbd5e1; font-size: 16px; font-weight: 800;">
+                                Quality Score: <span style="color: {q_color};">{q_score:.1%} ({q_cat})</span>
+                            </p>
+                            <p style="margin: 4px 0 0 0; color: #94a3b8; font-size: 12px;">
+                                Morphological filters applied: {", ".join(segmentation_metrics.post_processing_metadata.get("steps_applied", []))}
+                            </p>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+
+                # Display Explainable AI (XAI 2.0) details
+                xai_text = getattr(clinical_report, "xai_explanation_text", None)
+                if xai_text:
+                    st.markdown(f"""
+                        <div style="background-color: #0f172a; border-left: 5px solid #38bdf8; padding: 15px; border-radius: 8px; margin-top: 10px; margin-bottom: 10px;">
+                            <h4 style="margin: 0; color: #f8fafc; font-size: 14px; font-weight: 700;">AI Explanation & Diagnostic Attention Focus</h4>
+                            <p style="margin: 6px 0 0 0; color: #cbd5e1; font-size: 13px;">{xai_text}</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+
                 st.divider()
 
                 # Shaded card for severity rule and disclaimer
@@ -517,7 +655,12 @@ def main() -> None:
                         st.image(overlay_path, caption="Grad-CAM Attention Overlay", use_container_width=True)
                 with img_col3:
                     if os.path.exists(mask_path):
-                        st.image(mask_path, caption="Binarized UNeXt Segmentation Mask", use_container_width=True)
+                        st.image(mask_path, caption="Post-Processed UNeXt Segmentation Mask", use_container_width=True)
+
+                # Show Before/After Post-Processing Comparison Image
+                if os.path.exists(comparison_path):
+                    with st.expander("🔬 View Detailed Segmentation Post-Processing Comparison (Before vs. After)", expanded=True):
+                        st.image(comparison_path, caption="Comparison Canvas: Original MRI | Initial UNeXt Mask (Red) | Post-Processed Mask (Green)", use_container_width=True)
 
                 st.divider()
 
@@ -529,6 +672,24 @@ def main() -> None:
                     st.metric("Tumor occupancy % (Brain)", f"{segmentation_metrics.tumor_percentage_brain:.4f}%")
                 with morph_col3:
                     st.metric("Tumor Pixel count", f"{segmentation_metrics.pixel_count:,} px")
+
+                # Detailed shape & bounding box metrics if stats engine succeeded
+                if getattr(segmentation_metrics, "stats", None) is not None:
+                    with st.expander("📊 Detailed Shape & Bounding Box Measurements", expanded=True):
+                        s = segmentation_metrics.stats
+                        scol1, scol2, scol3 = st.columns(3)
+                        with scol1:
+                            st.metric("Perimeter", f"{s.perimeter_mm:.2f} mm", help=f"{s.perimeter_pixels:.1f} pixels")
+                            st.metric("Bounding Box Width", f"{s.bbox_w_mm:.2f} mm", help=f"{s.bbox_w_px} pixels")
+                            st.metric("Solidity Index", f"{s.solidity:.4f}", help="Ratio of area to convex hull area")
+                        with scol2:
+                            st.metric("Major Axis Length", f"{s.major_axis_mm:.2f} mm")
+                            st.metric("Bounding Box Height", f"{s.bbox_h_mm:.2f} mm", help=f"{s.bbox_h_px} pixels")
+                            st.metric("Circularity Index", f"{s.circularity:.4f}")
+                        with scol3:
+                            st.metric("Minor Axis Length", f"{s.minor_axis_mm:.2f} mm")
+                            st.metric("Eccentricity", f"{s.eccentricity:.4f}")
+                            st.metric("Orientation Angle", f"{s.orientation_deg:.1f}°")
 
                 st.divider()
 

@@ -10,6 +10,8 @@ class PatientIntake(BaseModel):
     gender: str = Field("Female", description="Gender (e.g., Female, Male, Other)")
     ref_physician: str = Field("Dr. Unknown", description="Referring Physician Name")
     pixel_spacing_mm: float = Field(1.0, gt=0.0, description="MRI spatial scale pixel spacing in mm")
+    xai_method: Optional[str] = Field("gradcam", description="Explainability method: gradcam, gradcam_plus_plus, or eigencam")
+
 
 
 class SearchQuery(BaseModel):

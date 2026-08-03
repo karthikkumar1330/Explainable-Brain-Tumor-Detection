@@ -3,6 +3,7 @@ from typing import Optional
 from tumor_analysis.domain.entities import TumorAnalysisResult
 from severity_assessment.domain.entities import SeverityAssessment
 from classification.domain.entities import PredictionResult
+from longitudinal_analysis.domain.entities import LongitudinalComparison
 
 
 @dataclass(frozen=True)
@@ -40,3 +41,11 @@ class ClinicalReport:
     heatmap_image_path: Optional[str]
     overlay_image_path: Optional[str]
     segmentation_mask_path: Optional[str]
+    comparison_image_path: Optional[str] = None
+    xai_method: Optional[str] = None
+    xai_explanation_text: Optional[str] = None
+    xai_overlap_percentage: Optional[float] = None
+    longitudinal_comparison: Optional[LongitudinalComparison] = None
+
+
+

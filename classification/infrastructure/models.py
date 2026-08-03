@@ -7,7 +7,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import torchvision.models as models
 from classification.domain.entities import BrainTumorClass
-from classification.domain.interfaces import IModelAdapter, IMetricsCalculator
+from classification.domain.interfaces import IModelAdapter, IMetricsCalculator, IConfidenceCalibrator
+from classification.infrastructure.calibration import TemperatureScalingCalibrator
 
 
 class EfficientNetB0Model(nn.Module):
@@ -56,6 +57,28 @@ class EfficientNetB0Model(nn.Module):
         return self.backbone(x)
 
 
+class PredictOutput(tuple):
+    """A tuple subclass that behaves exactly like (predicted_idx, confidence, probs_dict)
+    but exposes extra properties for calibration info.
+    """
+    def __new__(
+        cls,
+        predicted_idx: int,
+        confidence: float,
+        probs_dict: Dict[str, float],
+        uncalibrated_confidence: Optional[float] = None,
+        uncalibrated_probabilities: Optional[Dict[str, float]] = None,
+        calibration_info: Optional[Dict[str, Any]] = None
+    ) -> "PredictOutput":
+        instance = super(PredictOutput, cls).__new__(
+            cls, (predicted_idx, confidence, probs_dict)
+        )
+        instance.uncalibrated_confidence = uncalibrated_confidence
+        instance.uncalibrated_probabilities = uncalibrated_probabilities
+        instance.calibration_info = calibration_info
+        return instance
+
+
 class PyTorchModelAdapter(IModelAdapter):
     """Adapter wrapping a PyTorch model and executing operations under the IModelAdapter interface."""
 
@@ -65,6 +88,7 @@ class PyTorchModelAdapter(IModelAdapter):
         optimizer: Optional[optim.Optimizer] = None,
         criterion: Optional[nn.Module] = None,
         metrics_calculator: Optional[IMetricsCalculator] = None,
+        calibrator: Optional[IConfidenceCalibrator] = None,
         device: str = "cpu",
     ) -> None:
         """Initializes the adapter.
@@ -74,12 +98,14 @@ class PyTorchModelAdapter(IModelAdapter):
             optimizer: Optional PyTorch optimizer (required for training).
             criterion: Optional PyTorch loss function (required for training/evaluation).
             metrics_calculator: Optional calculator for computing evaluation metrics.
+            calibrator: Optional calibrator for confidence scores.
             device: Device to run computations on ('cpu' or 'cuda').
         """
         self.model = model.to(device)
         self.optimizer = optimizer
         self.criterion = criterion
         self.metrics_calculator = metrics_calculator
+        self.calibrator = calibrator
         self.device = torch.device(device)
 
     def train_epoch(self, dataloader: DataLoader) -> float:
@@ -139,6 +165,11 @@ class PyTorchModelAdapter(IModelAdapter):
 
         return avg_loss, metrics
 
+    def get_calibration_info(self) -> Optional[Dict[str, Any]]:
+        if self.calibrator is not None:
+            return self.calibrator.get_metadata()
+        return None
+
     def predict(
         self, image_tensor: torch.Tensor
     ) -> Tuple[int, float, Dict[str, float]]:
@@ -161,8 +192,15 @@ class PyTorchModelAdapter(IModelAdapter):
             else:
                 outputs = self.model(image_tensor)
             
-            # Apply softmax to get probabilities
-            probs = torch.softmax(outputs, dim=1).squeeze(0).cpu().numpy()
+            # Apply softmax to get uncalibrated probabilities
+            uncal_probs = torch.softmax(outputs, dim=1).squeeze(0).float().cpu().numpy()
+
+            if self.calibrator is not None:
+                # Calibrated probabilities
+                cal_probs = self.calibrator.calibrate_tensor(outputs).squeeze(0).float().cpu().numpy()
+                probs = cal_probs
+            else:
+                probs = uncal_probs
 
         predicted_idx = int(np.argmax(probs))
         confidence = float(probs[predicted_idx])
@@ -173,7 +211,22 @@ class PyTorchModelAdapter(IModelAdapter):
             class_name = BrainTumorClass.get_name_by_value(cls.value)
             probs_dict[class_name] = float(probs[cls.value])
 
-        return predicted_idx, confidence, probs_dict
+        uncal_probs_dict = {}
+        for cls in BrainTumorClass:
+            class_name = BrainTumorClass.get_name_by_value(cls.value)
+            uncal_probs_dict[class_name] = float(uncal_probs[cls.value])
+
+        uncal_confidence = float(uncal_probs[predicted_idx])
+
+        # Return PredictOutput subclass of tuple for backward compatibility
+        return PredictOutput(
+            predicted_idx=predicted_idx,
+            confidence=confidence,
+            probs_dict=probs_dict,
+            uncalibrated_confidence=uncal_confidence,
+            uncalibrated_probabilities=uncal_probs_dict,
+            calibration_info=self.get_calibration_info()
+        )
 
     def save(self, filepath: str) -> None:
         # Create directory if it doesn't exist
@@ -188,3 +241,16 @@ class PyTorchModelAdapter(IModelAdapter):
         self.model.load_state_dict(
             torch.load(filepath, map_location=self.device)
         )
+
+        # Auto-detect calibration file next to checkpoint
+        base_no_ext, _ = os.path.splitext(filepath)
+        cal_path = f"{base_no_ext}_calibration.json"
+        if os.path.exists(cal_path):
+            try:
+                calibrator = TemperatureScalingCalibrator()
+                calibrator.load(cal_path)
+                self.calibrator = calibrator
+            except Exception as e:
+                # Log warning but do not crash load function
+                print(f"Warning: Failed to load calibration config from {cal_path}: {e}")
+

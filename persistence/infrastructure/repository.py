@@ -269,7 +269,7 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             p.name, p.age, p.gender,
             s.scan_date, s.ref_physician, s.image_path,
             pr.predicted_class, pr.confidence_score, pr.tumor_area_mm2, pr.rule_based_severity, pr.created_at,
-            cr.pdf_path
+            cr.pdf_path, cr.json_path, cr.mask_path, cr.overlay_path
         FROM patients p
         JOIN mri_scans s ON p.patient_id = s.patient_id
         JOIN predictions pr ON s.id = pr.scan_id

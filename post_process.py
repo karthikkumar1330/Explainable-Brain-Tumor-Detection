@@ -39,7 +39,9 @@ def main():
         print('%s: %s' % (key, str(config[key])))
     print('-'*20)
 
-    cudnn.benchmark = True
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if torch.cuda.is_available():
+        cudnn.benchmark = True
 
     # create model
     print("=> creating model %s" % config['arch'])
@@ -47,7 +49,7 @@ def main():
                                            config['input_channels'],
                                            config['deep_supervision'])
 
-    model = model.cuda()
+    model = model.to(device)
 
     # Data loading code
     img_ids = glob(os.path.join('inputs', config['dataset'], 'images', '*' + config['img_ext']))
@@ -56,7 +58,7 @@ def main():
     _, val_img_ids = train_test_split(img_ids, test_size=0.2, random_state=41)
 
     model.load_state_dict(torch.load('models/%s/model.pth' %
-                                     config['name']))
+                                     config['name'], map_location=device))
     model.eval()
 
     val_transform = Compose([
@@ -94,11 +96,11 @@ def main():
     print("=> running inference and latency profiling")
     with torch.no_grad():
         for input, target, meta in tqdm(val_loader, total=len(val_loader)):
-            input = input.cuda()
-            model = model.cuda()
+            input = input.to(device)
+            model = model.to(device)
             
-            # Benchmark GPU inference speed on the first 5 batches
-            if count < 5:
+            # Benchmark GPU inference speed on the first 5 batches if CUDA is available
+            if count < 5 and torch.cuda.is_available():
                 start = time.time()
                 if config['deep_supervision']:
                     output = model(input)[-1]
@@ -121,6 +123,8 @@ def main():
                 _ = model_cpu(input_cpu)
                 stop = time.time()
                 cput.update(stop - start, input.size(0))
+                # Put model back to target device
+                model = model.to(device)
                 count = count + 1
 
             output = torch.sigmoid(output).cpu().numpy()
@@ -171,13 +175,13 @@ def main():
             # Binarize
             bin_mask = (pred_c > best_threshold).astype(np.uint8)
 
-            # Filter small false positive blobs
-            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(bin_mask, connectivity=8)
-            filtered_mask = np.zeros_like(bin_mask)
-            for label in range(1, num_labels):
-                area = stats[label, cv2.CC_STAT_AREA]
-                if area >= min_area:
-                    filtered_mask[labels == label] = 1
+            # Run modular post-processing pipeline
+            from segmentation_postprocessing.infrastructure.processors import MedicalImagePostProcessor
+            from segmentation_postprocessing.application.use_cases import PostProcessSegmentationUseCase
+
+            post_proc = MedicalImagePostProcessor()
+            post_proc_use_case = PostProcessSegmentationUseCase(post_processor=post_proc)
+            filtered_mask, post_proc_meta = post_proc_use_case.execute(bin_mask, pred_c)
 
             # Compute final metrics
             intersection = np.logical_and(filtered_mask, gt_c).sum()

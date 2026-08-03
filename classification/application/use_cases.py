@@ -151,15 +151,27 @@ class PredictUseCase:
         Returns:
             A PredictionResult entity.
         """
-        label, confidence, probs = self.model_adapter.predict(image_tensor)
+        result_tuple = self.model_adapter.predict(image_tensor)
+        label, confidence, probs = result_tuple
         class_name = BrainTumorClass.get_name_by_value(label)
+
+        uncalibrated_confidence = getattr(result_tuple, "uncalibrated_confidence", None)
+        uncalibrated_probabilities = getattr(result_tuple, "uncalibrated_probabilities", None)
+        cal_info = getattr(result_tuple, "calibration_info", None)
+        is_calibrated = cal_info is not None
 
         return PredictionResult(
             label=label,
             class_name=class_name,
             confidence_score=confidence,
             probabilities=probs,
+            uncalibrated_confidence_score=uncalibrated_confidence,
+            uncalibrated_probabilities=uncalibrated_probabilities,
+            calibration_method=cal_info.get("method") if is_calibrated else None,
+            calibration_parameters=cal_info if is_calibrated else None,
+            is_calibrated=is_calibrated,
         )
+
 
 
 class ExplainPredictionUseCase:

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 import numpy as np
 
 
@@ -84,6 +84,15 @@ class IModelAdapter(ABC):
         """
         pass
 
+    def get_calibration_info(self) -> Optional[Dict[str, Any]]:
+        """Returns calibration details if a calibrator is loaded, otherwise None.
+
+        Returns:
+            A dictionary containing calibration details or None.
+        """
+        return None
+
+
 
 class IExplainabilityService(ABC):
     """Interface for generating model explainability maps (e.g., Grad-CAM)."""
@@ -102,4 +111,48 @@ class IExplainabilityService(ABC):
             A 2D numpy array representing the normalized heatmap in range [0, 1].
         """
         pass
+
+
+class IConfidenceCalibrator(ABC):
+    """Interface for confidence calibration of classification models."""
+
+    @abstractmethod
+    def calibrate(self, logits: np.ndarray) -> np.ndarray:
+        """Calibrates logits into probabilities.
+
+        Args:
+            logits: A numpy array of raw logits of shape (N, num_classes) or (num_classes,).
+
+        Returns:
+            A numpy array of calibrated probabilities of the same shape.
+        """
+        pass
+
+    @abstractmethod
+    def calibrate_tensor(self, logits: Any) -> Any:
+        """Calibrates PyTorch logits into probabilities.
+
+        Args:
+            logits: A PyTorch tensor of raw logits of shape (B, num_classes) or (num_classes,).
+
+        Returns:
+            A PyTorch tensor of calibrated probabilities of the same shape.
+        """
+        pass
+
+    @abstractmethod
+    def get_metadata(self) -> Dict[str, Any]:
+        """Exposes calibrator metadata (e.g., calibration method, temperature)."""
+        pass
+
+    @abstractmethod
+    def save(self, filepath: str) -> None:
+        """Saves calibration parameters/config."""
+        pass
+
+    @abstractmethod
+    def load(self, filepath: str) -> None:
+        """Loads calibration parameters/config."""
+        pass
+
 

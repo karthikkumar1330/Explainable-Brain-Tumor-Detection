@@ -50,13 +50,17 @@ def verify_pipeline():
     # 2. Verify Grad-CAM Compatibility
     try:
         if report["classification"]:
-            gradcam_service = GradCAMService(model=model_cls, target_layer=model_cls.backbone.features[-1])
-            explain_use_case = ExplainPredictionUseCase(gradcam_service=gradcam_service)
+            gradcam_service = GradCAMService(model=model_cls, target_layer=model_cls.backbone.features[-1], device=device)
+            import logging
+            explain_use_case = ExplainPredictionUseCase(
+                predict_use_case=predict_use_case,
+                explain_service=gradcam_service,
+                logger=logging.getLogger("compatibility_test")
+            )
             
-            mock_img = np.zeros((224, 224, 3), dtype=np.uint8)
             mock_tensor = torch.zeros(3, 224, 224)
-            heatmap, pred_idx, conf = explain_use_case.execute(mock_tensor, mock_img)
-            report["gradcam"] = (heatmap is not None and pred_idx is not None)
+            result, heatmap = explain_use_case.execute(mock_tensor)
+            report["gradcam"] = (heatmap is not None and result is not None)
     except Exception as e:
         report["errors"].append(f"Grad-CAM validation failed: {e}")
 

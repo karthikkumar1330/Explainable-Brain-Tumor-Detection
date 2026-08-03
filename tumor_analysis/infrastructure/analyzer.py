@@ -2,7 +2,8 @@ import numpy as np
 import cv2
 from typing import Optional, Dict, Any
 from tumor_analysis.domain.entities import TumorAnalysisResult, SeverityLevel
-from tumor_analysis.domain.interfaces import ITumorAnalyzer
+from tumor_analysis.domain.interfaces import ITumorAnalyzer, ITumorStatsEngine
+from tumor_analysis.infrastructure.stats_engine import OpenCVTumorStatsEngine
 
 
 class OpenCVTumorAnalyzer(ITumorAnalyzer):
@@ -13,17 +14,20 @@ class OpenCVTumorAnalyzer(ITumorAnalyzer):
         low_thresh: float = 1.0,
         med_thresh: float = 5.0,
         high_thresh: float = 15.0,
+        stats_engine: Optional[ITumorStatsEngine] = None,
     ) -> None:
-        """Initializes the analyzer with threshold percentages for severity classification.
+        """Initializes the analyzer with threshold percentages and stats engine.
 
         Args:
             low_thresh: Percentage of brain parenchyma below which is LOW.
             med_thresh: Percentage of brain parenchyma below which is MEDIUM.
             high_thresh: Percentage of brain parenchyma below which is HIGH, above is CRITICAL.
+            stats_engine: Engine to compute quantitative shape descriptors.
         """
         self.low_thresh = low_thresh
         self.med_thresh = med_thresh
         self.high_thresh = high_thresh
+        self.stats_engine = stats_engine if stats_engine is not None else OpenCVTumorStatsEngine()
 
     def analyze(
         self,
@@ -93,6 +97,11 @@ class OpenCVTumorAnalyzer(ITumorAnalyzer):
         else:
             severity = SeverityLevel.CRITICAL
 
+        # 6. Extract detailed statistics if tumor exists
+        stats = None
+        if tumor_pixel_count > 0:
+            stats = self.stats_engine.compute_stats(binary_mask, pixel_spacing_mm)
+
         metadata: Dict[str, Any] = {
             "pixel_spacing_mm": pixel_spacing_mm,
             "pixel_area_mm2": pixel_area_mm2,
@@ -106,5 +115,7 @@ class OpenCVTumorAnalyzer(ITumorAnalyzer):
             tumor_percentage_brain=tumor_percentage_brain,
             estimated_brain_pixel_count=estimated_brain_pixel_count,
             severity_level=severity,
-            metadata=metadata
+            metadata=metadata,
+            stats=stats,
         )
+

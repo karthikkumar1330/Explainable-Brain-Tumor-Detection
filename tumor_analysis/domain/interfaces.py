@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import numpy as np
 from typing import Optional
-from tumor_analysis.domain.entities import TumorAnalysisResult
+from tumor_analysis.domain.entities import TumorAnalysisResult, TumorStats
 
 
 class ITumorAnalyzer(ABC):
@@ -25,3 +25,23 @@ class ITumorAnalyzer(ABC):
             A TumorAnalysisResult object.
         """
         pass
+
+
+class ITumorStatsEngine(ABC):
+    """Interface for extracting detailed shape and morphometric stats from a tumor mask."""
+
+    @abstractmethod
+    def compute_stats(
+        self, mask: np.ndarray, pixel_spacing_mm: float = 1.0
+    ) -> Optional[TumorStats]:
+        """Calculates quantitative shape and location metrics from a binary mask.
+
+        Args:
+            mask: Binary mask of shape (H, W) with active pixels.
+            pixel_spacing_mm: Physical size of one pixel side in millimeters.
+
+        Returns:
+            A TumorStats object if a tumor is present, else None.
+        """
+        pass
+

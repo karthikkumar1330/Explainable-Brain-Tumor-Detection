@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict
+from typing import Dict, Optional, Any
 
 
 class BrainTumorClass(Enum):
@@ -35,3 +35,10 @@ class PredictionResult:
     class_name: str
     confidence_score: float
     probabilities: Dict[str, float]
+
+    # Confidence Calibration metadata fields
+    uncalibrated_confidence_score: Optional[float] = None
+    uncalibrated_probabilities: Optional[Dict[str, float]] = None
+    calibration_method: Optional[str] = None
+    calibration_parameters: Optional[Dict[str, Any]] = None
+    is_calibrated: bool = False
