@@ -332,18 +332,60 @@ def main() -> None:
                 with st.spinner("Processing MRI slice (Classification, Explainability hooks, Segmentation, Morphology...)..."):
                     t_start = time.time()
                     
-                    # Convert file bytes to opencv BGR image
-                    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-                    original_image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+                    # Read raw file bytes
+                    uploaded_file.seek(0)
+                    raw_bytes = uploaded_file.read()
                     
+                    # Write image to temporary directory for use cases
+                    os.makedirs("outputs/temp_uploads", exist_ok=True)
+                    temp_image_path = os.path.join("outputs", "temp_uploads", f"{patient_id}_temp_input.png")
+                    with open(temp_image_path, "wb") as f:
+                        f.write(raw_bytes)
+                        
+                    # Run MRI Input Validation (B6.1 Quality Assurance)
+                    from input_validation.infrastructure.validators import OpenCVMriValidator
+                    from input_validation.application.use_cases import ValidateMriUploadUseCase
+                    
+                    validator = OpenCVMriValidator()
+                    val_use_case = ValidateMriUploadUseCase(validator=validator, db_path=DEFAULT_DB_PATH)
+                    scorecard = val_use_case.execute(filepath=temp_image_path, file_bytes=raw_bytes, filename=uploaded_file.name)
+                    
+                    # Display scorecard indicators in Streamlit
+                    st.markdown("### MRI Intake Quality Scorecard")
+                    scol1, scol2, scol3 = st.columns(3)
+                    with scol1:
+                        st.markdown("**File Verifications**")
+                        st.write("✅ Format Valid" if scorecard.file_validation.extension_valid else "❌ Format Invalid")
+                        st.write("✅ Size Limit Pass" if scorecard.file_validation.size_valid else "❌ File Too Large")
+                        st.write("✅ Magic Number Match" if scorecard.file_validation.magic_number_valid else "❌ Signature Mismatch")
+                    with scol2:
+                        st.markdown("**Anatomical Structure**")
+                        st.write("✅ Resolution range" if scorecard.image_validation.dimensions_valid else "❌ Invalid Resolution")
+                        st.write(f"✅ Brain MRI Detector" if scorecard.brain_detection.is_brain_mri else f"❌ Non-Brain Scan ({scorecard.brain_detection.confidence_score:.1f}%)")
+                        st.write("✅ Cache Duplicate Check" if not scorecard.duplicate_check.is_duplicate else "❌ Duplicate Detected")
+                    with scol3:
+                        st.markdown("**Image Quality QA**")
+                        qa = scorecard.quality_assessment
+                        st.write(f"✅ Contrast (RMS: {qa.contrast_score:.1f})" if qa.contrast_valid else f"❌ Low Contrast ({qa.contrast_score:.1f})")
+                        st.write(f"✅ Sharpness (Var: {qa.blur_score:.1f})" if qa.blur_valid else f"❌ Blur / Motion ({qa.blur_score:.1f})")
+                        st.write(f"✅ SNR (Est: {qa.noise_score:.1f})" if qa.noise_valid else f"❌ High Noise SNR ({qa.noise_score:.1f})")
+                        
+                    if not scorecard.is_valid:
+                        st.error("### MRI Scan Upload Rejected")
+                        for err in scorecard.errors:
+                            st.markdown(f"- {err}")
+                        
+                        # Clean up temp file
+                        if os.path.exists(temp_image_path):
+                            os.remove(temp_image_path)
+                        return
+
+                    # Re-read original BGR image for OpenCV pipelines
+                    file_bytes_arr = np.frombuffer(raw_bytes, dtype=np.uint8)
+                    original_image = cv2.imdecode(file_bytes_arr, cv2.IMREAD_COLOR)
                     if original_image is None:
                         st.error("Failed to read the uploaded MRI file. Please upload a valid image.")
                         return
-                    
-                    # Write image to a temporary file
-                    os.makedirs("outputs/temp_uploads", exist_ok=True)
-                    temp_image_path = os.path.join("outputs", "temp_uploads", f"{patient_id}_temp_input.png")
-                    cv2.imwrite(temp_image_path, original_image)
                     
                     # 1. Run Classification (EfficientNet-B0)
                     t_cls = time.time()
@@ -580,6 +622,23 @@ def main() -> None:
                     db_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)
                     db_repo.initialize_db()
                     db_report_id = db_repo.save_report(clinical_report, output_dir=OUTPUT_REPORTS_DIR)
+
+                    # Link validation record to prediction ID in DB
+                    try:
+                        import json
+                        conn = db_repo._get_connection()
+                        row = conn.execute("SELECT prediction_id FROM clinical_reports WHERE id = ?", (db_report_id,)).fetchone()
+                        if row:
+                            pred_id = row["prediction_id"]
+                            db_repo.save_validation_scorecard(
+                                file_hash=scorecard.duplicate_check.duplicate_hash,
+                                p_hash=validator.compute_perceptual_hash(raw_bytes),
+                                is_valid=scorecard.is_valid,
+                                scorecard_json=json.dumps(scorecard.to_dict()),
+                                prediction_id=pred_id
+                            )
+                    except Exception as db_link_err:
+                        logging.getLogger("streamlit_app").error(f"Failed to link validation scorecard: {db_link_err}")
 
                     # Cleanup temp input
                     if os.path.exists(temp_image_path):

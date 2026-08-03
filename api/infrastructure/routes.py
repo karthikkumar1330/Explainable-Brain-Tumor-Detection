@@ -114,22 +114,49 @@ router = APIRouter()
 
 @router.post("/upload")
 def upload_mri_file(file: UploadFile = File(...)):
-    """API Endpoint: Receives a raw brain MRI image slice upload.
-
-    Returns:
-        Local path where the uploaded file is temporarily cached.
-    """
+    """API Endpoint: Receives a raw brain MRI image slice upload and validates it."""
     os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
     temp_filename = f"upload_{int(time.time())}_{file.filename}"
     temp_filepath = os.path.join(TEMP_UPLOAD_DIR, temp_filename)
     
     try:
+        file_bytes = file.file.read()
         with open(temp_filepath, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-        return {"filename": temp_filename, "filepath": temp_filepath}
+            f.write(file_bytes)
+        
+        # Run MRI Input Validation
+        from input_validation.infrastructure.validators import OpenCVMriValidator
+        from input_validation.application.use_cases import ValidateMriUploadUseCase
+        
+        validator = OpenCVMriValidator()
+        use_case = ValidateMriUploadUseCase(validator=validator, db_path=DEFAULT_DB_PATH)
+        scorecard = use_case.execute(filepath=temp_filepath, file_bytes=file_bytes, filename=file.filename)
+        
+        if not scorecard.is_valid:
+            if os.path.exists(temp_filepath):
+                os.remove(temp_filepath)
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "MRI Input Validation Failed",
+                    "errors": scorecard.errors,
+                    "scorecard": scorecard.to_dict()
+                }
+            )
+            
+        return {
+            "filename": temp_filename,
+            "filepath": temp_filepath,
+            "scorecard": scorecard.to_dict()
+        }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         logger.error(f"Error handling file upload: {e}")
+        if os.path.exists(temp_filepath):
+            os.remove(temp_filepath)
         raise HTTPException(status_code=500, detail=f"File upload processing failed: {e}")
+
 
 
 @router.post("/classification")
@@ -289,12 +316,33 @@ def run_explainability(filepath: str, target_class: int = 1, method: str = "grad
 
 @router.post("/report")
 def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
-    """API Endpoint: Runs the complete end-to-end MRI diagnostics report pipeline."""
+    """API Endpoint: Runs the complete end-to-end MRI diagnostics report pipeline with validation."""
     if not os.path.exists(filepath):
         raise HTTPException(status_code=400, detail="Target upload MRI file path not found.")
     
     t_start = time.time()
     try:
+        # Run MRI Input Validation
+        with open(filepath, "rb") as f:
+            file_bytes = f.read()
+            
+        from input_validation.infrastructure.validators import OpenCVMriValidator
+        from input_validation.application.use_cases import ValidateMriUploadUseCase
+        
+        validator = OpenCVMriValidator()
+        use_case = ValidateMriUploadUseCase(validator=validator, db_path=DEFAULT_DB_PATH)
+        scorecard = use_case.execute(filepath=filepath, file_bytes=file_bytes, filename=os.path.basename(filepath))
+        
+        if not scorecard.is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "MRI Input Validation Failed",
+                    "errors": scorecard.errors,
+                    "scorecard": scorecard.to_dict()
+                }
+            )
+
         img_bgr = cv2.imread(filepath, cv2.IMREAD_COLOR)
         if img_bgr is None:
             raise HTTPException(status_code=400, detail="Failed to read uploaded image.")
@@ -483,6 +531,23 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
         db_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)
         db_repo.initialize_db()
         report_db_id = db_repo.save_report(clinical_report, output_dir=OUTPUT_REPORTS_DIR)
+
+        # Link validation record to prediction ID in DB
+        try:
+            import json
+            conn = db_repo._get_connection()
+            row = conn.execute("SELECT prediction_id FROM clinical_reports WHERE id = ?", (report_db_id,)).fetchone()
+            if row:
+                pred_id = row["prediction_id"]
+                db_repo.save_validation_scorecard(
+                    file_hash=scorecard.duplicate_check.duplicate_hash,
+                    p_hash=validator.compute_perceptual_hash(file_bytes),
+                    is_valid=scorecard.is_valid,
+                    scorecard_json=json.dumps(scorecard.to_dict()),
+                    prediction_id=pred_id
+                )
+        except Exception as db_link_err:
+            logger.error(f"Failed to link validation scorecard: {db_link_err}")
 
         return {
             "report_id": report_db_id,

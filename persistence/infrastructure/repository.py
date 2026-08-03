@@ -103,12 +103,26 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         );
         """
 
+        create_validation_sql = """
+        CREATE TABLE IF NOT EXISTS mri_scan_validation (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prediction_id INTEGER,
+            file_hash TEXT UNIQUE NOT NULL,
+            p_hash TEXT NOT NULL,
+            is_valid INTEGER NOT NULL,
+            scorecard_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE SET NULL
+        );
+        """
+
         # Analytics Indices
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_patients_age_gender ON patients(age, gender);",
             "CREATE INDEX IF NOT EXISTS idx_mri_scans_date ON mri_scans(scan_date);",
             "CREATE INDEX IF NOT EXISTS idx_predictions_class_severity ON predictions(predicted_class, rule_based_severity);",
-            "CREATE INDEX IF NOT EXISTS idx_predictions_area ON predictions(tumor_area_mm2);"
+            "CREATE INDEX IF NOT EXISTS idx_predictions_area ON predictions(tumor_area_mm2);",
+            "CREATE INDEX IF NOT EXISTS idx_mri_scan_validation_hash ON mri_scan_validation(file_hash, p_hash);"
         ]
 
         conn = self._get_connection()
@@ -118,6 +132,7 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 conn.execute(create_scans_sql)
                 conn.execute(create_predictions_sql)
                 conn.execute(create_reports_sql)
+                conn.execute(create_validation_sql)
                 for idx_sql in indices:
                     conn.execute(idx_sql)
             self.logger.info("Database schema and analytics indices verified successfully.")
@@ -342,6 +357,123 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             }
         except Exception as e:
             self.logger.error(f"Failed to fetch database analytics: {e}")
+            raise e
+        finally:
+            conn.close()
+
+    def save_validation_scorecard(
+        self,
+        file_hash: str,
+        p_hash: str,
+        is_valid: bool,
+        scorecard_json: str,
+        prediction_id: Optional[int] = None
+    ) -> None:
+        """Persists validation scorecard findings and perceptual hash references."""
+        conn = self._get_connection()
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        sql = """
+        INSERT INTO mri_scan_validation (
+            prediction_id, file_hash, p_hash, is_valid, scorecard_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(file_hash) DO UPDATE SET
+            prediction_id=coalesce(excluded.prediction_id, prediction_id),
+            is_valid=excluded.is_valid,
+            scorecard_json=excluded.scorecard_json;
+        """
+        try:
+            with conn:
+                conn.execute(sql, (
+                    prediction_id,
+                    file_hash,
+                    p_hash,
+                    1 if is_valid else 0,
+                    scorecard_json,
+                    now_str
+                ))
+            self.logger.info("MRI scan validation scorecard saved successfully.")
+        except Exception as e:
+            self.logger.error(f"Failed to save validation scorecard: {e}")
+            raise e
+        finally:
+            conn.close()
+
+    def find_duplicate_scan(
+        self,
+        file_hash: str,
+        p_hash: str
+    ) -> Optional[dict]:
+        """Performs cryptographic and perceptual hashing lookup to identify duplicates."""
+        conn = self._get_connection()
+        
+        # 1. First, check direct cryptographic SHA256 match
+        crypto_query = """
+        SELECT 
+            v.file_hash,
+            p.patient_id,
+            s.scan_date
+        FROM mri_scan_validation v
+        JOIN predictions pr ON v.prediction_id = pr.id
+        JOIN mri_scans s ON pr.scan_id = s.id
+        JOIN patients p ON s.patient_id = p.patient_id
+        WHERE v.file_hash = ?;
+        """
+        try:
+            cursor = conn.cursor()
+            cursor.execute(crypto_query, (file_hash,))
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "type": "cryptographic",
+                    "hash": row["file_hash"],
+                    "patient_id": row["patient_id"],
+                    "scan_date": row["scan_date"]
+                }
+            
+            # 2. Check perceptual hash matching with hamming distance threshold <= 2 bits
+            perceptual_query = """
+            SELECT 
+                v.file_hash,
+                v.p_hash,
+                p.patient_id,
+                s.scan_date
+            FROM mri_scan_validation v
+            JOIN predictions pr ON v.prediction_id = pr.id
+            JOIN mri_scans s ON pr.scan_id = s.id
+            JOIN patients p ON s.patient_id = p.patient_id
+            WHERE v.is_valid = 1;
+            """
+            cursor.execute(perceptual_query)
+            rows = cursor.fetchall()
+            
+            # Helper to calculate hamming distance between two hex-string hashes
+            def hamming_distance(h1: str, h2: str) -> int:
+                if len(h1) != len(h2):
+                    return 64  # mismatch length, maximum distance
+                try:
+                    bin1 = bin(int(h1, 16))[2:].zfill(64)
+                    bin2 = bin(int(h2, 16))[2:].zfill(64)
+                    return sum(c1 != c2 for c1, c2 in zip(bin1, bin2))
+                except ValueError:
+                    return 64
+
+            for row in rows:
+                db_phash = row["p_hash"]
+                if not db_phash or not p_hash:
+                    continue
+                dist = hamming_distance(db_phash, p_hash)
+                if dist <= 2:  # Extremely high similarity threshold
+                    return {
+                        "type": "perceptual",
+                        "hash": row["file_hash"],
+                        "patient_id": row["patient_id"],
+                        "scan_date": row["scan_date"],
+                        "hamming_distance": dist
+                    }
+            return None
+        except Exception as e:
+            self.logger.error(f"Failed to query database for duplicates: {e}")
             raise e
         finally:
             conn.close()
