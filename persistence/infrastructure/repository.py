@@ -98,6 +98,8 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             heatmap_path TEXT,
             overlay_path TEXT,
             mask_path TEXT,
+            xai_method TEXT,
+            xai_overlap_percentage REAL,
             created_at TEXT NOT NULL,
             FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE CASCADE
         );
@@ -116,13 +118,44 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         );
         """
 
+        create_audit_logs_sql = """
+        CREATE TABLE IF NOT EXISTS ai_audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prediction_id INTEGER,
+            timestamp TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            patient_id TEXT NOT NULL,
+            model_version_cls TEXT NOT NULL,
+            model_version_seg TEXT NOT NULL,
+            runtime_sec REAL NOT NULL,
+            gpu_active INTEGER NOT NULL,
+            cpu_threads INTEGER NOT NULL,
+            warnings_json TEXT NOT NULL,
+            errors_json TEXT NOT NULL,
+            report_status TEXT NOT NULL,
+            database_status TEXT NOT NULL,
+            FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE SET NULL
+        );
+        """
+
+        create_timeline_traces_sql = """
+        CREATE TABLE IF NOT EXISTS timeline_traces (
+            prediction_id INTEGER PRIMARY KEY,
+            trace_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE CASCADE
+        );
+        """
+
         # Analytics Indices
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_patients_age_gender ON patients(age, gender);",
             "CREATE INDEX IF NOT EXISTS idx_mri_scans_date ON mri_scans(scan_date);",
             "CREATE INDEX IF NOT EXISTS idx_predictions_class_severity ON predictions(predicted_class, rule_based_severity);",
             "CREATE INDEX IF NOT EXISTS idx_predictions_area ON predictions(tumor_area_mm2);",
-            "CREATE INDEX IF NOT EXISTS idx_mri_scan_validation_hash ON mri_scan_validation(file_hash, p_hash);"
+            "CREATE INDEX IF NOT EXISTS idx_mri_scan_validation_hash ON mri_scan_validation(file_hash, p_hash);",
+            "CREATE INDEX IF NOT EXISTS idx_ai_audit_logs_timestamp ON ai_audit_logs(timestamp);",
+            "CREATE INDEX IF NOT EXISTS idx_ai_audit_logs_patient ON ai_audit_logs(patient_id);"
         ]
 
         conn = self._get_connection()
@@ -133,8 +166,20 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 conn.execute(create_predictions_sql)
                 conn.execute(create_reports_sql)
                 conn.execute(create_validation_sql)
+                conn.execute(create_audit_logs_sql)
+                conn.execute(create_timeline_traces_sql)
                 for idx_sql in indices:
                     conn.execute(idx_sql)
+                
+                # Check and migrate existing clinical_reports schema
+                try:
+                    conn.execute("SELECT xai_method FROM clinical_reports LIMIT 1;")
+                except sqlite3.OperationalError:
+                    try:
+                        conn.execute("ALTER TABLE clinical_reports ADD COLUMN xai_method TEXT;")
+                        conn.execute("ALTER TABLE clinical_reports ADD COLUMN xai_overlap_percentage REAL;")
+                    except Exception as alt_err:
+                        self.logger.warning(f"Could not migrate clinical_reports schema: {alt_err}")
             self.logger.info("Database schema and analytics indices verified successfully.")
         except Exception as e:
             self.logger.error(f"Failed to initialize SQLite database: {e}")
@@ -238,8 +283,8 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 report_sql = """
                 INSERT INTO clinical_reports (
                     prediction_id, markdown_path, json_path, pdf_path,
-                    heatmap_path, overlay_path, mask_path, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                    heatmap_path, overlay_path, mask_path, xai_method, xai_overlap_percentage, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """
                 # Extract paths from report object
                 # Markdown & JSON generated outputs are generated using PatientID prefix
@@ -257,6 +302,8 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                     report.heatmap_image_path,
                     report.overlay_image_path,
                     report.segmentation_mask_path,
+                    getattr(report, "xai_method", None),
+                    getattr(report, "xai_overlap_percentage", None),
                     now_str
                 ))
                 report_id = cursor.lastrowid
@@ -475,5 +522,148 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         except Exception as e:
             self.logger.error(f"Failed to query database for duplicates: {e}")
             raise e
+        finally:
+            conn.close()
+
+    def save_audit_log(self, entry: Dict[str, Any]) -> None:
+        """Persists a telemetry audit record log in SQLite database."""
+        conn = self._get_connection()
+        sql = """
+        INSERT INTO ai_audit_logs (
+            prediction_id, timestamp, user_id, patient_id, model_version_cls,
+            model_version_seg, runtime_sec, gpu_active, cpu_threads, warnings_json,
+            errors_json, report_status, database_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """
+        try:
+            with conn:
+                conn.execute(sql, (
+                    entry.get("prediction_id"),
+                    entry["timestamp"],
+                    entry["user_id"],
+                    entry["patient_id"],
+                    entry["model_version_cls"],
+                    entry["model_version_seg"],
+                    entry["runtime_sec"],
+                    entry["gpu_active"],
+                    entry["cpu_threads"],
+                    entry["warnings_json"],
+                    entry["errors_json"],
+                    entry["report_status"],
+                    entry["database_status"]
+                ))
+            self.logger.info("AI Audit Log record saved successfully.")
+        except Exception as e:
+            self.logger.error(f"Failed to insert AI Audit Log record: {e}")
+            raise e
+        finally:
+            conn.close()
+
+    def get_health_telemetry(self) -> Dict[str, Any]:
+        """Queries SQLite database to compile historical AI health, pipeline metrics and analytics statistics."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # 1. Total predictions count
+            cursor.execute("SELECT COUNT(*) FROM predictions;")
+            total_predictions = cursor.fetchone()[0]
+            
+            # 2. Average confidence score
+            cursor.execute("SELECT AVG(confidence_score) FROM predictions;")
+            row = cursor.fetchone()
+            avg_confidence = row[0] if row[0] is not None else 0.0
+            
+            # 3. Average runtime (from audit logs)
+            cursor.execute("SELECT AVG(runtime_sec) FROM ai_audit_logs;")
+            row = cursor.fetchone()
+            avg_runtime = row[0] if row[0] is not None else 0.0
+            
+            # 4. Duplicate upload counts
+            cursor.execute("SELECT COUNT(*) FROM mri_scan_validation WHERE is_valid = 0 AND scorecard_json LIKE '%Duplicate scan detected%';")
+            duplicate_uploads = cursor.fetchone()[0]
+            
+            # 5. Database health (returns number of tables, size estimation)
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = [r["name"] for r in cursor.fetchall()]
+            db_healthy = "clinical_reports" in tables and "predictions" in tables
+            
+            # 6. Diagnosis Distribution for charts
+            cursor.execute("SELECT predicted_class, COUNT(*) as cnt FROM predictions GROUP BY predicted_class;")
+            diag_rows = cursor.fetchall()
+            diag_dist = {r["predicted_class"]: r["cnt"] for r in diag_rows}
+            
+            # 7. Average tumor area
+            cursor.execute("SELECT AVG(tumor_area_mm2) FROM predictions WHERE tumor_pixel_count > 0;")
+            row = cursor.fetchone()
+            avg_tumor_area = row[0] if row[0] is not None else 0.0
+
+            # 8. Avg Grad-CAM Overlap
+            cursor.execute("SELECT AVG(xai_overlap_percentage) FROM clinical_reports WHERE xai_overlap_percentage IS NOT NULL;")
+            row = cursor.fetchone()
+            avg_xai_overlap = row[0] if row[0] is not None else 0.0
+            
+            # 9. Active XAI methods count
+            cursor.execute("SELECT xai_method, COUNT(*) as cnt FROM clinical_reports WHERE xai_method IS NOT NULL GROUP BY xai_method;")
+            xai_rows = cursor.fetchall()
+            xai_methods = {r["xai_method"]: r["cnt"] for r in xai_rows}
+            
+            return {
+                "total_predictions": total_predictions,
+                "avg_confidence": avg_confidence,
+                "avg_runtime": avg_runtime,
+                "duplicate_uploads": duplicate_uploads,
+                "db_healthy": db_healthy,
+                "tables_count": len(tables),
+                "diagnosis_distribution": diag_dist,
+                "avg_tumor_area": avg_tumor_area,
+                "avg_xai_overlap": avg_xai_overlap,
+                "xai_methods": xai_methods
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to query health telemetry: {e}")
+            return {
+                "total_predictions": 0,
+                "avg_confidence": 0.0,
+                "avg_runtime": 0.0,
+                "duplicate_uploads": 0,
+                "db_healthy": False,
+                "tables_count": 0,
+                "diagnosis_distribution": {},
+                "avg_tumor_area": 0.0,
+                "avg_xai_overlap": 0.0,
+                "xai_methods": {}
+            }
+        finally:
+            conn.close()
+
+    def save_timeline_trace(self, prediction_id: int, timeline_data: Dict[str, float]) -> None:
+        """Persists the latency timeline traces for a prediction run."""
+        import json
+        import datetime
+        conn = self._get_connection()
+        sql = "INSERT OR REPLACE INTO timeline_traces (prediction_id, trace_json, created_at) VALUES (?, ?, ?);"
+        try:
+            with conn:
+                conn.execute(sql, (prediction_id, json.dumps(timeline_data), datetime.datetime.now().isoformat()))
+            self.logger.info(f"Timeline trace saved for prediction ID: {prediction_id}")
+        except Exception as e:
+            self.logger.error(f"Failed to save timeline trace: {e}")
+        finally:
+            conn.close()
+
+    def get_timeline_trace(self, prediction_id: int) -> Optional[Dict[str, float]]:
+        """Loads execution timelines for a given prediction ID."""
+        import json
+        conn = self._get_connection()
+        sql = "SELECT trace_json FROM timeline_traces WHERE prediction_id = ?;"
+        try:
+            row = conn.execute(sql, (prediction_id,)).fetchone()
+            if row:
+                return json.loads(row["trace_json"])
+            return None
+        except Exception as e:
+            self.logger.error(f"Failed to retrieve timeline trace: {e}")
+            return None
         finally:
             conn.close()

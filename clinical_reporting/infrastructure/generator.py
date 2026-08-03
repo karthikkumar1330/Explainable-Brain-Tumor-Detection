@@ -155,6 +155,9 @@ class MarkdownJSONReportGenerator(IClinicalReportGenerator):
                 "comparison_canvas_path": lc.comparison_canvas_path,
             }
 
+        if getattr(report, "quality_warnings", None) is not None:
+            payload["quality_warnings"] = report.quality_warnings
+
         return payload
 
 
@@ -287,6 +290,14 @@ class MarkdownJSONReportGenerator(IClinicalReportGenerator):
 {img_comp}"""
 
 
+        # Quality Warnings section
+        warnings_section = ""
+        if getattr(report, "quality_warnings", None):
+            warnings_section = "## AI Diagnostic Quality & Coherence Warnings\n"
+            for warning in report.quality_warnings:
+                warnings_section += f"- ⚠️ {warning}  \n"
+            warnings_section += "\n---\n\n"
+
         content = f"""# INTEGRATED CLINICAL BRAIN MRI REPORT
 
 ## Patient Demographics
@@ -298,7 +309,7 @@ class MarkdownJSONReportGenerator(IClinicalReportGenerator):
 
 ---
 
-## Clinical Classification Summary
+{warnings_section}## Clinical Classification Summary
 - **Primary Diagnosis:** **{report.classification.class_name}**
 {calibration_text}
 - **Differential Classification Probabilities:**

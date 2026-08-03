@@ -215,7 +215,34 @@ class ReportLabPDFGenerator:
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ]))
         story.append(diag_table)
-        story.append(Spacer(1, 15))
+        story.append(Spacer(1, 10))
+
+        # Add Clinical Quality & Consistency warnings if present
+        if getattr(report, "quality_warnings", None):
+            warning_style = ParagraphStyle(
+                name='WarningText',
+                parent=body_style,
+                fontName='Helvetica-Bold',
+                fontSize=9,
+                leading=12,
+                textColor=colors.HexColor("#78281F"),
+            )
+            story.append(Paragraph("AI Diagnostic Quality & Coherence Warnings", h2_style))
+            warning_rows = []
+            for warning in report.quality_warnings:
+                warning_rows.append([Paragraph(f"⚠️ {warning}", warning_style)])
+            
+            warning_table = Table(warning_rows, colWidths=[504])
+            warning_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#FDEDEC")),
+                ('PADDING', (0, 0), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor("#F1948A")),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            story.append(warning_table)
+            story.append(Spacer(1, 10))
+
+        story.append(Spacer(1, 5))
 
         # 4. Quantitative Morphological Analysis Table (if tumor exists)
         if report.segmentation_metrics is not None and report.segmentation_metrics.pixel_count > 0:

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 from tumor_analysis.domain.entities import TumorAnalysisResult
 from severity_assessment.domain.entities import SeverityAssessment
 from classification.domain.entities import PredictionResult
@@ -46,6 +46,7 @@ class ClinicalReport:
     xai_explanation_text: Optional[str] = None
     xai_overlap_percentage: Optional[float] = None
     longitudinal_comparison: Optional[LongitudinalComparison] = None
+    quality_warnings: Optional[List[str]] = None
 
 
 

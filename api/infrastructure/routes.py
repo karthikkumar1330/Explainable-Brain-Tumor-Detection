@@ -314,12 +314,43 @@ def run_explainability(filepath: str, target_class: int = 1, method: str = "grad
         raise HTTPException(status_code=500, detail=f"XAI hook execution failed: {e}")
 
 
+@router.get("/health")
+def get_pipeline_health():
+    """API Endpoint: Runs comprehensive system and model health diagnostics and fetches audit telemetry."""
+    try:
+        from monitoring.infrastructure.health_monitor import PipelineHealthMonitor
+        from monitoring.application.use_cases import RunPipelineHealthCheckUseCase
+        
+        monitor = PipelineHealthMonitor(db_path=DEFAULT_DB_PATH, api_url="http://127.0.0.1:8000/docs")
+        use_case = RunPipelineHealthCheckUseCase(monitor=monitor)
+        
+        report = use_case.execute(
+            model_cls=model_cls,
+            model_seg=model_seg,
+            device=str(device)
+        )
+        
+        db_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)
+        telemetry = db_repo.get_health_telemetry()
+        
+        report_dict = report.to_dict()
+        report_dict["historical_telemetry"] = telemetry
+        return report_dict
+    except Exception as e:
+        logger.error(f"Health check execution failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Health diagnostics failed: {e}")
+
+
 @router.post("/report")
 def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
     """API Endpoint: Runs the complete end-to-end MRI diagnostics report pipeline with validation."""
     if not os.path.exists(filepath):
         raise HTTPException(status_code=400, detail="Target upload MRI file path not found.")
     
+    t_endpoint_start = time.time()
+    timeline = {}
+    timeline["Upload"] = time.time() - t_endpoint_start
+
     t_start = time.time()
     try:
         # Run MRI Input Validation
@@ -333,6 +364,8 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
         use_case = ValidateMriUploadUseCase(validator=validator, db_path=DEFAULT_DB_PATH)
         scorecard = use_case.execute(filepath=filepath, file_bytes=file_bytes, filename=os.path.basename(filepath))
         
+        timeline["Validation"] = time.time() - t_endpoint_start
+
         if not scorecard.is_valid:
             raise HTTPException(
                 status_code=400,
@@ -347,12 +380,33 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
         if img_bgr is None:
             raise HTTPException(status_code=400, detail="Failed to read uploaded image.")
 
-        # 1. Classification
+        # 1. Classification (B6.12 Retry & CPU fallback)
+        from monitoring.application.pipeline_recovery import PipelineExecutionRecovery
+        recovery = PipelineExecutionRecovery(logger=logger)
+
         t_cls = time.time()
         config_cls = ClassificationConfig()
         image_tensor_cls = preprocess_classification_image(filepath, config_cls)
-        classification_result = predict_use_case.execute(image_tensor_cls)
+        
+        cls_warnings = []
+        active_cls_device = str(device)
+        try:
+            classification_result = predict_use_case.execute(image_tensor_cls)
+        except Exception as e:
+            logger.warning(f"Classification failed on {device}: {e}. Retrying with CPU fallback...")
+            try:
+                model_cls.to("cpu")
+                predict_use_case.model_adapter.device = "cpu"
+                classification_result = predict_use_case.execute(image_tensor_cls)
+                active_cls_device = "cpu"
+                cls_warnings.append("Auto-recovery warning: Classification execution failed on GPU. Retried and completed on CPU fallback mode.")
+            except Exception as cpu_err:
+                logger.critical(f"CPU fallback for classification failed: {cpu_err}")
+                raise HTTPException(status_code=500, detail=f"Classification inference failed: {cpu_err}")
+        
         cls_latency = time.time() - t_cls
+        timeline["Classification"] = time.time() - t_endpoint_start
+        timeline["Calibration"] = time.time() - t_endpoint_start
 
         # 2. Explainability (XAI 2.0)
         t_cam = time.time()
@@ -373,33 +427,68 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
             target_layer=model_cls.backbone.features[8],
             device=device
         )
-        # We generate the raw heatmap first
-        heatmap = xai_engine.generate_explanation(
-            image_tensor=image_tensor_cls,
-            target_class=classification_result.label,
-            method=xai_param
-        )
-        cam_latency = time.time() - t_cam
+        
+        # We generate the raw heatmap first inside a graceful block (B6.12)
+        class DummyXaiResult:
+            def __init__(self):
+                self.explanation_text = "Explanation generation failed due to hook limitations. Degraded gracefully."
+                self.overlap_percentage = 0.0
+                self.heatmap = np.zeros((img_bgr.shape[0], img_bgr.shape[1]), dtype=np.float32)
 
-        # 3. Segmentation
+        def run_xai():
+            heatmap_raw = xai_engine.generate_explanation(
+                image_tensor=image_tensor_cls,
+                target_class=classification_result.label,
+                method=xai_param
+            )
+            xai_use_case = GenerateExplanationUseCase(xai_engine=xai_engine)
+            xai_res = xai_use_case.execute(
+                image_tensor=image_tensor_cls,
+                target_class=classification_result.label,
+                method=xai_param,
+                tumor_mask=final_mask
+            )
+            setattr(xai_res, "heatmap_raw", heatmap_raw)
+            return xai_res
+
+        # 3. Segmentation (B6.12 Retry & CPU fallback)
         t_seg = time.time()
         input_tensor_seg = preprocess_segmentation_image(img_bgr, seg_config["input_h"], seg_config["input_w"])
-        input_tensor_seg = input_tensor_seg.to(device)
-        device_type = device.type
-        is_autocast_supported = device_type in ["cuda", "cpu"]
         
-        with torch.inference_mode():
-            if is_autocast_supported:
-                dtype = torch.float16 if device_type == "cuda" else torch.bfloat16
-                with torch.amp.autocast(device_type=device_type, dtype=dtype):
-                    output_seg = model_seg(input_tensor_seg)
-            else:
-                output_seg = model_seg(input_tensor_seg)
+        seg_warnings = []
+        active_seg_device = str(device)
+        try:
+            input_tensor_seg_dev = input_tensor_seg.to(device)
+            device_type = device.type
+            is_autocast_supported = device_type in ["cuda", "cpu"]
+            
+            with torch.inference_mode():
+                if is_autocast_supported:
+                    dtype = torch.float16 if device_type == "cuda" else torch.bfloat16
+                    with torch.amp.autocast(device_type=device_type, dtype=dtype):
+                        output_seg = model_seg(input_tensor_seg_dev)
+                else:
+                    output_seg = model_seg(input_tensor_seg_dev)
+                    
+                if seg_config["deep_supervision"]:
+                    output_seg = output_seg[-1]
+                output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()
+        except Exception as e:
+            logger.warning(f"Segmentation failed on {device}: {e}. Retrying with CPU fallback...")
+            try:
+                model_seg.to("cpu")
+                active_seg_device = "cpu"
+                input_tensor_seg_cpu = input_tensor_seg.to("cpu")
+                with torch.inference_mode():
+                    output_seg = model_seg(input_tensor_seg_cpu)
+                    if seg_config["deep_supervision"]:
+                        output_seg = output_seg[-1]
+                    output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()
+                seg_warnings.append("Auto-recovery warning: Segmentation execution failed on GPU. Retried and completed on CPU fallback mode.")
+            except Exception as cpu_err:
+                logger.critical(f"CPU fallback for segmentation failed: {cpu_err}")
+                raise HTTPException(status_code=500, detail=f"Segmentation inference failed: {cpu_err}")
                 
-            if seg_config["deep_supervision"]:
-                output_seg = output_seg[-1]
-            output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()
-
         bin_mask = (output_seg > 0.5).astype(np.uint8)
 
         # Resize to original scale so post-processing runs at native resolution
@@ -415,29 +504,25 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
         post_proc = MedicalImagePostProcessor()
         post_proc_use_case = PostProcessSegmentationUseCase(post_processor=post_proc)
         final_mask, post_proc_meta = post_proc_use_case.execute(bin_mask_resized, prob_map_resized)
-
-        # Save to disk
-        mask_path = os.path.join(OUTPUT_REPORTS_DIR, f"{intake.patient_id}_api_mask.jpg")
-        cv2.imwrite(mask_path, (final_mask * 255).astype(np.uint8))
-
-        # Generate comparison scan overlay
-        comparison_path = os.path.join(OUTPUT_REPORTS_DIR, f"{intake.patient_id}_api_comparison.png")
-        create_segmentation_comparison_image(
-            original_image=img_bgr,
-            before_mask=bin_mask_resized,
-            after_mask=final_mask,
-            output_path=comparison_path
-        )
+        
         seg_latency = time.time() - t_seg
+        timeline["Segmentation"] = time.time() - t_endpoint_start
 
-        # Run post-segmentation XAI analysis
-        xai_use_case = GenerateExplanationUseCase(xai_engine=xai_engine)
-        xai_result = xai_use_case.execute(
-            image_tensor=image_tensor_cls,
-            target_class=classification_result.label,
-            method=xai_param,
-            tumor_mask=final_mask
+        # Now run XAI using the post-processed segmentation mask
+        xai_result, xai_warns = recovery.execute_graceful_stage(
+            stage_name="Grad-CAM Explanation Generation",
+            stage_fn=run_xai,
+            default_fallback_value=DummyXaiResult()
         )
+        
+        # Extract heatmap
+        if hasattr(xai_result, "heatmap_raw"):
+            heatmap = xai_result.heatmap_raw
+        else:
+            heatmap = getattr(xai_result, "heatmap", np.zeros((img_bgr.shape[0], img_bgr.shape[1]), dtype=np.float32))
+
+        cam_latency = time.time() - t_cam
+        timeline["GradCAM"] = time.time() - t_endpoint_start
 
         # Save explanation visualizations with boundary overlays
         os.makedirs(OUTPUT_REPORTS_DIR, exist_ok=True)
@@ -458,15 +543,37 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
         # 4. Morphological Analysis
         morph_analyzer = OpenCVTumorAnalyzer(low_thresh=1.0, med_thresh=5.0, high_thresh=15.0)
         morph_use_case = AnalyzeTumorUseCase(analyzer=morph_analyzer, logger=logger)
-        clinical_data = morph_use_case.execute(
-            mask=final_mask,
-            patient_id=intake.patient_id,
-            tumor_class=classification_result.class_name,
-            original_image=img_bgr,
-            pixel_spacing_mm=intake.pixel_spacing_mm,
+        
+        class DummyClinicalData:
+            def __init__(self):
+                from tumor_analysis.domain.entities import TumorAnalysisResult
+                self.analysis = TumorAnalysisResult(
+                    pixel_count=0,
+                    tumor_area_mm2=0.0,
+                    tumor_percentage_brain=0.0,
+                    tumor_percentage_image=0.0,
+                    estimated_brain_pixel_count=0,
+                    rule_based_severity="LOW",
+                    severity_rule_description="Degraded statistics due to fallback.",
+                    stats=None
+                )
+
+        def run_morph():
+            return morph_use_case.execute(
+                mask=final_mask,
+                patient_id=intake.patient_id,
+                tumor_class=classification_result.class_name,
+                original_image=img_bgr,
+                pixel_spacing_mm=intake.pixel_spacing_mm,
+            )
+            
+        clinical_data, morph_warns = recovery.execute_graceful_stage(
+            stage_name="Morphological Stats Extraction",
+            stage_fn=run_morph,
+            default_fallback_value=DummyClinicalData()
         )
         segmentation_metrics = clinical_data.analysis
-
+        
         # Enrich segmentation_metrics with post-processing details
         from dataclasses import replace
         segmentation_metrics = replace(
@@ -476,6 +583,9 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
             post_processing_applied=True,
             post_processing_metadata=post_proc_meta
         )
+        
+        timeline["Statistics"] = time.time() - t_endpoint_start
+        timeline["Comparison"] = time.time() - t_endpoint_start  # API endpoint doesn't evaluate longitudinal comparison
 
         # 5. Rule-Based Severity Assessment
         severity_classifier = RuleBasedSeverityClassifier()
@@ -498,7 +608,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
 
         total_exec_time = time.time() - t_start
         processing_summary = ProcessingSummary(
-            device=str(device),
+            device=active_cls_device,
             execution_time_sec=total_exec_time,
             classification_model_path=CLS_CHECKPOINT,
             segmentation_model_path=SEG_CHECKPOINT,
@@ -506,6 +616,41 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
             segmentation_latency_sec=seg_latency,
             explainability_latency_sec=cam_latency,
         )
+
+        # Run Central Warning Engine Checks (B6.3, B6.4, B6.5, B6.7)
+        from monitoring.infrastructure.segmentation_validator import SegmentationValidator
+        from monitoring.infrastructure.consistency_checker import ConfidenceConsistencyChecker
+        from monitoring.infrastructure.explainability_validator import ExplainabilityValidator
+        from monitoring.application.warning_engine import CentralWarningEngine
+        
+        seg_validator = SegmentationValidator()
+        consistency_checker = ConfidenceConsistencyChecker()
+        explain_validator = ExplainabilityValidator()
+        warning_engine = CentralWarningEngine(
+            seg_validator=seg_validator,
+            consistency_checker=consistency_checker,
+            explain_validator=explain_validator
+        )
+        
+        uncal_conf = getattr(classification_result, "uncalibrated_confidence_score", None)
+        is_cal = getattr(classification_result, "is_calibrated", False)
+        
+        engine_result = warning_engine.collect_warnings(
+            input_errors=cls_warnings + seg_warnings + morph_warns,
+            predicted_class=classification_result.class_name,
+            confidence_score=classification_result.confidence_score,
+            is_calibrated=is_cal,
+            uncalibrated_confidence=uncal_conf,
+            probabilities=classification_result.probabilities,
+            mask=final_mask,
+            expected_shape=(img_bgr.shape[0], img_bgr.shape[1]),
+            tumor_area_mm2=segmentation_metrics.tumor_area_mm2,
+            heatmap=heatmap,
+            overlap_percentage=xai_result.overlap_percentage,
+            pixel_spacing_mm=intake.pixel_spacing_mm,
+            brain_pixels=getattr(segmentation_metrics, "estimated_brain_pixel_count", None)
+        )
+        quality_warnings = engine_result["warnings"]
 
         clinical_report = ClinicalReport(
             patient_info=patient_info,
@@ -521,18 +666,28 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
             xai_method=xai_param,
             xai_explanation_text=xai_result.explanation_text,
             xai_overlap_percentage=xai_result.overlap_percentage,
+            quality_warnings=quality_warnings,
         )
+
+        timeline["Clinical Report"] = time.time() - t_endpoint_start
 
         generator = MarkdownJSONReportGenerator()
         report_use_case = GenerateIntegratedReportUseCase(report_generator=generator, logger=logger)
         md_file, json_file, pdf_file = report_use_case.execute(report=clinical_report, output_dir=OUTPUT_REPORTS_DIR)
+
+        timeline["PDF"] = time.time() - t_endpoint_start
 
         # 7. Database Persistence
         db_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)
         db_repo.initialize_db()
         report_db_id = db_repo.save_report(clinical_report, output_dir=OUTPUT_REPORTS_DIR)
 
-        # Link validation record to prediction ID in DB
+        timeline["Database"] = time.time() - t_endpoint_start
+        timeline["Completed"] = time.time() - t_endpoint_start
+
+        # Link validation record to prediction ID in DB and Save Audit Log (B6.6)
+        pred_id = None
+        database_status = "Failed"
         try:
             import json
             conn = db_repo._get_connection()
@@ -546,8 +701,37 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
                     scorecard_json=json.dumps(scorecard.to_dict()),
                     prediction_id=pred_id
                 )
+                database_status = "Persisted"
+                # Save Timeline Trace (B6.11, B6.14)
+                db_repo.save_timeline_trace(pred_id, timeline)
+            conn.close()
         except Exception as db_link_err:
             logger.error(f"Failed to link validation scorecard: {db_link_err}")
+
+        # Record AI Audit log entry
+        try:
+            from monitoring.infrastructure.audit_logger import AuditLogger
+            import multiprocessing
+            cpu_threads = multiprocessing.cpu_count()
+            gpu_active = torch.cuda.is_available() and str(device) != "cpu"
+            
+            audit_logger = AuditLogger(db_path=DEFAULT_DB_PATH)
+            audit_logger.log_execution(
+                patient_id=intake.patient_id,
+                user=intake.ref_physician or "Dr. System Default",
+                model_version_cls=os.path.basename(CLS_CHECKPOINT),
+                model_version_seg=os.path.basename(SEG_CHECKPOINT),
+                runtime_sec=total_exec_time,
+                gpu_active=gpu_active,
+                cpu_threads=cpu_threads,
+                warnings=quality_warnings,
+                errors=[],
+                report_status="Generated",
+                database_status=database_status,
+                prediction_id=pred_id
+            )
+        except Exception as audit_err:
+            logger.error(f"Failed to record AI Audit Log: {audit_err}")
 
         return {
             "report_id": report_db_id,
@@ -560,6 +744,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
             "xai_method": xai_param,
             "xai_explanation": xai_result.explanation_text,
             "xai_overlap_percentage": xai_result.overlap_percentage,
+            "quality_warnings": quality_warnings,
             "files": {
                 "pdf": pdf_file,
                 "json": json_file,
