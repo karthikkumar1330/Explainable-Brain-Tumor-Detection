@@ -40,6 +40,10 @@ from persistence.infrastructure.repository import SQLitePersistenceRepository
 from prediction_history.infrastructure.repository import SQLitePredictionHistoryRepository
 from prediction_history.domain.entities import HistorySearchCriteria
 
+from security.infrastructure.repository import SQLiteUserRepository
+from security.infrastructure.jwt_service import JWTService
+from security.application.use_cases import AuthUseCases
+
 
 # Setup default paths
 DEFAULT_DB_PATH = "outputs/clinical_reports.db"
@@ -82,14 +86,14 @@ def load_segmentation_pipeline(checkpoint_path: str, config_path: str, device: s
 
 
 def preprocess_segmentation_image(img_bgr: np.ndarray, h: int, w: int) -> torch.Tensor:
-    """Preprocesses a raw numpy BGR image for UNeXt model."""
+    """Preprocesses a raw numpy BGR image for UNeXt model matching BraTS training [0, 1] scaling."""
+    if isinstance(img_bgr, str):
+        img_bgr = cv2.imread(img_bgr, cv2.IMREAD_COLOR)
+        if img_bgr is None:
+            raise IOError(f"Could not load segmentation image at: {img_bgr}")
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    transform = A.Compose([
-        A.Resize(h, w),
-        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-    ])
-    augmented = transform(image=img_rgb)
-    img_tensor = augmented['image'].transpose(2, 0, 1)  # C, H, W
+    img_resized = cv2.resize(img_rgb, (w, h))
+    img_tensor = (img_resized.astype(np.float32) / 255.0).transpose(2, 0, 1)  # C, H, W
     return torch.from_numpy(img_tensor).unsqueeze(0)  # 1, C, H, W
 
 
@@ -147,12 +151,58 @@ def main() -> None:
     st.sidebar.markdown("<h2 style='text-align: center; color: #38bdf8;'>🧠 AuraScan AI</h2>", unsafe_allow_html=True)
     st.sidebar.markdown("<p style='text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-top: -10px;'>MRI Clinical Portal</p>", unsafe_allow_html=True)
     
+    # Security Auth setup
+    sec_repo = SQLiteUserRepository(db_path=DEFAULT_DB_PATH)
+    sec_repo.initialize_security_tables()
+    sec_repo.bootstrap_admin()
+    auth_use_cases = AuthUseCases(user_repo=sec_repo)
+
+    if "user" not in st.session_state:
+        st.session_state["user"] = None
+
+    with st.sidebar.expander("🔐 Security & Auth", expanded=(st.session_state["user"] is None)):
+        if st.session_state["user"] is None:
+            auth_t1, auth_t2 = st.tabs(["Login", "Register"])
+            with auth_t1:
+                l_email = st.text_input("Email", key="st_l_email")
+                l_pass = st.text_input("Password", type="password", key="st_l_pass")
+                if st.button("Log In", key="st_login_btn"):
+                    try:
+                        res = auth_use_cases.login(l_email, l_pass)
+                        if res.get("requires_2fa"):
+                            st.info(f"2FA Required. OTP Code: {res.get('otp_code')}")
+                        else:
+                            st.session_state["user"] = res["user"]
+                            st.success(f"Welcome, {res['user']['full_name']}!")
+                            st.rerun()
+                    except Exception as err:
+                        st.error(str(err))
+            with auth_t2:
+                r_name = st.text_input("Full Name", key="st_r_name")
+                r_email = st.text_input("Email", key="st_r_email")
+                r_role = st.selectbox("Role", ["doctor", "patient", "admin"], key="st_r_role")
+                r_pass = st.text_input("Password", type="password", key="st_r_pass")
+                if st.button("Register Account", key="st_reg_btn"):
+                    try:
+                        res = auth_use_cases.register(r_email, r_pass, r_name, r_role)
+                        st.success(f"Registered! Verification OTP: {res['verification_otp']}")
+                    except Exception as err:
+                        st.error(str(err))
+        else:
+            u = st.session_state["user"]
+            st.markdown(f"**User:** {u['full_name']}")
+            st.markdown(f"**Role:** `{u['role']}`")
+            if st.button("Logout", key="st_logout_btn"):
+                st.session_state["user"] = None
+                st.rerun()
+
     st.sidebar.divider()
     page = st.sidebar.radio(
         "Navigation",
         ["Dashboard Analytics", "Inference Scan Analysis", "Patient Database History", "AI Pipeline Health"]
     )
     st.sidebar.divider()
+
 
     # Hardware selector
     device_choice = st.sidebar.selectbox("Inference Execution Device", ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"])
@@ -334,6 +384,8 @@ def main() -> None:
             else:
                 with st.spinner("Processing MRI slice (Classification, Explainability hooks, Segmentation, Morphology...)..."):
                     t_start = time.time()
+                    t_endpoint_start = t_start
+                    timeline = {}
                     
                     # Read raw file bytes
                     uploaded_file.seek(0)
@@ -345,6 +397,8 @@ def main() -> None:
                     with open(temp_image_path, "wb") as f:
                         f.write(raw_bytes)
                         
+                    timeline["Upload"] = time.time() - t_endpoint_start
+
                     # Run MRI Input Validation (B6.1 Quality Assurance)
                     from input_validation.infrastructure.validators import OpenCVMriValidator
                     from input_validation.application.use_cases import ValidateMriUploadUseCase
@@ -352,6 +406,8 @@ def main() -> None:
                     validator = OpenCVMriValidator()
                     val_use_case = ValidateMriUploadUseCase(validator=validator, db_path=DEFAULT_DB_PATH)
                     scorecard = val_use_case.execute(filepath=temp_image_path, file_bytes=raw_bytes, filename=uploaded_file.name)
+                    
+                    timeline["Validation"] = time.time() - t_endpoint_start
                     
                     # Display scorecard indicators in Streamlit
                     st.markdown("### MRI Intake Quality Scorecard")
@@ -462,7 +518,6 @@ def main() -> None:
                     timeline["Calibration"] = time.time() - t_endpoint_start
 
                     # 2. Run Explainability (XAI 2.0 Engine)
-                    t_cam = time.time()
                     from explainable_ai.infrastructure.services import PyTorchXAIEngine
                     from explainable_ai.application.use_cases import GenerateExplanationUseCase
                     from explainable_ai.infrastructure.visualization import overlay_tumor_contour
@@ -543,8 +598,12 @@ def main() -> None:
                             st.error(f"Segmentation inference failed: {cpu_err}")
                             return
                     
-                    # Binarize
+                    # Binarize and log debug statistics
                     bin_mask = (output_seg > 0.5).astype(np.uint8)
+                    logging.getLogger("streamlit_app").info(
+                        f"UNeXt Segmentation Debug - min: {output_seg.min():.4f}, max: {output_seg.max():.4f}, "
+                        f"unique: {np.unique(bin_mask)}, shape: {output_seg.shape}, non-zero pixels: {bin_mask.sum()}"
+                    )
 
                     # Resize to original MRI scale so post-processing runs at native resolution
                     orig_h, orig_w = original_image.shape[:2]
@@ -564,6 +623,7 @@ def main() -> None:
                     timeline["Segmentation"] = time.time() - t_endpoint_start
 
                     # Run explanation with post-processed mask
+                    t_cam = time.time()
                     xai_result, xai_warns = recovery.execute_graceful_stage(
                         stage_name="Grad-CAM Explanation Generation",
                         stage_fn=run_xai,
@@ -612,13 +672,15 @@ def main() -> None:
                     
                     class DummyClinicalData:
                         def __init__(self):
-                            from tumor_analysis.domain.entities import TumorAnalysisResult
+                            from tumor_analysis.domain.entities import TumorAnalysisResult, SeverityLevel
                             self.analysis = TumorAnalysisResult(
                                 pixel_count=0,
                                 tumor_area_mm2=0.0,
                                 tumor_percentage_brain=0.0,
                                 tumor_percentage_image=0.0,
                                 estimated_brain_pixel_count=0,
+                                severity_level=SeverityLevel.LOW,
+                                metadata={},
                                 rule_based_severity="LOW",
                                 severity_rule_description="Degraded stats.",
                                 stats=None
@@ -856,7 +918,7 @@ def main() -> None:
                             db_repo.save_timeline_trace(pred_id, timeline)
                         conn.close()
                     except Exception as db_link_err:
-                        logging.getLogger("streamlit_app").error(f"Failed to link validation scorecard: {db_link_err}")link validation scorecard: {db_link_err}")
+                        logging.getLogger("streamlit_app").error(f"Failed to link validation scorecard: {db_link_err}")
 
                     # Run AI Audit Logger (B6.6)
                     try:

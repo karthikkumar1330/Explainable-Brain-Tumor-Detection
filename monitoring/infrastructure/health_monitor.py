@@ -8,6 +8,7 @@ import urllib.request
 from typing import Dict, Any, Tuple, Optional
 import torch
 import numpy as np
+import cv2
 
 from monitoring.domain.entities import SystemHealthReport
 

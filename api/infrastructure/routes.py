@@ -36,6 +36,8 @@ from prediction_history.infrastructure.repository import SQLitePredictionHistory
 from prediction_history.domain.entities import HistorySearchCriteria
 
 from api.domain.schemas import PatientIntake
+from security.domain.entities import Role, User
+from api.routes.auth_routes import get_current_user, require_roles
 
 
 # Configure paths
@@ -97,14 +99,10 @@ def initialize_api_models():
 
 
 def preprocess_segmentation_image(img_bgr: np.ndarray, h: int, w: int) -> torch.Tensor:
-    """Preprocesses BGR image slice for segmentation model."""
+    """Preprocesses BGR image slice for segmentation model using simple [0, 1] scaling matching BraTS training."""
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    transform = A.Compose([
-        A.Resize(h, w),
-        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-    ])
-    augmented = transform(image=img_rgb)
-    img_tensor = augmented['image'].transpose(2, 0, 1)  # C, H, W
+    img_resized = cv2.resize(img_rgb, (w, h))
+    img_tensor = (img_resized.astype(np.float32) / 255.0).transpose(2, 0, 1)  # C, H, W
     return torch.from_numpy(img_tensor).unsqueeze(0)  # 1, C, H, W
 
 
@@ -113,7 +111,7 @@ router = APIRouter()
 
 
 @router.post("/upload")
-def upload_mri_file(file: UploadFile = File(...)):
+def upload_mri_file(file: UploadFile = File(...), current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))):
     """API Endpoint: Receives a raw brain MRI image slice upload and validates it."""
     os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
     temp_filename = f"upload_{int(time.time())}_{file.filename}"
@@ -160,7 +158,7 @@ def upload_mri_file(file: UploadFile = File(...)):
 
 
 @router.post("/classification")
-def run_classification(filepath: str):
+def run_classification(filepath: str, current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))):
     """API Endpoint: Runs classification model on the uploaded MRI slice.
 
     Args:
@@ -184,7 +182,7 @@ def run_classification(filepath: str):
 
 
 @router.post("/segmentation")
-def run_segmentation(filepath: str):
+def run_segmentation(filepath: str, current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))):
     """API Endpoint: Renders brain tumor segmentation mask using UNeXt model."""
     if not os.path.exists(filepath):
         raise HTTPException(status_code=400, detail="Target MRI file path not found.")
@@ -259,7 +257,7 @@ def run_segmentation(filepath: str):
 
 
 @router.post("/explainability")
-def run_explainability(filepath: str, target_class: int = 1, method: str = "gradcam"):
+def run_explainability(filepath: str, target_class: int = 1, method: str = "gradcam", current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))):
     """API Endpoint: Runs Explainable AI 2.0 attention heatmap on target classification index."""
     if not os.path.exists(filepath):
         raise HTTPException(status_code=400, detail="Target MRI file path not found.")
@@ -342,7 +340,7 @@ def get_pipeline_health():
 
 
 @router.post("/report")
-def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
+def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))):
     """API Endpoint: Runs the complete end-to-end MRI diagnostics report pipeline with validation."""
     if not os.path.exists(filepath):
         raise HTTPException(status_code=400, detail="Target upload MRI file path not found.")
@@ -588,13 +586,15 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake):
         
         class DummyClinicalData:
             def __init__(self):
-                from tumor_analysis.domain.entities import TumorAnalysisResult
+                from tumor_analysis.domain.entities import TumorAnalysisResult, SeverityLevel
                 self.analysis = TumorAnalysisResult(
                     pixel_count=0,
                     tumor_area_mm2=0.0,
                     tumor_percentage_brain=0.0,
                     tumor_percentage_image=0.0,
                     estimated_brain_pixel_count=0,
+                    severity_level=SeverityLevel.LOW,
+                    metadata={},
                     rule_based_severity="LOW",
                     severity_rule_description="Degraded statistics due to fallback.",
                     stats=None

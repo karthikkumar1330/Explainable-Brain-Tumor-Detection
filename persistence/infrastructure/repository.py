@@ -187,6 +187,16 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         finally:
             conn.close()
 
+        # Initialize security tables and bootstrap admin
+        try:
+            from security.infrastructure.repository import SQLiteUserRepository
+            user_repo = SQLiteUserRepository(db_path=self.db_path, logger=self.logger)
+            user_repo.initialize_security_tables()
+            user_repo.bootstrap_admin()
+        except Exception as sec_err:
+            self.logger.warning(f"Could not initialize security tables: {sec_err}")
+
+
     def save_report(self, report: ClinicalReport, output_dir: str) -> int:
         """Persists the full integrated clinical report findings into SQLite.
 

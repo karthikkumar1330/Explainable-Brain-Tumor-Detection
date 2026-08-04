@@ -124,29 +124,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def preprocess_segmentation_image(image_path: str, h: int, w: int) -> torch.Tensor:
-    """Loads and preprocesses an image for UNeXt segmentation model.
-
-    Args:
-        image_path: Path to target scan image.
-        h: Target image height.
-        w: Target image width.
-
-    Returns:
-        A preprocessed tensor of shape (1, C, H, W).
-    """
+    """Loads and preprocesses an image for UNeXt segmentation model using [0, 1] scaling matching BraTS training."""
     img = cv2.imread(image_path)
     if img is None:
         raise IOError(f"Could not load segmentation image at: {image_path}")
 
-    # Convert BGR to RGB
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-    transform = A.Compose([
-        A.Resize(h, w),
-        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-    ])
-    augmented = transform(image=img)
-    img_tensor = augmented['image'].transpose(2, 0, 1)  # C, H, W
+    img_resized = cv2.resize(img, (w, h))
+    img_tensor = (img_resized.astype(np.float32) / 255.0).transpose(2, 0, 1)  # C, H, W
     return torch.from_numpy(img_tensor).unsqueeze(0)  # 1, C, H, W
 
 

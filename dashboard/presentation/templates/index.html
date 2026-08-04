@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AuraScan AI - Brain MRI Analysis Portal</title>
+    <title>AuraScan AI - Brain MRI Analysis & Security Portal</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Chart.js CDN -->
@@ -45,17 +45,17 @@
                 </div>
                 <div>
                     <h1 class="font-bold text-lg leading-tight tracking-wide">AuraScan <span class="text-sky-400">AI</span></h1>
-                    <span class="text-[10px] text-slate-400 font-medium uppercase tracking-widest">MRI Portal</span>
+                    <span class="text-[10px] text-slate-400 font-medium uppercase tracking-widest">Medical Portal</span>
                 </div>
             </div>
 
-            <!-- Database Status Indicator -->
+            <!-- Database & Security Status Indicator -->
             <div class="flex items-center space-x-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800/50 mb-6">
                 <span class="relative flex h-2.5 w-2.5">
                     <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                 </span>
-                <span class="text-xs text-slate-300 font-semibold">SQLite Database Connected</span>
+                <span class="text-xs text-slate-300 font-semibold">OWASP RBAC Protected</span>
             </div>
 
             <!-- Navigation Links -->
@@ -66,14 +66,18 @@
                 </button>
                 <button onclick="switchTab('database')" id="nav-database" class="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50">
                     <i class="fa-solid fa-circle-h text-lg w-5"></i>
-                    <span>Patient database</span>
+                    <span>Patient Database</span>
+                </button>
+                <button onclick="switchTab('admin')" id="nav-admin" class="hidden w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50">
+                    <i class="fa-solid fa-user-shield text-lg w-5"></i>
+                    <span>Admin Security</span>
                 </button>
             </nav>
         </div>
 
         <!-- System Footer -->
         <div class="mt-8 pt-4 border-t border-slate-800/50 text-[10px] text-slate-500 text-center font-medium">
-            <span>AI Diagnostic Engine v1.0.0</span>
+            <span>AI Health Engine & Auth v1.0.0</span>
         </div>
     </aside>
 
@@ -82,10 +86,30 @@
         <!-- TOP BAR -->
         <header class="h-16 border-b border-slate-800/80 px-6 flex items-center justify-between bg-slate-900/50 backdrop-blur-md shrink-0">
             <h2 id="page-title" class="font-bold text-lg text-slate-100">Analytics Dashboard</h2>
-            <div class="flex items-center space-x-4">
-                <span class="text-xs text-slate-400 font-medium">Admin Portal</span>
-                <div class="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700/80">
-                    <i class="fa-solid fa-user-md text-sky-400 text-sm"></i>
+            
+            <div id="user-header-area" class="flex items-center space-x-4">
+                <!-- Logged In User View -->
+                <div id="auth-logged-in" class="hidden flex items-center space-x-3">
+                    <div class="text-right">
+                        <div id="header-user-name" class="text-xs font-bold text-slate-200">Doctor User</div>
+                        <span id="header-user-role" class="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-sky-500/20 text-sky-400 border border-sky-500/30">Doctor</span>
+                    </div>
+                    <button onclick="openProfileModal()" title="View Profile" class="h-9 w-9 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 hover:border-sky-500/50 transition">
+                        <i class="fa-solid fa-user-md text-sky-400 text-sm"></i>
+                    </button>
+                    <button onclick="handleLogout()" title="Logout" class="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold px-3 py-1.5 rounded-lg border border-red-500/20 transition">
+                        <i class="fa-solid fa-right-from-bracket mr-1"></i> Logout
+                    </button>
+                </div>
+
+                <!-- Logged Out View -->
+                <div id="auth-logged-out" class="flex items-center space-x-2">
+                    <button onclick="openModal('login-modal')" class="text-xs bg-sky-500 hover:bg-sky-600 text-slate-900 font-bold px-4 py-2 rounded-lg transition shadow-lg shadow-sky-500/20">
+                        <i class="fa-solid fa-key mr-1"></i> Login
+                    </button>
+                    <button onclick="openModal('register-modal')" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-4 py-2 rounded-lg border border-slate-700 transition">
+                        <i class="fa-solid fa-user-plus mr-1"></i> Register
+                    </button>
                 </div>
             </div>
         </header>
@@ -97,8 +121,7 @@
             <div id="tab-analytics" class="space-y-6">
                 <!-- A. STATS CARDS -->
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <!-- Total Patients -->
-                    <div class="glass-panel p-4 rounded-xl flex items-center justify-between shadow-xl transition-all duration-200 hover:scale-[1.02]">
+                    <div class="glass-panel p-4 rounded-xl flex items-center justify-between shadow-xl">
                         <div>
                             <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Patients Screened</span>
                             <h3 id="stat-patients" class="text-3xl font-extrabold mt-1 text-slate-100">0</h3>
@@ -107,8 +130,7 @@
                             <i class="fa-solid fa-hospital-user"></i>
                         </div>
                     </div>
-                    <!-- Total Scans -->
-                    <div class="glass-panel p-4 rounded-xl flex items-center justify-between shadow-xl transition-all duration-200 hover:scale-[1.02]">
+                    <div class="glass-panel p-4 rounded-xl flex items-center justify-between shadow-xl">
                         <div>
                             <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Scans Analyzed</span>
                             <h3 id="stat-scans" class="text-3xl font-extrabold mt-1 text-slate-100">0</h3>
@@ -117,8 +139,7 @@
                             <i class="fa-solid fa-x-ray"></i>
                         </div>
                     </div>
-                    <!-- Active Tumor Cases -->
-                    <div class="glass-panel p-4 rounded-xl flex items-center justify-between shadow-xl transition-all duration-200 hover:scale-[1.02]">
+                    <div class="glass-panel p-4 rounded-xl flex items-center justify-between shadow-xl">
                         <div>
                             <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Active Tumor Cases</span>
                             <h3 id="stat-tumors" class="text-3xl font-extrabold mt-1 text-amber-500">0</h3>
@@ -127,8 +148,7 @@
                             <i class="fa-solid fa-triangle-exclamation"></i>
                         </div>
                     </div>
-                    <!-- Critical Cases -->
-                    <div class="glass-panel p-4 rounded-xl flex items-center justify-between shadow-xl transition-all duration-200 hover:scale-[1.02]">
+                    <div class="glass-panel p-4 rounded-xl flex items-center justify-between shadow-xl">
                         <div>
                             <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">High Risk / Critical</span>
                             <h3 id="stat-critical" class="text-3xl font-extrabold mt-1 text-red-500">0</h3>
@@ -141,14 +161,12 @@
 
                 <!-- B. CHARTS GRID -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <!-- Pie Chart: Diagnosis Distribution -->
                     <div class="glass-panel p-5 rounded-xl flex flex-col justify-between h-[300px]">
                         <h4 class="font-bold text-sm text-slate-300 uppercase tracking-wider mb-2">Diagnosis Distributions</h4>
                         <div class="relative flex-1 flex items-center justify-center max-h-[220px]">
                             <canvas id="chart-diagnosis"></canvas>
                         </div>
                     </div>
-                    <!-- Bar Chart: Severity Distribution -->
                     <div class="glass-panel p-5 rounded-xl flex flex-col justify-between h-[300px]">
                         <h4 class="font-bold text-sm text-slate-300 uppercase tracking-wider mb-2">Severity Breakdown</h4>
                         <div class="relative flex-1 flex items-center justify-center max-h-[220px]">
@@ -157,32 +175,33 @@
                     </div>
                 </div>
 
-                <!-- C. RECENT SCAN PREDICTIONS -->
-                <div class="glass-panel rounded-xl overflow-hidden shadow-xl">
-                    <div class="px-5 py-4 border-b border-slate-800/80 flex items-center justify-between">
-                        <h4 class="font-bold text-sm text-slate-300 uppercase tracking-wider">Recent Diagnostic Analyses</h4>
-                        <button onclick="fetchAnalyticsAndHistory()" class="text-xs text-sky-400 font-semibold hover:underline">
-                            <i class="fa-solid fa-rotate-right mr-1"></i> Refresh list
+                <!-- C. RECENT DIAGNOSTIC SCANS TABLE -->
+                <div class="glass-panel rounded-xl overflow-hidden shadow-xl border border-slate-800">
+                    <div class="p-4 bg-slate-900/60 border-b border-slate-800/80 flex items-center justify-between">
+                        <h4 class="font-bold text-slate-200 text-sm flex items-center">
+                            <i class="fa-solid fa-clock-rotate-left mr-2 text-sky-400"></i>
+                            Recent Scan Summaries
+                        </h4>
+                        <button onclick="loadDashboardData()" class="text-xs text-slate-400 hover:text-sky-400 font-semibold transition">
+                            <i class="fa-solid fa-arrows-rotate mr-1"></i> Refresh
                         </button>
                     </div>
                     <div class="overflow-x-auto">
-                        <table class="w-full text-left text-sm border-collapse">
-                            <thead>
-                                <tr class="bg-slate-900/60 border-b border-slate-800/80 text-slate-400 font-bold">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-950 text-slate-400 text-xs uppercase font-semibold">
+                                <tr>
                                     <th class="p-4">Report ID</th>
                                     <th class="p-4">Patient ID</th>
                                     <th class="p-4">Patient Name</th>
                                     <th class="p-4">Scan Date</th>
-                                    <th class="p-4">Diagnosis</th>
+                                    <th class="p-4">Class</th>
                                     <th class="p-4">Severity</th>
                                     <th class="p-4">Confidence</th>
-                                    <th class="p-4 text-center">Actions</th>
+                                    <th class="p-4 text-center">Action</th>
                                 </tr>
                             </thead>
-                            <tbody id="history-table-body" class="divide-y divide-slate-800/40">
-                                <tr>
-                                    <td colspan="8" class="p-8 text-center text-slate-400">Loading records...</td>
-                                </tr>
+                            <tbody id="history-table-body" class="divide-y divide-slate-800/50">
+                                <tr><td colspan="8" class="p-8 text-center text-slate-500">Loading recent scan records...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -190,41 +209,95 @@
             </div>
 
             <!-- ================= TAB 2: DATABASE SEARCH ================= -->
-            <div id="tab-database" class="space-y-6 hidden">
-                <!-- A. SEARCH BAR -->
-                <div class="glass-panel p-5 rounded-xl shadow-xl flex flex-col sm:flex-row items-center gap-4">
-                    <div class="relative w-full sm:flex-1">
-                        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                        <input id="search-input" onkeyup="if(event.key==='Enter') searchPatients()" type="text" placeholder="Search scanning records by Patient ID..." class="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-500">
+            <div id="tab-database" class="hidden space-y-6">
+                <div class="glass-panel p-4 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div class="relative w-full sm:w-96">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3.5 text-slate-500"></i>
+                        <input id="search-input" type="text" placeholder="Search by Patient ID or Name..." onkeyup="if(event.key==='Enter') searchPatients()" class="w-full bg-slate-950 border border-slate-800 rounded-lg pl-10 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500 transition">
                     </div>
-                    <button onclick="searchPatients()" class="w-full sm:w-auto bg-accent text-slate-100 text-sm font-semibold px-6 py-2.5 rounded-lg transition shadow-md shadow-sky-500/10">
+                    <button onclick="searchPatients()" class="w-full sm:w-auto bg-accent text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-lg shadow-sky-500/20 transition">
                         Search Database
                     </button>
                 </div>
-
-                <!-- B. PATIENT RESULTS GRID -->
-                <div class="glass-panel rounded-xl overflow-hidden shadow-xl">
-                    <div class="px-5 py-4 border-b border-slate-800/80">
-                        <h4 class="font-bold text-sm text-slate-300 uppercase tracking-wider">Patient History & Scan Records</h4>
-                    </div>
+                <div class="glass-panel rounded-xl overflow-hidden shadow-xl border border-slate-800">
                     <div class="overflow-x-auto">
-                        <table class="w-full text-left text-sm border-collapse">
-                            <thead>
-                                <tr class="bg-slate-900/60 border-b border-slate-800/80 text-slate-400 font-bold">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-950 text-slate-400 text-xs uppercase font-semibold">
+                                <tr>
                                     <th class="p-4">Report ID</th>
                                     <th class="p-4">Patient ID</th>
                                     <th class="p-4">Patient Name</th>
                                     <th class="p-4">Scan Date</th>
-                                    <th class="p-4">Diagnosis</th>
+                                    <th class="p-4">Class</th>
                                     <th class="p-4">Severity</th>
                                     <th class="p-4">Confidence</th>
+                                    <th class="p-4 text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="search-table-body" class="divide-y divide-slate-800/50">
+                                <tr><td colspan="8" class="p-8 text-center text-slate-500">Enter query parameter to search history records.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= TAB 3: ADMIN SECURITY ================= -->
+            <div id="tab-admin" class="hidden space-y-6">
+                <!-- Registered Users List -->
+                <div class="glass-panel rounded-xl overflow-hidden shadow-xl border border-slate-800">
+                    <div class="p-4 bg-slate-900/60 border-b border-slate-800 flex items-center justify-between">
+                        <h4 class="font-bold text-slate-200 text-sm flex items-center">
+                            <i class="fa-solid fa-users-gear mr-2 text-sky-400"></i> Registered User Management (RBAC)
+                        </h4>
+                        <button onclick="loadAdminUsers()" class="text-xs text-sky-400 font-semibold">
+                            <i class="fa-solid fa-rotate mr-1"></i> Refresh Users
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-950 text-slate-400 text-xs uppercase">
+                                <tr>
+                                    <th class="p-4">ID</th>
+                                    <th class="p-4">Full Name</th>
+                                    <th class="p-4">Email</th>
+                                    <th class="p-4">Role</th>
+                                    <th class="p-4">Verified</th>
+                                    <th class="p-4">Status</th>
                                     <th class="p-4 text-center">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody id="search-table-body" class="divide-y divide-slate-800/40">
+                            <tbody id="admin-users-table-body" class="divide-y divide-slate-800/50">
+                                <tr><td colspan="7" class="p-8 text-center text-slate-500">Loading registered users...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Security Audit Logs -->
+                <div class="glass-panel rounded-xl overflow-hidden shadow-xl border border-slate-800">
+                    <div class="p-4 bg-slate-900/60 border-b border-slate-800 flex items-center justify-between">
+                        <h4 class="font-bold text-slate-200 text-sm flex items-center">
+                            <i class="fa-solid fa-shield-halved mr-2 text-sky-400"></i> OWASP Security Audit Logs
+                        </h4>
+                        <button onclick="loadAdminAuditLogs()" class="text-xs text-sky-400 font-semibold">
+                            <i class="fa-solid fa-rotate mr-1"></i> Refresh Logs
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto max-h-96">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-slate-950 text-slate-400 uppercase sticky top-0">
                                 <tr>
-                                    <td colspan="8" class="p-8 text-center text-slate-400">Enter a Patient ID above and click search.</td>
+                                    <th class="p-3">Time</th>
+                                    <th class="p-3">Event Type</th>
+                                    <th class="p-3">User/Email</th>
+                                    <th class="p-3">IP Address</th>
+                                    <th class="p-3">Status</th>
+                                    <th class="p-3">Details</th>
                                 </tr>
+                            </thead>
+                            <tbody id="admin-logs-table-body" class="divide-y divide-slate-800/50">
+                                <tr><td colspan="6" class="p-8 text-center text-slate-500">Loading audit log stream...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -234,230 +307,587 @@
         </div>
     </main>
 
-    <!-- ================= 3. MODALS ================= -->
-    <!-- A. DETAILS MODAL (Segmentation & Grad-CAM visual overlays) -->
-    <div id="details-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
-        <div class="glass-panel w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
-            <!-- Header -->
-            <div class="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between">
+    <!-- ================= MODALS ================= -->
+
+    <!-- LOGIN MODAL -->
+    <div id="login-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+        <div class="glass-panel w-full max-w-md rounded-2xl p-6 shadow-2xl relative border border-slate-700">
+            <button onclick="closeModal('login-modal')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-200">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            <div class="flex items-center space-x-3 mb-6">
+                <div class="bg-sky-500 text-slate-900 p-2.5 rounded-xl font-bold">
+                    <i class="fa-solid fa-lock"></i>
+                </div>
                 <div>
-                    <h3 id="modal-title" class="font-bold text-lg text-slate-100">Patient MRI Visual Analysis</h3>
-                    <span id="modal-patient-meta" class="text-xs text-slate-400">ID: PATIENT_UNK | Age: 0 | Gender: Unknown</span>
+                    <h3 class="font-bold text-lg text-slate-100">User Login</h3>
+                    <p class="text-xs text-slate-400">Authenticate to access AI platform & records</p>
                 </div>
-                <button onclick="closeModal()" class="h-8 w-8 text-slate-400 hover:text-slate-200 rounded-lg flex items-center justify-center hover:bg-slate-800/50">
-                    <i class="fa-solid fa-xmark text-lg"></i>
+            </div>
+            <div id="login-error" class="hidden mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400"></div>
+            <form onsubmit="handleLoginSubmit(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Email Address</label>
+                    <input id="login-email" type="email" required placeholder="admin@aurascan.ai" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Password</label>
+                    <input id="login-password" type="password" required placeholder="••••••••" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
+                </div>
+                <div class="flex justify-between items-center text-xs">
+                    <button type="button" onclick="openModal('forgot-modal')" class="text-sky-400 hover:underline">Forgot password?</button>
+                    <button type="button" onclick="switchModal('login-modal', 'register-modal')" class="text-slate-400 hover:underline">Need an account?</button>
+                </div>
+                <button type="submit" class="w-full bg-sky-500 hover:bg-sky-600 text-slate-900 font-bold py-2.5 rounded-lg text-sm transition shadow-lg shadow-sky-500/20">
+                    Login
                 </button>
-            </div>
+            </form>
+        </div>
+    </div>
 
-            <!-- Body -->
-            <div class="p-6 overflow-y-auto space-y-6 flex-1">
-                <!-- Visual overlays -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- Overlay 1: Grad-CAM overlay -->
-                    <div class="bg-slate-950 p-3 rounded-xl border border-slate-800/50 flex flex-col items-center">
-                        <span class="text-xs font-bold text-slate-300 uppercase mb-2">Grad-CAM Overlay (EfficientNet-B0)</span>
-                        <div class="h-60 w-60 rounded-lg overflow-hidden border border-slate-800 flex items-center justify-center bg-slate-900">
-                            <img id="modal-overlay-img" src="" alt="Grad-CAM Overlay" class="max-h-full max-w-full">
-                        </div>
-                    </div>
-                    <!-- Overlay 2: Segmentation mask -->
-                    <div class="bg-slate-950 p-3 rounded-xl border border-slate-800/50 flex flex-col items-center">
-                        <span class="text-xs font-bold text-slate-300 uppercase mb-2">Segmentation Mask (UNeXt)</span>
-                        <div class="h-60 w-60 rounded-lg overflow-hidden border border-slate-800 flex items-center justify-center bg-slate-900">
-                            <img id="modal-mask-img" src="" alt="Segmentation Mask" class="max-h-full max-w-full">
-                        </div>
-                    </div>
+    <!-- 2FA OTP MODAL -->
+    <div id="otp-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+        <div class="glass-panel w-full max-w-md rounded-2xl p-6 shadow-2xl relative border border-slate-700">
+            <button onclick="closeModal('otp-modal')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-200">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            <div class="flex items-center space-x-3 mb-6">
+                <div class="bg-amber-500 text-slate-900 p-2.5 rounded-xl font-bold">
+                    <i class="fa-solid fa-shield-cat"></i>
                 </div>
-
-                <!-- Text stats -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800/50">
-                        <h4 class="font-bold text-xs uppercase tracking-wider text-slate-400 mb-2">Diagnostic Findings</h4>
-                        <div class="space-y-2 text-sm">
-                            <div class="flex justify-between"><span class="text-slate-400">Diagnosis:</span><span id="modal-diag" class="font-semibold text-slate-100">Meningioma</span></div>
-                            <div class="flex justify-between"><span class="text-slate-400">Confidence:</span><span id="modal-conf" class="font-semibold text-slate-100">92.00%</span></div>
-                            <div class="flex justify-between"><span class="text-slate-400">Rule-Based Severity:</span><span id="modal-severity" class="font-semibold text-red-400">High</span></div>
-                            <div class="flex justify-between"><span class="text-slate-400">Tumor Physical Area:</span><span id="modal-area" class="font-semibold text-slate-100">0.00 mm²</span></div>
-                        </div>
-                    </div>
-                    <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800/50">
-                        <h4 class="font-bold text-xs uppercase tracking-wider text-slate-400 mb-2">Decision Rule Description</h4>
-                        <p id="modal-rule-desc" class="text-xs text-slate-300 leading-relaxed">
-                            No rules matching this diagnostic category.
-                        </p>
-                    </div>
+                <div>
+                    <h3 class="font-bold text-lg text-slate-100">2FA OTP Verification</h3>
+                    <p class="text-xs text-slate-400">Enter the 6-digit verification code</p>
                 </div>
             </div>
+            <div id="otp-error" class="hidden mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400"></div>
+            <div id="otp-hint" class="mb-4 p-3 bg-sky-500/10 border border-sky-500/30 rounded-lg text-xs text-sky-300"></div>
+            <form onsubmit="handleOtpSubmit(event)" class="space-y-4">
+                <input id="otp-user-id" type="hidden">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">6-Digit OTP Code</label>
+                    <input id="otp-code" type="text" maxlength="6" required placeholder="123456" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-center tracking-widest text-lg font-bold text-sky-400 focus:outline-none focus:border-sky-500">
+                </div>
+                <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-2.5 rounded-lg text-sm transition">
+                    Verify OTP & Access
+                </button>
+            </form>
+        </div>
+    </div>
 
-            <!-- Footer -->
-            <div class="px-6 py-4 border-t border-slate-800/80 flex items-center justify-end space-x-3 bg-slate-900/20">
-                <a id="modal-pdf-link" href="" target="_blank" class="bg-accent text-slate-100 text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center space-x-1.5 transition shadow-lg shadow-sky-500/10">
-                    <i class="fa-solid fa-file-pdf"></i>
-                    <span>Print PDF Report</span>
+    <!-- REGISTER MODAL -->
+    <div id="register-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+        <div class="glass-panel w-full max-w-md rounded-2xl p-6 shadow-2xl relative border border-slate-700">
+            <button onclick="closeModal('register-modal')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-200">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            <div class="flex items-center space-x-3 mb-6">
+                <div class="bg-indigo-500 text-slate-900 p-2.5 rounded-xl font-bold">
+                    <i class="fa-solid fa-user-plus"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg text-slate-100">Create Account</h3>
+                    <p class="text-xs text-slate-400">OWASP password complexity enforced</p>
+                </div>
+            </div>
+            <div id="register-error" class="hidden mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400"></div>
+            <div id="register-success" class="hidden mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-xs text-emerald-400"></div>
+            <form onsubmit="handleRegisterSubmit(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Full Name</label>
+                    <input id="reg-name" type="text" required placeholder="Dr. Jane Doe" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Email Address</label>
+                    <input id="reg-email" type="email" required placeholder="jane@hospital.org" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Role</label>
+                    <select id="reg-role" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
+                        <option value="doctor">Doctor / Clinician</option>
+                        <option value="patient">Patient</option>
+                        <option value="admin">System Administrator</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Password</label>
+                    <input id="reg-password" type="password" required placeholder="Min 8 chars (1 upper, 1 lower, 1 num, 1 spec)" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
+                </div>
+                <button type="submit" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2.5 rounded-lg text-sm transition">
+                    Register Account
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- FORGOT / RESET PASSWORD MODAL -->
+    <div id="forgot-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+        <div class="glass-panel w-full max-w-md rounded-2xl p-6 shadow-2xl relative border border-slate-700">
+            <button onclick="closeModal('forgot-modal')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-200">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            <h3 class="font-bold text-lg text-slate-100 mb-2">Password Reset Request</h3>
+            <p class="text-xs text-slate-400 mb-4">Enter your email or verification OTP to set a new password.</p>
+            <div id="forgot-msg" class="hidden mb-4 p-3 bg-sky-500/10 border border-sky-500/30 rounded-lg text-xs text-sky-300"></div>
+            <form onsubmit="handleForgotPasswordSubmit(event)" class="space-y-3">
+                <input id="forgot-email" type="email" placeholder="Your registered email..." class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sm text-slate-200">
+                <button type="submit" class="w-full bg-sky-500 text-slate-900 font-bold py-2 rounded-lg text-xs">Send Reset Code</button>
+            </form>
+            <hr class="my-4 border-slate-800">
+            <form onsubmit="handleResetPasswordSubmit(event)" class="space-y-3">
+                <input id="reset-code" type="text" placeholder="Reset Code or Token..." required class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sm text-slate-200">
+                <input id="reset-email" type="email" placeholder="Confirm Email..." required class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sm text-slate-200">
+                <input id="reset-new-pass" type="password" placeholder="New Strong Password..." required class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sm text-slate-200">
+                <button type="submit" class="w-full bg-emerald-500 text-slate-900 font-bold py-2 rounded-lg text-xs">Reset Password Now</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- PROFILE MODAL -->
+    <div id="profile-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+        <div class="glass-panel w-full max-w-md rounded-2xl p-6 shadow-2xl relative border border-slate-700">
+            <button onclick="closeModal('profile-modal')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-200">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            <h3 class="font-bold text-lg text-slate-100 mb-4">User Security & Profile Settings</h3>
+            <div id="profile-details" class="space-y-4 text-xs text-slate-300">
+                <div><span class="font-semibold text-slate-400">Full Name:</span> <span id="prof-name">-</span></div>
+                <div><span class="font-semibold text-slate-400">Email:</span> <span id="prof-email">-</span></div>
+                <div><span class="font-semibold text-slate-400">Role:</span> <span id="prof-role" class="font-bold text-sky-400 uppercase">-</span></div>
+                <div class="pt-3 border-t border-slate-800">
+                    <label class="flex items-center space-x-2">
+                        <input id="prof-2fa" type="checkbox" onchange="toggle2FA(this.checked)" class="rounded border-slate-700 text-sky-500 focus:ring-0">
+                        <span>Enable Two-Factor Authentication (2FA OTP on Login)</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DIAGNOSTIC VISUAL DETAILS MODAL -->
+    <div id="details-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+        <div class="glass-panel w-full max-w-4xl rounded-2xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto border border-slate-700">
+            <button onclick="closeModal('details-modal')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-200 bg-slate-800/80 hover:bg-slate-700 h-8 w-8 rounded-full flex items-center justify-center">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            <h3 id="modal-title" class="font-bold text-xl text-slate-100">Diagnostic Report Details</h3>
+            <p id="modal-patient-meta" class="text-xs text-slate-400 mb-4">Patient ID: - | Name: -</p>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-slate-950 rounded-xl border border-slate-800/60 mb-6 text-xs">
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Class</span><span id="modal-diag" class="font-bold text-slate-200">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Severity</span><span id="modal-severity" class="font-bold">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Confidence</span><span id="modal-conf" class="font-bold text-slate-200">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Tumor Area</span><span id="modal-area" class="font-bold text-slate-200">-</span></div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <h5 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Overlay Visualization</h5>
+                    <img id="modal-overlay-img" class="w-full h-64 object-contain bg-slate-950 rounded-xl border border-slate-800" src="" alt="Overlay">
+                </div>
+                <div>
+                    <h5 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Segmentation Mask</h5>
+                    <img id="modal-mask-img" class="w-full h-64 object-contain bg-slate-950 rounded-xl border border-slate-800" src="" alt="Mask">
+                </div>
+            </div>
+            <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-xs text-slate-300 mb-4">
+                <span class="font-bold text-slate-400 block mb-1">Clinical Findings & Rule Trace:</span>
+                <p id="modal-rule-desc" class="italic text-slate-300">-</p>
+            </div>
+            <div class="flex justify-end">
+                <a id="modal-pdf-link" href="#" target="_blank" class="bg-accent hover:bg-sky-600 text-white font-bold text-xs px-4 py-2 rounded-lg transition shadow-lg shadow-sky-500/20">
+                    <i class="fa-solid fa-file-pdf mr-1"></i> Download PDF
                 </a>
             </div>
         </div>
     </div>
 
-    <!-- ================= 4. JAVASCRIPT ================= -->
+    <!-- JavaScript Application Code -->
     <script>
-        // Global charts registry to allow dynamic redrawing
         let diagnosisChart = null;
         let severityChart = null;
+        let currentUser = null;
+        let authToken = localStorage.getItem("auth_token") || null;
 
-        // On Page Load
-        document.addEventListener("DOMContentLoaded", () => {
-            fetchAnalyticsAndHistory();
+        // Boot initialization
+        document.addEventListener("DOMContentLoaded", async () => {
+            await checkAuthStatus();
+            loadDashboardData();
         });
 
-        // Toggle Tabs
-        function switchTab(tabId) {
-            const tabs = ['analytics', 'database'];
-            tabs.forEach(t => {
-                const elTab = document.getElementById(`tab-${t}`);
-                const elNav = document.getElementById(`nav-${t}`);
-                if (t === tabId) {
-                    elTab.classList.remove('hidden');
-                    elNav.className = "w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left text-sm font-semibold transition-all duration-200 bg-sky-500/10 text-sky-400 border border-sky-500/20";
-                } else {
-                    elTab.classList.add('hidden');
-                    elNav.className = "w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50";
+        // Tab Switching Logic
+        function switchTab(tabName) {
+            ['analytics', 'database', 'admin'].forEach(t => {
+                const el = document.getElementById(`tab-${t}`);
+                const btn = document.getElementById(`nav-${t}`);
+                if (el) el.classList.add('hidden');
+                if (btn) {
+                    btn.className = "w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50";
                 }
             });
-
-            // Update title
-            const titles = { 'analytics': 'Analytics Dashboard', 'database': 'Patient Database Explorer' };
-            document.getElementById("page-title").innerText = titles[tabId];
+            document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`nav-${tabName}`);
+            if (activeBtn) {
+                activeBtn.className = "w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left text-sm font-semibold transition-all duration-200 bg-sky-500/10 text-sky-400 border border-sky-500/20";
+            }
+            if (tabName === 'admin') {
+                loadAdminUsers();
+                loadAdminAuditLogs();
+            }
         }
 
-        // Fetch Stats Cards and Dynamic Charts data
-        async function fetchAnalyticsAndHistory() {
+        // Modal Controls
+        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+        function switchModal(fromId, toId) { closeModal(fromId); openModal(toId); }
+
+        // Fetch wrapper with auth header
+        async function fetchWithAuth(url, options = {}) {
+            options.headers = options.headers || {};
+            if (authToken) {
+                options.headers['Authorization'] = `Bearer ${authToken}`;
+            }
+            return fetch(url, options);
+        }
+
+        // Check authentication state
+        async function checkAuthStatus() {
             try {
-                // 1. Fetch Stats Cards & Charts Data
-                const resStats = await fetch("/api/analytics");
+                const res = await fetchWithAuth('/api/auth/me');
+                const data = await res.json();
+                if (data.authenticated && data.user) {
+                    currentUser = data.user;
+                    document.getElementById('auth-logged-in').classList.remove('hidden');
+                    document.getElementById('auth-logged-out').classList.add('hidden');
+                    document.getElementById('header-user-name').innerText = currentUser.full_name;
+                    document.getElementById('header-user-role').innerText = currentUser.role;
+
+                    if (currentUser.role === 'admin') {
+                        document.getElementById('nav-admin').classList.remove('hidden');
+                    } else {
+                        document.getElementById('nav-admin').classList.add('hidden');
+                    }
+                } else {
+                    currentUser = null;
+                    document.getElementById('auth-logged-in').classList.add('hidden');
+                    document.getElementById('auth-logged-out').classList.remove('hidden');
+                    document.getElementById('nav-admin').classList.add('hidden');
+                }
+            } catch (err) {
+                console.error("Auth check failed:", err);
+            }
+        }
+
+        // Auth Form Handlers
+        async function handleLoginSubmit(e) {
+            e.preventDefault();
+            const errDiv = document.getElementById('login-error');
+            errDiv.classList.add('hidden');
+
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+                if (data.error) {
+                    errDiv.innerText = data.error;
+                    errDiv.classList.remove('hidden');
+                    return;
+                }
+
+                if (data.requires_2fa) {
+                    closeModal('login-modal');
+                    document.getElementById('otp-user-id').value = data.user_id;
+                    document.getElementById('otp-hint').innerText = `2FA Verification Code: ${data.otp_code || 'Sent via email/SMS'}`;
+                    openModal('otp-modal');
+                    return;
+                }
+
+                authToken = data.access_token;
+                localStorage.setItem("auth_token", authToken);
+                closeModal('login-modal');
+                await checkAuthStatus();
+                loadDashboardData();
+            } catch (err) {
+                errDiv.innerText = "Login request failed: " + err;
+                errDiv.classList.remove('hidden');
+            }
+        }
+
+        async function handleOtpSubmit(e) {
+            e.preventDefault();
+            const userId = document.getElementById('otp-user-id').value;
+            const otpCode = document.getElementById('otp-code').value;
+            const errDiv = document.getElementById('otp-error');
+            errDiv.classList.add('hidden');
+
+            try {
+                const res = await fetch('/api/auth/verify-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: parseInt(userId), otp_code: otpCode })
+                });
+                const data = await res.json();
+                if (data.error) {
+                    errDiv.innerText = data.error;
+                    errDiv.classList.remove('hidden');
+                    return;
+                }
+                authToken = data.access_token;
+                localStorage.setItem("auth_token", authToken);
+                closeModal('otp-modal');
+                await checkAuthStatus();
+                loadDashboardData();
+            } catch (err) {
+                errDiv.innerText = "OTP verification failed: " + err;
+                errDiv.classList.remove('hidden');
+            }
+        }
+
+        async function handleRegisterSubmit(e) {
+            e.preventDefault();
+            const name = document.getElementById('reg-name').value;
+            const email = document.getElementById('reg-email').value;
+            const role = document.getElementById('reg-role').value;
+            const password = document.getElementById('reg-password').value;
+
+            const errDiv = document.getElementById('register-error');
+            const succDiv = document.getElementById('register-success');
+            errDiv.classList.add('hidden');
+            succDiv.classList.add('hidden');
+
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ full_name: name, email, role, password })
+                });
+                const data = await res.json();
+                if (data.error) {
+                    errDiv.innerText = data.error;
+                    errDiv.classList.remove('hidden');
+                    return;
+                }
+
+                succDiv.innerText = `${data.message} OTP Code: ${data.verification_otp}`;
+                succDiv.classList.remove('hidden');
+                setTimeout(() => {
+                    closeModal('register-modal');
+                    openModal('login-modal');
+                }, 3000);
+            } catch (err) {
+                errDiv.innerText = "Registration failed: " + err;
+                errDiv.classList.remove('hidden');
+            }
+        }
+
+        async function handleLogout() {
+            try {
+                await fetchWithAuth('/api/auth/logout', { method: 'POST' });
+            } catch (e) {}
+            authToken = null;
+            localStorage.removeItem("auth_token");
+            await checkAuthStatus();
+            loadDashboardData();
+        }
+
+        async function handleForgotPasswordSubmit(e) {
+            e.preventDefault();
+            const email = document.getElementById('forgot-email').value;
+            const msgDiv = document.getElementById('forgot-msg');
+            try {
+                const res = await fetch('/api/auth/forgot-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                const data = await res.json();
+                msgDiv.innerText = `${data.message} Reset OTP: ${data.reset_otp || 'Sent'}`;
+                msgDiv.classList.remove('hidden');
+            } catch (err) {
+                alert("Failed: " + err);
+            }
+        }
+
+        async function handleResetPasswordSubmit(e) {
+            e.preventDefault();
+            const code = document.getElementById('reset-code').value;
+            const email = document.getElementById('reset-email').value;
+            const newPass = document.getElementById('reset-new-pass').value;
+
+            try {
+                const res = await fetch('/api/auth/reset-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reset_token_or_otp: code, email, new_password: newPass })
+                });
+                const data = await res.json();
+                if (data.error) { alert("Reset Error: " + data.error); return; }
+                alert(data.message);
+                closeModal('forgot-modal');
+                openModal('login-modal');
+            } catch (err) { alert("Password reset failed: " + err); }
+        }
+
+        function openProfileModal() {
+            if (!currentUser) return;
+            document.getElementById('prof-name').innerText = currentUser.full_name;
+            document.getElementById('prof-email').innerText = currentUser.email;
+            document.getElementById('prof-role').innerText = currentUser.role;
+            document.getElementById('prof-2fa').checked = currentUser.two_factor_enabled;
+            openModal('profile-modal');
+        }
+
+        async function toggle2FA(enabled) {
+            try {
+                await fetchWithAuth('/api/auth/profile', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enable_2fa: enabled })
+                });
+            } catch (e) { console.error("Failed to update 2FA:", e); }
+        }
+
+        // Admin Management Actions
+        async function loadAdminUsers() {
+            const tbody = document.getElementById('admin-users-table-body');
+            try {
+                const res = await fetchWithAuth('/api/admin/users');
+                const data = await res.json();
+                if (data.error) { tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-red-400 font-bold">${data.error}</td></tr>`; return; }
+                tbody.innerHTML = '';
+                data.users.forEach(u => {
+                    tbody.innerHTML += `
+                    <tr class="hover:bg-slate-900/40">
+                        <td class="p-4 font-bold">#${u.id}</td>
+                        <td class="p-4">${u.full_name}</td>
+                        <td class="p-4 text-slate-400">${u.email}</td>
+                        <td class="p-4"><span class="px-2 py-0.5 rounded text-xs font-bold uppercase ${u.role==='admin'?'bg-red-500/20 text-red-400':u.role==='doctor'?'bg-sky-500/20 text-sky-400':'bg-indigo-500/20 text-indigo-400'}">${u.role}</span></td>
+                        <td class="p-4">${u.is_verified?'<span class="text-emerald-400">Yes</span>':'<span class="text-slate-500">No</span>'}</td>
+                        <td class="p-4">${u.is_active?'<span class="text-emerald-400">Active</span>':'<span class="text-red-400">Disabled</span>'}</td>
+                        <td class="p-4 text-center">
+                            <select onchange="updateUserRole(${u.id}, this.value)" class="bg-slate-950 text-xs border border-slate-800 rounded px-2 py-1">
+                                <option value="patient" ${u.role==='patient'?'selected':''}>Patient</option>
+                                <option value="doctor" ${u.role==='doctor'?'selected':''}>Doctor</option>
+                                <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
+                            </select>
+                        </td>
+                    </tr>
+                    `;
+                });
+            } catch (err) { tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-red-500">Failed to load admin users.</td></tr>`; }
+        }
+
+        async function updateUserRole(userId, newRole) {
+            try {
+                await fetchWithAuth(`/api/admin/users/${userId}/role`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ role: newRole })
+                });
+                loadAdminUsers();
+            } catch (err) { alert("Failed to update role: " + err); }
+        }
+
+        async function loadAdminAuditLogs() {
+            const tbody = document.getElementById('admin-logs-table-body');
+            try {
+                const res = await fetchWithAuth('/api/admin/audit-logs');
+                const data = await res.json();
+                if (data.error) { tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-red-400">${data.error}</td></tr>`; return; }
+                tbody.innerHTML = '';
+                data.audit_logs.forEach(l => {
+                    tbody.innerHTML += `
+                    <tr class="hover:bg-slate-900/40">
+                        <td class="p-3 text-slate-400">${l.timestamp.split('T')[1]?.substring(0,8) || l.timestamp}</td>
+                        <td class="p-3 font-bold">${l.event_type}</td>
+                        <td class="p-3 text-slate-300">${l.email || l.user_id || 'Anon'}</td>
+                        <td class="p-3 text-slate-400">${l.ip_address}</td>
+                        <td class="p-3"><span class="${l.status==='SUCCESS'?'text-emerald-400':'text-red-400'} font-bold">${l.status}</span></td>
+                        <td class="p-3 text-slate-400">${l.details}</td>
+                    </tr>
+                    `;
+                });
+            } catch (err) { tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-red-500">Failed to load security audit logs.</td></tr>`; }
+        }
+
+        // Fetch Dashboard Analytics
+        async function loadDashboardData() {
+            try {
+                const resStats = await fetchWithAuth("/api/analytics");
                 const stats = await resStats.json();
-                
-                // Update stats cards
-                document.getElementById("stat-patients").innerText = stats.total_patients || 0;
-                document.getElementById("stat-scans").innerText = stats.total_scans || 0;
 
-                // Total active tumor cases count (Glioma + Meningioma + Pituitary)
-                let activeTumors = 0;
-                const diagDist = stats.classification_distribution || {};
-                activeTumors += (diagDist["Glioma"] || 0);
-                activeTumors += (diagDist["Meningioma"] || 0);
-                activeTumors += (diagDist["Pituitary"] || 0);
-                document.getElementById("stat-tumors").innerText = activeTumors;
+                if (!stats.error) {
+                    document.getElementById("stat-patients").innerText = stats.total_patients || 0;
+                    document.getElementById("stat-scans").innerText = stats.total_scans || 0;
+                    const classDist = stats.classification_distribution || {};
+                    let activeTumors = (classDist["Glioma"] || 0) + (classDist["Meningioma"] || 0) + (classDist["Pituitary"] || 0);
+                    document.getElementById("stat-tumors").innerText = activeTumors;
+                    const sevDist = stats.severity_distribution || {};
+                    let critical = (sevDist["Medium"] || 0) + (sevDist["High"] || 0);
+                    document.getElementById("stat-critical").innerText = critical;
 
-                // Critical counts (Medium & High severity)
-                const sevDist = stats.severity_distribution || {};
-                let critical = (sevDist["Medium"] || 0) + (sevDist["High"] || 0);
-                document.getElementById("stat-critical").innerText = critical;
+                    drawDiagnosisChart(stats.classification_distribution || {});
+                    drawSeverityChart(stats.severity_distribution || {});
+                }
 
-                // Redraw Doughnut Chart
-                drawDiagnosisChart(stats.classification_distribution || {});
-                // Redraw Bar Chart
-                drawSeverityChart(stats.severity_distribution || {});
-
-                // 2. Fetch Recent scan list
-                const resHistory = await fetch("/api/history");
+                const resHistory = await fetchWithAuth("/api/history");
                 const history = await resHistory.json();
-                populateTable("history-table-body", history);
+                if (Array.isArray(history)) {
+                    populateTable("history-table-body", history);
+                }
             } catch (err) {
                 console.error("Failed to load dashboard statistics:", err);
             }
         }
 
-        // Render diagnosis doughnut widget
         function drawDiagnosisChart(data) {
             const ctx = document.getElementById("chart-diagnosis").getContext("2d");
             if (diagnosisChart) diagnosisChart.destroy();
-
             const labels = Object.keys(data);
             const values = Object.values(data);
-
-            if (labels.length === 0) {
-                labels.push("No data");
-                values.push(1);
-            }
-
+            if (labels.length === 0) { labels.push("No data"); values.push(1); }
             diagnosisChart = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
                     labels: labels,
-                    datasets: [{
-                        data: values,
-                        backgroundColor: ['#2980b9', '#16a085', '#d35400', '#2c3e50'],
-                        borderColor: '#0f172a',
-                        borderWidth: 2
-                    }]
+                    datasets: [{ data: values, backgroundColor: ['#2980b9', '#16a085', '#d35400', '#2c3e50'], borderColor: '#0f172a', borderWidth: 2 }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'right',
-                            labels: { color: '#cbd5e1', font: { size: 10 } }
-                        }
-                    }
-                }
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#cbd5e1', font: { size: 10 } } } } }
             });
         }
 
-        // Render severity counts horizontal bar chart
         function drawSeverityChart(data) {
             const ctx = document.getElementById("chart-severity").getContext("2d");
             if (severityChart) severityChart.destroy();
-
             const labels = Object.keys(data);
             const values = Object.values(data);
-
-            if (labels.length === 0) {
-                labels.push("No data");
-                values.push(0);
-            }
-
+            if (labels.length === 0) { labels.push("No data"); values.push(0); }
             severityChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
                     labels: labels,
-                    datasets: [{
-                        label: 'Scans',
-                        data: values,
-                        backgroundColor: ['#27ae60', '#f39c12', '#c0392b'],
-                        borderRadius: 6
-                    }]
+                    datasets: [{ label: 'Scans', data: values, backgroundColor: ['#27ae60', '#f39c12', '#c0392b'], borderRadius: 6 }]
                 },
-                options: {
-                    indexAxis: 'y',
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        x: { grid: { color: '#334155' }, ticks: { color: '#cbd5e1' } },
-                        y: { grid: { display: false }, ticks: { color: '#cbd5e1' } }
-                    }
-                }
+                options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: '#334155' }, ticks: { color: '#cbd5e1' } }, y: { grid: { display: false }, ticks: { color: '#cbd5e1' } } } }
             });
         }
 
-        // Populate table logic
         function populateTable(tbodyId, records) {
             const tbody = document.getElementById(tbodyId);
             tbody.innerHTML = "";
-
-            if (records.length === 0) {
+            if (!records || records.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-500 font-medium">No records found.</td></tr>`;
                 return;
             }
-
             records.forEach(r => {
                 const confStr = `${(r.confidence_score * 100).toFixed(2)}%`;
                 const severityStyle = r.rule_based_severity.toLowerCase() === 'high' ? 'text-red-500 font-semibold' :
                                       r.rule_based_severity.toLowerCase() === 'medium' ? 'text-amber-500 font-semibold' :
                                       'text-emerald-500';
-
                 tbody.innerHTML += `
                 <tr class="hover:bg-slate-900/40 transition">
                     <td class="p-4 font-bold text-slate-300">#${r.report_id}</td>
@@ -482,64 +912,40 @@
             });
         }
 
-        // Run patient history query search
         async function searchPatients() {
-            const query = document.getElementById("search-input").value.trim();
+            const query = document.getElementById("search-input").value.strip();
             const tbody = document.getElementById("search-table-body");
             tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-400">Searching scanning history...</td></tr>`;
             try {
-                const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                const res = await fetchWithAuth(`/api/search?q=${encodeURIComponent(query)}`);
                 const data = await res.json();
                 populateTable("search-table-body", data);
             } catch (err) {
-                console.error("Failed to query patients:", err);
-                tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-red-500 font-bold">Failed to connect to database query API.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-red-500 font-bold">Failed to query patients.</td></tr>`;
             }
         }
 
-        // View dynamic MRI scan details inside modal
         async function viewDetails(reportId) {
             try {
-                const res = await fetch(`/api/report/${reportId}`);
+                const res = await fetchWithAuth(`/api/report/${reportId}`);
                 const data = await res.json();
-                if (data.error) {
-                    alert("Report details could not be loaded: " + data.error);
-                    return;
-                }
-
+                if (data.error) { alert("Report details could not be loaded: " + data.error); return; }
                 document.getElementById("modal-title").innerText = `Diagnostic Report Details: #${data.report_id}`;
                 document.getElementById("modal-patient-meta").innerText = `Patient ID: ${data.patient_id} | Name: ${data.patient_name}`;
                 document.getElementById("modal-diag").innerText = data.predicted_class;
                 document.getElementById("modal-conf").innerText = `${(data.confidence_score * 100).toFixed(2)}%`;
-                
-                // Color code severity in modal
                 const elSev = document.getElementById("modal-severity");
                 elSev.innerText = data.rule_based_severity;
                 elSev.className = data.rule_based_severity.toLowerCase() === 'high' ? 'font-bold text-red-500' :
                                   data.rule_based_severity.toLowerCase() === 'medium' ? 'font-bold text-amber-500' :
                                   'font-bold text-emerald-500';
-
                 document.getElementById("modal-area").innerText = `${data.tumor_area_mm2.toFixed(2)} mm²`;
                 document.getElementById("modal-rule-desc").innerText = data.severity_rule_description;
                 document.getElementById("modal-pdf-link").href = `/api/report/${data.report_id}/pdf`;
-
-                // Set image sources
                 document.getElementById("modal-overlay-img").src = `/api/report/${data.report_id}/visuals/overlay`;
                 document.getElementById("modal-mask-img").src = `/api/report/${data.report_id}/visuals/mask`;
-
-                // Show modal
-                document.getElementById("details-modal").classList.remove("hidden");
-            } catch (err) {
-                console.error("Failed to retrieve visual assets:", err);
-                alert("Failed to load clinical report overlays.");
-            }
-        }
-
-        // Close modal helper
-        function closeModal() {
-            document.getElementById("details-modal").classList.add("hidden");
-            document.getElementById("modal-overlay-img").src = "";
-            document.getElementById("modal-mask-img").src = "";
+                openModal("details-modal");
+            } catch (err) { alert("Failed to load clinical report overlays."); }
         }
     </script>
 </body>

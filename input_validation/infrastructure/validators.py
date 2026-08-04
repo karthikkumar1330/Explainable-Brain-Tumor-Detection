@@ -20,11 +20,11 @@ class OpenCVMriValidator(IMriValidator):
     def __init__(
         self,
         max_file_size_bytes: int = 15 * 1024 * 1024,  # 15 MB
-        min_resolution: int = 128,
+        min_resolution: int = 64,
         max_resolution: int = 4096,
-        min_contrast: float = 15.0,
-        min_blur_score: float = 40.0,
-        min_snr: float = 3.0
+        min_contrast: float = 3.0,
+        min_blur_score: float = 4.0,
+        min_snr: float = 1.5
     ) -> None:
         self.max_file_size_bytes = max_file_size_bytes
         self.min_resolution = min_resolution
@@ -114,9 +114,12 @@ class OpenCVMriValidator(IMriValidator):
         )
 
         # 3. Brain MRI Detector (Heuristics Analysis)
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if c == 3 else img
         
-        # Border check (average intensity of outer 5% region should be close to black background)
+        # Check for pure white text documents / paper scans
+        is_white_doc = bool(gray.mean() > 200.0 and gray[0:max(1, int(h*0.05)), :].mean() > 200.0 and gray.std() < 30.0)
+
+        # Border check (outer 5% margin relative to foreground tissue intensity)
         border_h = max(1, int(h * 0.05))
         border_w = max(1, int(w * 0.05))
         t_b = gray[0:border_h, :].mean()
@@ -124,13 +127,16 @@ class OpenCVMriValidator(IMriValidator):
         l_b = gray[:, 0:border_w].mean()
         r_b = gray[:, w-border_w:w].mean()
         border_mean = (t_b + b_b + l_b + r_b) / 4.0
-        border_ok = bool(border_mean < 25.0)  # Background black threshold
 
         # Foreground check (brain tissue ratio)
-        fg_mask = gray > 15  # threshold to isolate brain structure
+        fg_mask = gray > 12  # threshold to isolate brain structure
         fg_pixels = fg_mask.sum()
         fg_ratio = fg_pixels / gray.size
-        fg_ok = bool(0.12 <= fg_ratio <= 0.80)
+        fg_vals = gray[fg_mask]
+        fg_mean = fg_vals.mean() if len(fg_vals) > 0 else 100.0
+
+        border_ok = bool(border_mean < 85.0 or border_mean < 0.90 * fg_mean or fg_ratio > 0.40)
+        fg_ok = bool(0.04 <= fg_ratio <= 0.98)
 
         # Centering check (distance between foreground center of mass and slice center)
         if fg_pixels > 0:
@@ -141,8 +147,8 @@ class OpenCVMriValidator(IMriValidator):
             cx_geo = w / 2.0
             dist = np.sqrt((cx_fg - cx_geo)**2 + (cy_fg - cy_geo)**2)
             max_dist = np.sqrt(h**2 + w**2)
-            centroid_score = max(0.0, 100.0 - (dist / (max_dist * 0.20)) * 100.0)
-            centered_ok = bool(dist <= (max_dist * 0.20))
+            centroid_score = max(0.0, 100.0 - (dist / (max_dist * 0.35)) * 100.0)
+            centered_ok = bool(dist <= (max_dist * 0.35))
         else:
             centroid_score = 0.0
             centered_ok = False
@@ -153,22 +159,29 @@ class OpenCVMriValidator(IMriValidator):
         right_half = gray[:, w-w_half:]
         right_flipped = np.fliplr(right_half)
         mae = np.mean(np.abs(left_half.astype(float) - right_flipped.astype(float))) / 255.0
-        symmetry_ok = bool(mae < 0.28)
+        symmetry_ok = bool(mae < 0.40)
 
         # Compile Brain MRI Detector score
-        border_score = max(0.0, 100.0 - (border_mean / 25.0) * 100.0)
-        fg_score = 100.0 if (0.12 <= fg_ratio <= 0.80) else (100.0 - min(abs(fg_ratio - 0.12), abs(fg_ratio - 0.80)) * 200.0)
+        if fg_ratio > 0.40:
+            border_score = 85.0
+        else:
+            border_score = max(0.0, 100.0 - (border_mean / 85.0) * 100.0)
+
+        fg_score = 100.0 if (0.04 <= fg_ratio <= 0.98) else (100.0 - min(abs(fg_ratio - 0.04), abs(fg_ratio - 0.98)) * 200.0)
         fg_score = max(0.0, fg_score)
-        sym_score = max(0.0, 100.0 - (mae / 0.28) * 100.0)
+        sym_score = max(0.0, 100.0 - (mae / 0.40) * 100.0)
 
         brain_confidence = float(0.3 * border_score + 0.3 * fg_score + 0.2 * centroid_score + 0.2 * sym_score)
-        is_brain_mri = bool(border_ok and fg_ok and centered_ok and symmetry_ok and (brain_confidence >= 65.0))
+        if is_white_doc:
+            brain_confidence = min(brain_confidence, 25.0)
+
+        is_brain_mri = bool((not is_white_doc) and border_ok and fg_ok and centered_ok and (brain_confidence >= 45.0))
 
         details = (
-            f"Border background mean: {border_mean:.1f} (Threshold: <25.0); "
-            f"Foreground tissue ratio: {fg_ratio:.2%} (Threshold: 12%-80%); "
-            f"Centering deviation: {centroid_score:.1f}/100; "
-            f"Horizontal asymmetry: {mae:.2f} MAE (Threshold: <0.28)"
+            f"Border background mean: {border_mean:.1f}; "
+            f"Foreground tissue ratio: {fg_ratio:.2%}; "
+            f"Centering score: {centroid_score:.1f}/100; "
+            f"Horizontal asymmetry: {mae:.2f} MAE"
         )
         
         if not is_brain_mri:
@@ -183,24 +196,23 @@ class OpenCVMriValidator(IMriValidator):
         # 4. Image Quality Assessment (QA)
         # Blurriness via Laplacian variance
         blur_score = float(cv2.Laplacian(gray, cv2.CV_64F).var())
-        blur_valid = blur_score >= self.min_blur_score
+        blur_valid = bool(blur_score >= self.min_blur_score)
         if not blur_valid:
             errors.append(f"Image quality: High blur/motion artifacts detected (Variance: {blur_score:.1f}, Min required: {self.min_blur_score})")
 
         # Contrast via RMS contrast of foreground pixels
-        fg_vals = gray[fg_mask]
         contrast_score = float(np.std(fg_vals)) if len(fg_vals) > 0 else 0.0
-        contrast_valid = contrast_score >= self.min_contrast
+        contrast_valid = bool(contrast_score >= self.min_contrast)
         if not contrast_valid:
             errors.append(f"Image quality: Insufficient contrast variance (RMS Contrast: {contrast_score:.1f}, Min required: {self.min_contrast})")
 
         # Noise level via Estimated SNR
-        bg_mask = gray <= 15
+        bg_mask = ~fg_mask
         bg_vals = gray[bg_mask]
         bg_std = np.std(bg_vals) if len(bg_vals) > 0 else 0.0
-        fg_mean = np.mean(fg_vals) if len(fg_vals) > 0 else 0.0
-        noise_score = float(fg_mean / bg_std) if bg_std > 0.5 else 50.0
-        noise_valid = noise_score >= self.min_snr
+        fg_mean_val = float(np.mean(fg_vals)) if len(fg_vals) > 0 else 0.0
+        noise_score = float(fg_mean_val / bg_std) if bg_std > 0.5 else 50.0
+        noise_valid = bool(noise_score >= self.min_snr)
         if not noise_valid:
             errors.append(f"Image quality: Excess noise level detected (SNR: {noise_score:.2f}, Min required: {self.min_snr})")
 
@@ -238,7 +250,7 @@ class OpenCVMriValidator(IMriValidator):
         if ext in ['png']:
             return file_bytes.startswith(b'\x89PNG\r\n\x1a\n')
         elif ext in ['jpg', 'jpeg']:
-            return file_bytes.startswith(b'\xff\xd8\xff')
+            return file_bytes.startswith(b'\xff\xd8')
         elif ext in ['tif', 'tiff']:
             return file_bytes.startswith(b'II*\x00') or file_bytes.startswith(b'MM\x00*')
         return False

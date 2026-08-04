@@ -41,8 +41,8 @@ class TumorAnalysisResult:
     tumor_percentage_image: float
     tumor_percentage_brain: float
     estimated_brain_pixel_count: int
-    severity_level: SeverityLevel
-    metadata: Dict[str, Any]
+    severity_level: SeverityLevel = SeverityLevel.LOW
+    metadata: Optional[Dict[str, Any]] = None
 
     # Post-processing quality metrics
     quality_score: Optional[float] = None
@@ -52,6 +52,10 @@ class TumorAnalysisResult:
 
     # Tumor Statistics Engine measurements
     stats: Optional[TumorStats] = None
+
+    # Rule-based severity assessment fields
+    rule_based_severity: Optional[str] = None
+    severity_rule_description: Optional[str] = None
 
 
 

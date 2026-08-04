@@ -108,6 +108,7 @@ class OpenCVTumorAnalyzer(ITumorAnalyzer):
             "total_image_pixels": total_pixels,
         }
 
+        sev_str = severity.value if isinstance(severity, SeverityLevel) else str(severity)
         return TumorAnalysisResult(
             pixel_count=tumor_pixel_count,
             tumor_area_mm2=tumor_area_mm2,
@@ -117,5 +118,7 @@ class OpenCVTumorAnalyzer(ITumorAnalyzer):
             severity_level=severity,
             metadata=metadata,
             stats=stats,
+            rule_based_severity=sev_str,
+            severity_rule_description=f"Rule-based assessment: {sev_str}",
         )
 

@@ -90,4 +90,3 @@ class ValidateDiagnosticQualityUseCase:
             "segmentation_report": seg_report,
             "consistency_report": consistency_report
         }
-``` logic, aggregating warning alerts.

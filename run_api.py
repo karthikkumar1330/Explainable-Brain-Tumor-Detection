@@ -2,8 +2,11 @@ import argparse
 import sys
 import logging
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from api.infrastructure.routes import router, initialize_api_models
+from api.routes.auth_routes import auth_router, admin_router
+from security.infrastructure.repository import SQLiteUserRepository
 
 
 def parse_args() -> argparse.Namespace:
@@ -37,7 +40,7 @@ logging.basicConfig(
     format="[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-
+logger = logging.getLogger("run_api")
 
 # Create FastAPI instance
 app = FastAPI(
@@ -46,13 +49,33 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Register routes
+# OWASP Security Headers Middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:;"
+    return response
+
+
+
+# Register routers
+app.include_router(auth_router, prefix="/api")
+app.include_router(admin_router, prefix="/api")
 app.include_router(router, prefix="/api")
 
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Preloads weights and logs parameters once the server boots."""
+    """Preloads weights, initializes security tables, and logs parameters once the server boots."""
+    logger.info("Initializing security database tables and bootstrapping Admin user...")
+    sec_repo = SQLiteUserRepository(db_path="outputs/clinical_reports.db")
+    sec_repo.initialize_security_tables()
+    sec_repo.bootstrap_admin()
+
     initialize_api_models()
 
 
