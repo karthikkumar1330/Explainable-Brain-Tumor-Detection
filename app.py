@@ -44,6 +44,44 @@ from security.infrastructure.repository import SQLiteUserRepository
 from security.infrastructure.jwt_service import JWTService
 from security.application.use_cases import AuthUseCases
 
+from ui_system.theme import inject_design_system, toggle_theme
+from ui_system.components import (
+    render_header,
+    render_toast,
+    render_skeleton_loader,
+    render_landing_page,
+    render_metric_card,
+    render_empty_state,
+    render_empty_state_preset,
+    render_alert_card,
+    render_user_profile,
+    render_sidebar_user_footer,
+    render_password_strength_meter,
+    render_social_login_buttons,
+    render_unauthenticated_app,
+)
+
+def get_theme_chart_colors(theme: str = "dark"):
+    """Returns color dictionary for Matplotlib chart rendering based on active theme."""
+    if theme == "light":
+        return {
+            "text_hex": "#0F172A",
+            "grid": "#CBD5E1",
+            "pie_colors": ['#2563EB', '#0EA5E9', '#10B981', '#F59E0B'],
+            "bar_colors": ['#10B981', '#F59E0B', '#EF4444'],
+            "card_bg": "#FFFFFF"
+        }
+    else:
+        return {
+            "text_hex": "#E2E8F0",
+            "grid": "#334155",
+            "pie_colors": ['#3B82F6', '#38BDF8', '#10B981', '#F59E0B'],
+            "bar_colors": ['#10B981', '#F59E0B', '#EF4444'],
+            "card_bg": "#162032"
+        }
+
+
+
 
 # Setup default paths
 DEFAULT_DB_PATH = "outputs/clinical_reports.db"
@@ -104,53 +142,15 @@ def preprocess_segmentation_image(img_bgr: np.ndarray, h: int, w: int) -> torch.
 def main() -> None:
     # 1. Page Configuration
     st.set_page_config(
-        page_title="AuraScan AI - Brain MRI Portal",
+        page_title="AuraScan AI - Brain MRI SaaS Portal",
         page_icon="🧠",
         layout="wide",
         initial_sidebar_state="expanded"
     )
 
-    # 2. Inject Premium Custom Styling
-    st.markdown("""
-        <style>
-        .stButton button {
-            background-color: #0284c7 !important;
-            color: white !important;
-            border-radius: 8px !important;
-            border: none !important;
-            padding: 8px 16px !important;
-            font-weight: 600 !important;
-        }
-        .stButton button:hover {
-            background-color: #0369a1 !important;
-        }
-        .metric-card {
-            background-color: #0f172a;
-            border: 1px solid #1e293b;
-            padding: 20px;
-            border-radius: 12px;
-            text-align: center;
-        }
-        .metric-title {
-            color: #94a3b8;
-            font-size: 11px;
-            text-transform: uppercase;
-            font-weight: 700;
-            letter-spacing: 1px;
-        }
-        .metric-value {
-            color: #f8fafc;
-            font-size: 28px;
-            font-weight: 800;
-            margin-top: 4px;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    # 2. Inject Reusable Design System & Theme CSS Tokens
+    inject_design_system()
 
-    # 3. Sidebar Navigation & DB setups
-    st.sidebar.markdown("<h2 style='text-align: center; color: #38bdf8;'>🧠 AuraScan AI</h2>", unsafe_allow_html=True)
-    st.sidebar.markdown("<p style='text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-top: -10px;'>MRI Clinical Portal</p>", unsafe_allow_html=True)
-    
     # Security Auth setup
     sec_repo = SQLiteUserRepository(db_path=DEFAULT_DB_PATH)
     sec_repo.initialize_security_tables()
@@ -160,48 +160,48 @@ def main() -> None:
     if "user" not in st.session_state:
         st.session_state["user"] = None
 
-    with st.sidebar.expander("🔐 Security & Auth", expanded=(st.session_state["user"] is None)):
-        if st.session_state["user"] is None:
-            auth_t1, auth_t2 = st.tabs(["Login", "Register"])
-            with auth_t1:
-                l_email = st.text_input("Email", key="st_l_email")
-                l_pass = st.text_input("Password", type="password", key="st_l_pass")
-                if st.button("Log In", key="st_login_btn"):
-                    try:
-                        res = auth_use_cases.login(l_email, l_pass)
-                        if res.get("requires_2fa"):
-                            st.info(f"2FA Required. OTP Code: {res.get('otp_code')}")
-                        else:
-                            st.session_state["user"] = res["user"]
-                            st.success(f"Welcome, {res['user']['full_name']}!")
-                            st.rerun()
-                    except Exception as err:
-                        st.error(str(err))
-            with auth_t2:
-                r_name = st.text_input("Full Name", key="st_r_name")
-                r_email = st.text_input("Email", key="st_r_email")
-                r_role = st.selectbox("Role", ["doctor", "patient", "admin"], key="st_r_role")
-                r_pass = st.text_input("Password", type="password", key="st_r_pass")
-                if st.button("Register Account", key="st_reg_btn"):
-                    try:
-                        res = auth_use_cases.register(r_email, r_pass, r_name, r_role)
-                        st.success(f"Registered! Verification OTP: {res['verification_otp']}")
-                    except Exception as err:
-                        st.error(str(err))
-        else:
-            u = st.session_state["user"]
-            st.markdown(f"**User:** {u['full_name']}")
-            st.markdown(f"**Role:** `{u['role']}`")
-            if st.button("Logout", key="st_logout_btn"):
-                st.session_state["user"] = None
-                st.rerun()
+    # Modern 2026 Full-Screen Unauthenticated Access Guard
+    if st.session_state["user"] is None:
+        render_unauthenticated_app(auth_use_cases)
+        st.stop()
 
+    # 3. Sidebar Header & Authenticated User Status Controls
+    st.sidebar.markdown("<h3 style='text-align: center; color: var(--text-accent); margin-bottom: 0;'>🧠 AuraScan AI</h3>", unsafe_allow_html=True)
+    st.sidebar.markdown("<p style='text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-muted); margin-top: -6px;'>SaaS MRI Clinical Platform</p>", unsafe_allow_html=True)
+    
+    u = st.session_state["user"]
+    st.sidebar.markdown(f"👤 **User:** `{u['full_name']}`")
+    st.sidebar.markdown(f"🏷️ **Role:** `{u['role'].upper()}`")
+    st.sidebar.markdown("✅ **Status:** `VERIFIED CLINICIAN`")
+    if st.sidebar.button("🚪 Logout Session", key="st_logout_btn", use_container_width=True):
+        st.session_state["user"] = None
+        render_toast("Logged out of session.", "info")
+        st.rerun()
     st.sidebar.divider()
-    page = st.sidebar.radio(
-        "Navigation",
-        ["Dashboard Analytics", "Inference Scan Analysis", "Patient Database History", "AI Pipeline Health"]
-    )
+
+
+    if "nav_page" not in st.session_state:
+        st.session_state["nav_page"] = "🚀 Product Overview"
+
+    nav_list = [
+        "🚀 Product Overview",
+        "📊 Dashboard Analytics",
+        "🧠 AI Workspace",
+        "🗄️ Patient Database History",
+        "🩺 AI Pipeline Health",
+        "⚙️ Settings & Profile"
+    ]
+    
+    current_nav_index = nav_list.index(st.session_state["nav_page"]) if st.session_state["nav_page"] in nav_list else 0
+    page = st.sidebar.radio("Navigation", nav_list, index=current_nav_index, key="sb_nav_radio")
+    st.session_state["nav_page"] = page
+    render_sidebar_user_footer(st.session_state.get("user"))
     st.sidebar.divider()
+
+
+    # 4. Top Navbar Header with Breadcrumbs & Active Page
+    render_header(st.session_state.get("user"), active_page=page)
+
 
 
     # Hardware selector
@@ -216,7 +216,6 @@ def main() -> None:
         help="Select the model explanation algorithm to visualize activation patterns."
     )
 
-
     # Thread tuning for CPU fallback to avoid thrashing
     if device_choice == "cpu" and torch.get_num_threads() > 4:
         torch.set_num_threads(4)
@@ -227,9 +226,17 @@ def main() -> None:
     history_repo = SQLitePredictionHistoryRepository(db_path=DEFAULT_DB_PATH)
 
     # =================================================================
+    # PAGE 0: PRODUCT OVERVIEW & LANDING PAGE
+    # =================================================================
+    if page == "🚀 Product Overview":
+        render_landing_page()
+
+    # =================================================================
+
     # PAGE 1: DASHBOARD ANALYTICS
     # =================================================================
-    if page == "Dashboard Analytics":
+    elif page in ["📊 Dashboard Analytics", "Dashboard Analytics"]:
+
         st.title("Clinical Diagnostics Analytics Dashboard")
         st.markdown("Real-time telemetry and aggregated patient metrics compiled from the database.")
         
@@ -251,35 +258,18 @@ def main() -> None:
         sev_dist = summary.get("severity_distribution", {})
         critical_cases = sev_dist.get("Medium", 0) + sev_dist.get("High", 0)
 
+        current_theme = st.session_state.get("theme", "dark")
+        chart_colors = get_theme_chart_colors(current_theme)
+
         with col1:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-title">Patients Screened</div>
-                    <div class="metric-value">{summary.get("total_patients", 0)}</div>
-                </div>
-            """, unsafe_allow_html=True)
+            render_metric_card("Patients Screened", str(summary.get("total_patients", 0)))
         with col2:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-title">MRI Scans Analyzed</div>
-                    <div class="metric-value">{summary.get("total_scans", 0)}</div>
-                </div>
-            """, unsafe_allow_html=True)
+            render_metric_card("MRI Scans Analyzed", str(summary.get("total_scans", 0)))
         with col3:
-            st.markdown(f"""
-                <div class="metric-card" style="border-color: #d97706;">
-                    <div class="metric-title" style="color: #f59e0b;">Active Tumors</div>
-                    <div class="metric-value" style="color: #f59e0b;">{active_cases}</div>
-                </div>
-            """, unsafe_allow_html=True)
+            render_metric_card("Active Tumors", str(active_cases), border_color="var(--status-warning)", value_color="var(--status-warning)")
         with col4:
-            st.markdown(f"""
-                <div class="metric-card" style="border-color: #dc2626;">
-                    <div class="metric-title" style="color: #ef4444;">High Risk / Critical</div>
-                    <div class="metric-value" style="color: #ef4444;">{critical_cases}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        
+            render_metric_card("High Risk / Critical", str(critical_cases), border_color="var(--status-danger)", value_color="var(--status-danger)")
+
         st.divider()
 
         # Graphs row
@@ -294,15 +284,15 @@ def main() -> None:
                 
                 labels = list(diag_dist.keys())
                 sizes = list(diag_dist.values())
-                colors = ['#2980b9', '#16a085', '#d35400', '#2c3e50'][:len(labels)]
+                colors = chart_colors["pie_colors"][:len(labels)]
                 
                 wedges, texts, autotexts = ax.pie(
                     sizes, labels=labels, autopct='%1.1f%%',
                     startangle=90, colors=colors,
-                    textprops=dict(color="#cbd5e1")
+                    textprops=dict(color=chart_colors["text_hex"])
                 )
                 plt.setp(autotexts, size=8, weight="bold")
-                plt.setp(texts, size=8)
+                plt.setp(texts, size=8, color=chart_colors["text_hex"])
                 ax.axis('equal')
                 st.pyplot(fig)
                 plt.close(fig)
@@ -318,17 +308,17 @@ def main() -> None:
                 
                 categories = list(sev_dist.keys())
                 counts = list(sev_dist.values())
-                bar_colors = ['#27ae60', '#f39c12', '#c0392b'][:len(categories)]
+                bar_colors = chart_colors["bar_colors"][:len(categories)]
                 
                 bars = ax.bar(categories, counts, color=bar_colors, width=0.5)
-                ax.set_ylabel("Scan Count", color="#cbd5e1", fontsize=8)
-                ax.tick_params(colors="#cbd5e1", labelsize=8)
-                ax.grid(axis='y', linestyle='--', alpha=0.3)
+                ax.set_ylabel("Scan Count", color=chart_colors["text_hex"], fontsize=8)
+                ax.tick_params(colors=chart_colors["text_hex"], labelsize=8)
+                ax.grid(axis='y', linestyle='--', alpha=0.3, color=chart_colors["grid"])
                 
                 # Add count tags
                 for bar in bars:
                     yval = bar.get_height()
-                    ax.text(bar.get_x() + bar.get_width()/2, yval + 0.05, f"{int(yval)}", ha='center', va='bottom', color="#cbd5e1", size=8, weight="bold")
+                    ax.text(bar.get_x() + bar.get_width()/2, yval + 0.05, f"{int(yval)}", ha='center', va='bottom', color=chart_colors["text_hex"], size=8, weight="bold")
                 
                 st.pyplot(fig)
                 plt.close(fig)
@@ -337,12 +327,11 @@ def main() -> None:
 
 
     # =================================================================
-    # PAGE 2: INFERENCE SCAN ANALYSIS
-    # =================================================================
-    elif page == "Inference Scan Analysis":
+    # PAGE 2: INFERENCE SCAN ANALYSIS / AI WORKSPACE
+    # ==================    elif page in ["🧠 AI Workspace", "Inference Scan Analysis"]:
         st.title("MRI Real-time Diagnosis & Segmentation Portal")
         st.markdown("Upload a patient brain MRI slice scan, complete medical demographics, and run the automated analytics pipeline.")
-        
+
         # Load cached deep learning pipelines
         try:
             model_cls, predict_use_case = load_classification_pipeline(CLS_CHECKPOINT, device_choice)
@@ -353,64 +342,793 @@ def main() -> None:
 
         st.divider()
 
-        # Demographics Input Column + Upload
+        # Initialize workspace session state keys
+        if "workspace_state" not in st.session_state:
+            st.session_state["workspace_state"] = {
+                "uploader_key": 0,
+                "analysis_triggered": False,
+                "scorecard": None,
+                "classification_result": None,
+                "xai_result": None,
+                "segmentation_metrics": None,
+                "severity_assessment": None,
+                "clinical_report": None,
+                "db_report_id": None,
+                "quality_warnings": [],
+                "clinical_insight_res": None,
+                "ensemble_res": None,
+                "timeline": {},
+                "total_exec_time": 0.0,
+                "mask_path": "",
+                "overlay_path": "",
+                "comparison_path": "",
+                "heatmap_path": "",
+                "pdf_file": "",
+                "json_file": "",
+                "md_file": "",
+                "pdf_data": None,
+                "json_data": None,
+                "md_data": None,
+                "save_patient_clicked": False
+            }
+
+        # ----------------- LEFT PANEL: Patient Demographics & Intake -----------------
         col_form, col_results = st.columns([1, 2])
 
         with col_form:
-            st.subheader("Patient Clinical Intake")
-            patient_id = st.text_input("Patient / Scan ID", value="PATIENT_001")
-            patient_name = st.text_input("Patient Full Name", value="Alice Smith")
+            st.markdown("""
+            <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 16px; margin-bottom: 16px;">
+                <h3 style="margin: 0; font-size: 15px; color: var(--text-primary); border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">Patient Clinical Intake</h3>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            patient_id = st.text_input("Patient / Scan ID", value="PATIENT_001", help="Unique identifier assigned to the patient or MRI scan slice")
+            patient_name = st.text_input("Patient Full Name", value="Alice Smith", help="Patient's legal full name for clinical EHR documentation")
             
             fcol1, fcol2 = st.columns(2)
             with fcol1:
-                patient_age = st.number_input("Age (Years)", min_value=0, max_value=120, value=38)
+                patient_age = st.number_input("Age (Years)", min_value=0, max_value=120, value=38, help="Patient age in years")
             with fcol2:
-                patient_gender = st.selectbox("Gender", ["Female", "Male", "Other"])
+                patient_gender = st.selectbox("Gender", ["Female", "Male", "Other"], help="Patient biological gender")
             
-            ref_physician = st.text_input("Referring Physician", value="Dr. Sarah Smith")
-            pixel_spacing = st.number_input("MRI Pixel Spacing (mm)", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
+            ref_physician = st.text_input("Referring Physician", value="Dr. Sarah Smith", help="Attending or referring medical doctor's name")
+            pixel_spacing = st.number_input("MRI Pixel Spacing (mm)", min_value=0.1, max_value=5.0, value=1.0, step=0.1, help="Spatial millimeter spacing per pixel for morphological area calculations")
 
             st.markdown("##### Research Configuration")
             research_ensemble_mode = st.checkbox("Enable Multi-Model Research Mode", value=False, help="Runs parallel ResNet-18 & MobileNet-V3 models to calculate ensemble predictions and check consensus metrics.")
 
+            st.markdown("""
+            <div style="margin-top: 24px; margin-bottom: 8px;">
+                <span style="font-weight: 600; color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;">Scan Acquisition Port</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            uploaded_file = st.file_uploader(
+                "Upload MRI Brain Scan Slice (PNG/JPG/TIF)",
+                type=["png", "jpg", "jpeg", "tif", "tiff"],
+                key=f"mri_uploader_{st.session_state['workspace_state']['uploader_key']}",
+                label_visibility="collapsed",
+                help="Select a high-resolution 2D axial brain MRI slice scan file"
+            )
+
+            # Image Preview Card
+            if uploaded_file is not None:
+                st.markdown(f"""
+                <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 12px; margin-top: 10px; margin-bottom: 10px;">
+                    <span style="font-size: 11px; font-weight: 700; color: var(--text-accent); text-transform: uppercase; display: block; margin-bottom: 4px;">MRI Image Preview</span>
+                    <div style="font-size: 10px; color: var(--text-muted);">
+                        <b>Name:</b> {uploaded_file.name} | <b>Size:</b> {uploaded_file.size / 1024:.1f} KB
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                st.image(uploaded_file, use_container_width=True)
+
             st.divider()
-            uploaded_file = st.file_uploader("Upload MRI Brain Scan (PNG/JPG/TIF)", type=["png", "jpg", "jpeg", "tif", "tiff"])
+            
+            # Pipeline Controls
+            btn_col1, btn_col2 = st.columns(2)
+            with btn_col1:
+                submit_btn = st.button("Generate Report 📊", disabled=(uploaded_file is None), use_container_width=True, type="primary")
+            with btn_col2:
+                if st.button("Reset Workspace 🔄", use_container_width=True, key="left_panel_reset_btn"):
+                    st.session_state["workspace_state"]["uploader_key"] += 1
+                    st.session_state["workspace_state"]["analysis_triggered"] = False
+                    st.session_state["workspace_state"]["scorecard"] = None
+                    st.session_state["workspace_state"]["classification_result"] = None
+                    st.session_state["workspace_state"]["xai_result"] = None
+                    st.session_state["workspace_state"]["segmentation_metrics"] = None
+                    st.session_state["workspace_state"]["severity_assessment"] = None
+                    st.session_state["workspace_state"]["clinical_report"] = None
+                    st.session_state["workspace_state"]["db_report_id"] = None
+                    st.session_state["workspace_state"]["quality_warnings"] = []
+                    st.session_state["workspace_state"]["clinical_insight_res"] = None
+                    st.session_state["workspace_state"]["ensemble_res"] = None
+                    st.session_state["workspace_state"]["timeline"] = {}
+                    st.session_state["workspace_state"]["total_exec_time"] = 0.0
+                    st.session_state["workspace_state"]["mask_path"] = ""
+                    st.session_state["workspace_state"]["overlay_path"] = ""
+                    st.session_state["workspace_state"]["comparison_path"] = ""
+                    st.session_state["workspace_state"]["heatmap_path"] = ""
+                    st.session_state["workspace_state"]["pdf_file"] = ""
+                    st.session_state["workspace_state"]["json_file"] = ""
+                    st.session_state["workspace_state"]["md_file"] = ""
+                    st.session_state["workspace_state"]["pdf_data"] = None
+                    st.session_state["workspace_state"]["json_data"] = None
+                    st.session_state["workspace_state"]["md_data"] = None
+                    st.session_state["workspace_state"]["save_patient_clicked"] = False
+                    st.rerun()
 
-            submit_btn = st.button("Run Diagnostic Analysis", disabled=(uploaded_file is None))
-
+        # ----------------- RIGHT PANEL: AI Analytics Board -----------------
         with col_results:
-            if not submit_btn:
-                st.info("Please fill demographics details, upload the MRI scan slice, and click 'Run Diagnostic Analysis'.")
-            else:
-                with st.spinner("Processing MRI slice (Classification, Explainability hooks, Segmentation, Morphology...)..."):
-                    t_start = time.time()
-                    t_endpoint_start = t_start
-                    timeline = {}
-                    
-                    # Read raw file bytes
-                    uploaded_file.seek(0)
-                    raw_bytes = uploaded_file.read()
-                    
-                    # Write image to temporary directory for use cases
-                    os.makedirs("outputs/temp_uploads", exist_ok=True)
-                    temp_image_path = os.path.join("outputs", "temp_uploads", f"{patient_id}_temp_input.png")
-                    with open(temp_image_path, "wb") as f:
-                        f.write(raw_bytes)
+            # Active Timeline Loader Helper
+            status_container = st.empty()
+            
+            def render_active_timeline(current_step_idx):
+                steps = [
+                    ("Validation", "Intelligent MRI QA validations"),
+                    ("Classification", "EfficientNet classification"),
+                    ("Calibration", "Platt scaling calibration"),
+                    ("Segmentation", "UNeXt tumor contours segmentation"),
+                    ("GradCAM", "Grad-CAM spatial mappings"),
+                    ("Statistics", "Shape morph stats extraction"),
+                    ("Comparison", "Longitudinal scan comparisons"),
+                    ("Clinical Report", "Markdown/JSON report compiles"),
+                    ("PDF", "Clinical PDF reports generator"),
+                    ("Database", "SQLite records persistence")
+                ]
+                
+                html = """
+                <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); padding: 20px; border-radius: var(--radius); margin-bottom: 20px;">
+                    <h3 style="margin-top: 0; color: var(--text-primary); font-size: 15px;">⚡ AI Diagnostics Pipeline Execution</h3>
+                    <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 20px;">Running multi-stage analytical models on axial MRI slice scan...</p>
+                    <div style="display: flex; flex-direction: column; gap: 12px; font-family: monospace;">
+                """
+                
+                for idx, (key, desc) in enumerate(steps):
+                    if idx < current_step_idx:
+                        status_icon = "✔"
+                        status_color = "var(--status-success)"
+                        text_color = "var(--text-primary)"
+                        badge = "DONE"
+                        badge_bg = "rgba(16, 185, 129, 0.15)"
+                    elif idx == current_step_idx:
+                        status_icon = "⟳"
+                        status_color = "var(--text-accent)"
+                        text_color = "var(--text-primary)"
+                        badge = "RUNNING"
+                        badge_bg = "rgba(56, 189, 248, 0.15)"
+                    else:
+                        status_icon = "○"
+                        status_color = "var(--text-muted)"
+                        text_color = "var(--text-muted)"
+                        badge = "PENDING"
+                        badge_bg = "rgba(148, 163, 184, 0.08)"
                         
-                    timeline["Upload"] = time.time() - t_endpoint_start
+                    html += f"""
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background-color: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: {text_color};">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-weight: bold; color: {status_color}; font-size: 15px; width: 20px; text-align: center; {'animation: spin 1s infinite linear;' if idx == current_step_idx else ''}">{status_icon}</span>
+                            <span style="font-weight: bold;">{key}</span>
+                            <span style="font-size: 10px; color: var(--text-muted);">({desc})</span>
+                        </div>
+                        <span style="background: {badge_bg}; color: {status_color}; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.05em;">{badge}</span>
+                    </div>
+                    """
+                
+                html += """
+                    </div>
+                    <style>
+                    @keyframes spin {
+                        from { transform: rotate(0deg); }
+                        to { transform: rotate(360deg); }
+                    }
+                    </style>
+                </div>
+                """
+                status_container.markdown(html, unsafe_allow_html=True)
 
-                    # Run MRI Input Validation (B6.1 Quality Assurance)
-                    from input_validation.infrastructure.validators import OpenCVMriValidator
-                    from input_validation.application.use_cases import ValidateMriUploadUseCase
+            if submit_btn:
+                st.session_state["workspace_state"]["analysis_triggered"] = False
+                t_start = time.time()
+                t_endpoint_start = t_start
+                timeline = {}
+                
+                # Checkpoint 0: Validation
+                render_active_timeline(0)
+                uploaded_file.seek(0)
+                raw_bytes = uploaded_file.read()
+                
+                os.makedirs("outputs/temp_uploads", exist_ok=True)
+                temp_image_path = os.path.join("outputs", "temp_uploads", f"{patient_id}_temp_input.png")
+                with open(temp_image_path, "wb") as f:
+                    f.write(raw_bytes)
                     
-                    validator = OpenCVMriValidator()
-                    val_use_case = ValidateMriUploadUseCase(validator=validator, db_path=DEFAULT_DB_PATH)
-                    scorecard = val_use_case.execute(filepath=temp_image_path, file_bytes=raw_bytes, filename=uploaded_file.name)
+                timeline["Upload"] = time.time() - t_endpoint_start
+
+                from input_validation.infrastructure.validators import OpenCVMriValidator
+                from input_validation.application.use_cases import ValidateMriUploadUseCase
+                
+                validator = OpenCVMriValidator()
+                val_use_case = ValidateMriUploadUseCase(validator=validator, db_path=DEFAULT_DB_PATH)
+                scorecard = val_use_case.execute(filepath=temp_image_path, file_bytes=raw_bytes, filename=uploaded_file.name)
+                timeline["Validation"] = time.time() - t_endpoint_start
+                
+                if not scorecard.is_valid:
+                    st.session_state["workspace_state"]["scorecard"] = scorecard
+                    st.session_state["workspace_state"]["analysis_triggered"] = True
+                    st.session_state["workspace_state"]["classification_result"] = None
+                    if os.path.exists(temp_image_path):
+                        os.remove(temp_image_path)
+                    st.rerun()
+
+                file_bytes_arr = np.frombuffer(raw_bytes, dtype=np.uint8)
+                original_image = cv2.imdecode(file_bytes_arr, cv2.IMREAD_COLOR)
+                if original_image is None:
+                    st.error("Failed to read the uploaded MRI file. Please upload a valid image.")
+                    return
+
+                # Checkpoint 1: Classification
+                render_active_timeline(1)
+                from monitoring.application.pipeline_recovery import PipelineExecutionRecovery
+                recovery = PipelineExecutionRecovery(logger=logging.getLogger("streamlit_app"))
+
+                t_cls = time.time()
+                config_cls = ClassificationConfig()
+                image_tensor_cls = preprocess_classification_image(temp_image_path, config_cls)
+                
+                cls_warnings = []
+                active_cls_device = str(device)
+                try:
+                    ensemble_res = None
+                    if research_ensemble_mode:
+                        from research_framework.application.registry import ModelRegistry
+                        from research_framework.application.ensemble import EnsembleEngine
+                        
+                        registry = ModelRegistry(default_checkpoint_path=CLS_CHECKPOINT)
+                        predictions = registry.predict_all(image_tensor_cls, device=device_choice)
+                        
+                        prod_pred = next((p for p in predictions if p.model_name == "efficientnet_b0"), None)
+                        if prod_pred:
+                            uncal_conf = getattr(prod_pred, "uncalibrated_confidence_score", prod_pred.confidence)
+                            classification_result = PredictionResult(
+                                label=["Glioma", "Meningioma", "Pituitary", "No Tumor"].index(prod_pred.predicted_class),
+                                class_name=prod_pred.predicted_class,
+                                confidence_score=prod_pred.confidence,
+                                probabilities=prod_pred.probabilities,
+                                uncalibrated_confidence_score=uncal_conf,
+                                uncalibrated_probabilities=prod_pred.probabilities,
+                                is_calibrated=False
+                            )
+                        else:
+                            classification_result = predict_use_case.execute(image_tensor_cls)
+                            
+                        engine = EnsembleEngine()
+                        ensemble_res = engine.compute_ensemble(predictions)
+                        
+                        class_to_label = {"Glioma": 0, "Meningioma": 1, "Pituitary": 2, "No Tumor": 3}
+                        ensemble_label = class_to_label.get(ensemble_res.predicted_class, 3)
+                        
+                        classification_result = PredictionResult(
+                            label=ensemble_label,
+                            class_name=ensemble_res.predicted_class,
+                            confidence_score=ensemble_res.confidence,
+                            probabilities=ensemble_res.probabilities,
+                            uncalibrated_confidence_score=classification_result.uncalibrated_confidence_score,
+                            uncalibrated_probabilities=classification_result.uncalibrated_probabilities,
+                            calibration_method="Ensemble (Soft Voting)",
+                            calibration_parameters={"num_models": len(predictions)},
+                            is_calibrated=True
+                        )
+                    else:
+                        classification_result = predict_use_case.execute(image_tensor_cls)
+                except Exception as e:
+                    logging.getLogger("streamlit_app").warning(f"Classification failed on {device}: {e}. Retrying with CPU fallback...")
+                    try:
+                        model_cls.to("cpu")
+                        predict_use_case.model_adapter.device = "cpu"
+                        classification_result = predict_use_case.execute(image_tensor_cls)
+                        active_cls_device = "cpu"
+                        cls_warnings.append("Auto-recovery warning: Classification execution failed on GPU. Retried and completed on CPU fallback mode.")
+                    except Exception as cpu_err:
+                        logging.getLogger("streamlit_app").critical(f"CPU fallback for classification failed: {cpu_err}")
+                        st.error(f"Classification inference failed: {cpu_err}")
+                        return
+                
+                cls_latency = time.time() - t_cls
+                timeline["Classification"] = time.time() - t_endpoint_start
+
+                # Checkpoint 2: Calibration
+                render_active_timeline(2)
+                timeline["Calibration"] = time.time() - t_endpoint_start
+
+                # Checkpoint 3: Segmentation
+                render_active_timeline(3)
+                t_seg = time.time()
+                input_tensor_seg = preprocess_segmentation_image(
+                    original_image, seg_config["input_h"], seg_config["input_w"]
+                )
+                
+                seg_warnings = []
+                active_seg_device = str(device)
+                try:
+                    input_tensor_seg_dev = input_tensor_seg.to(device)
+                    device_type = device.type
+                    is_autocast_supported = device_type in ["cuda", "cpu"]
                     
-                    timeline["Validation"] = time.time() - t_endpoint_start
+                    with torch.inference_mode():
+                        if is_autocast_supported:
+                            dtype = torch.float16 if device_type == "cuda" else torch.bfloat16
+                            with torch.amp.autocast(device_type=device_type, dtype=dtype):
+                                output_seg = model_seg(input_tensor_seg_dev)
+                        else:
+                            output_seg = model_seg(input_tensor_seg_dev)
+                        
+                        if seg_config["deep_supervision"]:
+                            output_seg = output_seg[-1]
+                        output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()
+                except Exception as e:
+                    logging.getLogger("streamlit_app").warning(f"Segmentation failed on {device}: {e}. Retrying with CPU fallback...")
+                    try:
+                        model_seg.to("cpu")
+                        active_seg_device = "cpu"
+                        input_tensor_seg_cpu = input_tensor_seg.to("cpu")
+                        with torch.inference_mode():
+                            output_seg = model_seg(input_tensor_seg_cpu)
+                            if seg_config["deep_supervision"]:
+                                output_seg = output_seg[-1]
+                            output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()
+                        seg_warnings.append("Auto-recovery warning: Segmentation execution failed on GPU. Retried and completed on CPU fallback mode.")
+                    except Exception as cpu_err:
+                        logging.getLogger("streamlit_app").critical(f"CPU fallback for segmentation failed: {cpu_err}")
+                        st.error(f"Segmentation inference failed: {cpu_err}")
+                        return
+                
+                bin_mask = (output_seg > 0.5).astype(np.uint8)
+                orig_h, orig_w = original_image.shape[:2]
+                bin_mask_resized = cv2.resize(bin_mask, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST)
+                prob_map_resized = cv2.resize(output_seg, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+
+                from segmentation_postprocessing.infrastructure.processors import MedicalImagePostProcessor
+                from segmentation_postprocessing.application.use_cases import PostProcessSegmentationUseCase
+                from segmentation_postprocessing.infrastructure.visualization import create_segmentation_comparison_image
+
+                post_proc = MedicalImagePostProcessor()
+                post_proc_use_case = PostProcessSegmentationUseCase(post_processor=post_proc)
+                final_mask, post_proc_meta = post_proc_use_case.execute(bin_mask_resized, prob_map_resized)
+                
+                seg_latency = time.time() - t_seg
+                timeline["Segmentation"] = time.time() - t_endpoint_start
+
+                # Checkpoint 4: GradCAM
+                render_active_timeline(4)
+                from explainable_ai.infrastructure.services import PyTorchXAIEngine
+                from explainable_ai.application.use_cases import GenerateExplanationUseCase
+                from explainable_ai.infrastructure.visualization import overlay_tumor_contour
+
+                xai_param = "gradcam"
+                if xai_method == "Grad-CAM++":
+                    xai_param = "gradcam_plus_plus"
+                elif xai_method == "EigenCAM":
+                    xai_param = "eigencam"
+
+                xai_engine = PyTorchXAIEngine(
+                    model=model_cls,
+                    target_layer=model_cls.backbone.features[8],
+                    device=device
+                )
+                
+                class DummyXaiResult:
+                    def __init__(self):
+                        self.explanation_text = "Explanation generation failed due to hook limitations. Degraded gracefully."
+                        self.overlap_percentage = 0.0
+                        self.heatmap = np.zeros((original_image.shape[0], original_image.shape[1]), dtype=np.float32)
+
+                def run_xai():
+                    heatmap_raw = xai_engine.generate_explanation(
+                        image_tensor=image_tensor_cls,
+                        target_class=classification_result.label,
+                        method=xai_param
+                    )
+                    xai_use_case = GenerateExplanationUseCase(xai_engine=xai_engine)
+                    xai_res = xai_use_case.execute(
+                        image_tensor=image_tensor_cls,
+                        target_class=classification_result.label,
+                        method=xai_param,
+                        tumor_mask=final_mask
+                    )
+                    setattr(xai_res, "heatmap_raw", heatmap_raw)
+                    return xai_res
+
+                t_cam = time.time()
+                xai_result, xai_warns = recovery.execute_graceful_stage(
+                    stage_name="Grad-CAM Explanation Generation",
+                    stage_fn=run_xai,
+                    default_fallback_value=DummyXaiResult()
+                )
+                
+                if hasattr(xai_result, "heatmap_raw"):
+                    heatmap = xai_result.heatmap_raw
+                else:
+                    heatmap = getattr(xai_result, "heatmap", np.zeros((original_image.shape[0], original_image.shape[1]), dtype=np.float32))
+
+                cam_latency = time.time() - t_cam
+                timeline["GradCAM"] = time.time() - t_endpoint_start
+
+                # Save mask and comparisons
+                mask_path = os.path.join(OUTPUT_REPORTS_DIR, f"{patient_id}_segmentation_mask.jpg")
+                cv2.imwrite(mask_path, (final_mask * 255).astype(np.uint8))
+
+                comparison_path = os.path.join(OUTPUT_REPORTS_DIR, f"{patient_id}_segmentation_comparison.png")
+                create_segmentation_comparison_image(
+                    original_image=original_image,
+                    before_mask=bin_mask_resized,
+                    after_mask=final_mask,
+                    output_path=comparison_path
+                )
+
+                base_cam_name = f"{patient_id}_gradcam"
+                from classification.infrastructure.visualization import overlay_heatmap
+                raw_overlay = overlay_heatmap(original_image, heatmap, alpha=0.6)
+                overlay_with_contour = overlay_tumor_contour(raw_overlay, final_mask)
+                
+                heatmap_path = os.path.join(OUTPUT_REPORTS_DIR, f"{base_cam_name}_heatmap.png")
+                overlay_path = os.path.join(OUTPUT_REPORTS_DIR, f"{base_cam_name}_overlay.png")
+                
+                heatmap_uint8 = np.uint8(255 * cv2.resize(heatmap, (original_image.shape[1], original_image.shape[0])))
+                heatmap_color = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
+                cv2.imwrite(heatmap_path, heatmap_color)
+                cv2.imwrite(overlay_path, overlay_with_contour)
+
+                # Checkpoint 5: Statistics & Severity
+                render_active_timeline(5)
+                morph_analyzer = OpenCVTumorAnalyzer(low_thresh=1.0, med_thresh=5.0, high_thresh=15.0)
+                morph_use_case = AnalyzeTumorUseCase(analyzer=morph_analyzer, logger=logging.getLogger("streamlit_app"))
+                
+                class DummyClinicalData:
+                    def __init__(self):
+                        from tumor_analysis.domain.entities import TumorAnalysisResult, SeverityLevel
+                        self.analysis = TumorAnalysisResult(
+                            pixel_count=0,
+                            tumor_area_mm2=0.0,
+                            tumor_percentage_brain=0.0,
+                            tumor_percentage_image=0.0,
+                            estimated_brain_pixel_count=0,
+                            severity_level=SeverityLevel.LOW,
+                            metadata={},
+                            rule_based_severity="LOW",
+                            severity_rule_description="Degraded stats.",
+                            stats=None
+                        )
+
+                def run_morph():
+                    return morph_use_case.execute(
+                        mask=final_mask,
+                        patient_id=patient_id,
+                        tumor_class=classification_result.class_name,
+                        original_image=original_image,
+                        pixel_spacing_mm=pixel_spacing,
+                    )
+
+                clinical_data, morph_warns = recovery.execute_graceful_stage(
+                    stage_name="Morphological Stats Extraction",
+                    stage_fn=run_morph,
+                    default_fallback_value=DummyClinicalData()
+                )
+                segmentation_metrics = clinical_data.analysis
+
+                from dataclasses import replace
+                segmentation_metrics = replace(
+                    segmentation_metrics,
+                    quality_score=post_proc_meta["quality_score"],
+                    quality_category=post_proc_meta["quality_category"],
+                    post_processing_applied=True,
+                    post_processing_metadata=post_proc_meta
+                )
+                
+                timeline["Statistics"] = time.time() - t_endpoint_start
+
+                severity_classifier = RuleBasedSeverityClassifier()
+                severity_use_case = AssessSeverityUseCase(classifier=severity_classifier, logger=logging.getLogger("streamlit_app"))
+                severity_assessment = severity_use_case.execute(
+                    tumor_type=classification_result.class_name,
+                    tumor_area_mm2=segmentation_metrics.tumor_area_mm2,
+                    tumor_percentage=segmentation_metrics.tumor_percentage_brain,
+                )
+
+                # Warnings Check
+                from monitoring.infrastructure.segmentation_validator import SegmentationValidator
+                from monitoring.infrastructure.consistency_checker import ConfidenceConsistencyChecker
+                from monitoring.infrastructure.explainability_validator import ExplainabilityValidator
+                from monitoring.application.warning_engine import CentralWarningEngine
+                
+                seg_validator = SegmentationValidator()
+                consistency_checker = ConfidenceConsistencyChecker()
+                explain_validator = ExplainabilityValidator()
+                warning_engine = CentralWarningEngine(
+                    seg_validator=seg_validator,
+                    consistency_checker=consistency_checker,
+                    explain_validator=explain_validator
+                )
+                
+                uncal_conf = getattr(classification_result, "uncalibrated_confidence_score", None)
+                is_cal = getattr(classification_result, "is_calibrated", False)
+                
+                engine_result = warning_engine.collect_warnings(
+                    input_errors=[],
+                    predicted_class=classification_result.class_name,
+                    confidence_score=classification_result.confidence_score,
+                    is_calibrated=is_cal,
+                    uncalibrated_confidence=uncal_conf,
+                    probabilities=classification_result.probabilities,
+                    mask=final_mask,
+                    expected_shape=(original_image.shape[0], original_image.shape[1]),
+                    tumor_area_mm2=segmentation_metrics.tumor_area_mm2,
+                    heatmap=heatmap,
+                    overlap_percentage=xai_result.overlap_percentage,
+                    pixel_spacing_mm=pixel_spacing,
+                    brain_pixels=getattr(segmentation_metrics, "estimated_brain_pixel_count", None)
+                )
+                quality_warnings = engine_result["warnings"]
+
+                # Checkpoint 6: Comparison
+                render_active_timeline(6)
+                scan_date_str = datetime.date.today().strftime("%Y-%m-%d")
+                patient_info = PatientInfo(
+                    patient_id=patient_id,
+                    name=patient_name,
+                    age=patient_age,
+                    gender=patient_gender,
+                    scan_date=scan_date_str,
+                    ref_physician=ref_physician,
+                )
+
+                total_exec_time = time.time() - t_start
+                processing_summary = ProcessingSummary(
+                    device=device_choice,
+                    execution_time_sec=total_exec_time,
+                    classification_model_path=CLS_CHECKPOINT,
+                    segmentation_model_path=SEG_CHECKPOINT,
+                    classification_latency_sec=cls_latency,
+                    segmentation_latency_sec=seg_latency,
+                    explainability_latency_sec=cam_latency,
+                )
+
+                def run_comparison():
+                    from longitudinal_analysis.infrastructure.services import OpenCVLongitudinalAnalyzer
+                    from longitudinal_analysis.application.use_cases import CompareScansUseCase
+                    curr_payload_dict = {
+                        "patient": {
+                            "patient_id": patient_id,
+                            "scan_date": scan_date_str
+                        },
+                        "classification": {
+                            "predicted_class": classification_result.class_name,
+                            "confidence_score": classification_result.confidence_score
+                        },
+                        "segmentation": {
+                            "tumor_area_mm2": segmentation_metrics.tumor_area_mm2 if segmentation_metrics else 0.0,
+                            "tumor_percentage_brain": segmentation_metrics.tumor_percentage_brain if segmentation_metrics else 0.0,
+                            "shape_statistics": {
+                                "perimeter_mm": segmentation_metrics.stats.perimeter_mm if (segmentation_metrics and segmentation_metrics.stats) else None,
+                                "solidity": segmentation_metrics.stats.solidity if (segmentation_metrics and segmentation_metrics.stats) else None,
+                                "circularity": segmentation_metrics.stats.circularity if (segmentation_metrics and segmentation_metrics.stats) else None,
+                                "major_axis_mm": segmentation_metrics.stats.major_axis_mm if (segmentation_metrics and segmentation_metrics.stats) else None,
+                                "minor_axis_mm": segmentation_metrics.stats.minor_axis_mm if (segmentation_metrics and segmentation_metrics.stats) else None,
+                                "bbox_w_mm": segmentation_metrics.stats.bbox_w_mm if (segmentation_metrics and segmentation_metrics.stats) else None,
+                                "bbox_h_mm": segmentation_metrics.stats.bbox_h_mm if (segmentation_metrics and segmentation_metrics.stats) else None,
+                            }
+                        },
+                        "files": {
+                            "original_image": temp_image_path,
+                            "segmentation_mask": mask_path
+                        }
+                    }
+                    comp_canvas_path = os.path.join(OUTPUT_REPORTS_DIR, f"{patient_id}_longitudinal_comparison.png")
+                    long_analyzer = OpenCVLongitudinalAnalyzer()
+                    compare_use_case = CompareScansUseCase(analyzer=long_analyzer, db_path=DEFAULT_DB_PATH)
+                    return compare_use_case.execute(
+                        patient_id=patient_id,
+                        current_report_data=curr_payload_dict,
+                        output_image_path=comp_canvas_path
+                    )
+
+                comparison_result, comp_warns = recovery.execute_graceful_stage(
+                    stage_name="Longitudinal Comparison",
+                    stage_fn=run_comparison,
+                    default_fallback_value=None
+                )
+                quality_warnings.extend(comp_warns)
+                timeline["Comparison"] = time.time() - t_endpoint_start
+
+                # Checkpoint 7: Clinical Insights Summary
+                render_active_timeline(7)
+                from clinical_insight.application.use_cases import GenerateClinicalInsightUseCase
+                insight_use_case = GenerateClinicalInsightUseCase()
+                
+                solidity_val = None
+                circularity_val = None
+                if segmentation_metrics and getattr(segmentation_metrics, "stats", None) is not None:
+                    solidity_val = segmentation_metrics.stats.solidity
+                    circularity_val = segmentation_metrics.stats.circularity
                     
-                    # Display scorecard indicators in Streamlit
-                    st.markdown("### MRI Intake Quality Scorecard")
+                clinical_insight_res = insight_use_case.execute(
+                    predicted_class=classification_result.class_name,
+                    confidence_score=classification_result.confidence_score,
+                    is_calibrated=is_cal,
+                    probabilities=classification_result.probabilities,
+                    tumor_area_mm2=segmentation_metrics.tumor_area_mm2,
+                    pixel_count=segmentation_metrics.pixel_count,
+                    solidity=solidity_val,
+                    circularity=circularity_val,
+                    xai_method=xai_param,
+                    xai_overlap_percentage=xai_result.overlap_percentage,
+                    longitudinal_comparison=comparison_result
+                )
+
+                clinical_report = ClinicalReport(
+                    patient_info=patient_info,
+                    processing_summary=processing_summary,
+                    classification=classification_result,
+                    segmentation_metrics=segmentation_metrics,
+                    severity_assessment=severity_assessment,
+                    original_image_path=temp_image_path,
+                    heatmap_image_path=heatmap_path,
+                    overlay_image_path=overlay_path,
+                    segmentation_mask_path=mask_path,
+                    comparison_image_path=comparison_path,
+                    xai_method=xai_param,
+                    xai_explanation_text=xai_result.explanation_text,
+                    xai_overlap_percentage=xai_result.overlap_percentage,
+                    longitudinal_comparison=comparison_result,
+                    quality_warnings=quality_warnings,
+                    clinical_insight=clinical_insight_res,
+                )
+                timeline["Clinical Report"] = time.time() - t_endpoint_start
+
+                # Checkpoint 8: PDF Report Compile
+                render_active_timeline(8)
+                generator = MarkdownJSONReportGenerator()
+                report_use_case = GenerateIntegratedReportUseCase(report_generator=generator, logger=logging.getLogger("streamlit_app"))
+                md_file, json_file, pdf_file = report_use_case.execute(report=clinical_report, output_dir=OUTPUT_REPORTS_DIR)
+                
+                with open(pdf_file, "rb") as f:
+                    pdf_data = f.read()
+                with open(json_file, "rb") as f:
+                    json_data = f.read()
+                with open(md_file, "rb") as f:
+                    md_data = f.read()
+                    
+                timeline["PDF"] = time.time() - t_endpoint_start
+
+                # Checkpoint 9: Database Persistence
+                render_active_timeline(9)
+                from clinical_reporting.infrastructure.email_sender import ClinicalEmailReporter
+                email_reporter = ClinicalEmailReporter(logger=logging.getLogger("streamlit_app"))
+                recipient_email = f"{ref_physician.replace(' ', '_').lower()}@hospital.org"
+                try:
+                    email_reporter.send_report_email(
+                        report=clinical_report,
+                        recipient_email=recipient_email,
+                        output_dir=OUTPUT_REPORTS_DIR
+                    )
+                except Exception as email_err:
+                    logging.getLogger("streamlit_app").error(f"Failed to email report: {email_err}")
+
+                db_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)
+                db_repo.initialize_db()
+                db_report_id = db_repo.save_report(clinical_report, output_dir=OUTPUT_REPORTS_DIR)
+                
+                timeline["Database"] = time.time() - t_endpoint_start
+                timeline["Completed"] = time.time() - t_endpoint_start
+
+                # Link scorecards and execute audit logs
+                pred_id = None
+                database_status = "Failed"
+                try:
+                    import json
+                    conn = db_repo._get_connection()
+                    row = conn.execute("SELECT prediction_id FROM clinical_reports WHERE id = ?", (db_report_id,)).fetchone()
+                    if row:
+                        pred_id = row["prediction_id"]
+                        db_repo.save_validation_scorecard(
+                            file_hash=scorecard.duplicate_check.duplicate_hash,
+                            p_hash=validator.compute_perceptual_hash(raw_bytes),
+                            is_valid=scorecard.is_valid,
+                            scorecard_json=json.dumps(scorecard.to_dict()),
+                            prediction_id=pred_id
+                        )
+                        database_status = "Persisted"
+                        db_repo.save_timeline_trace(pred_id, timeline)
+                    conn.close()
+                except Exception as db_link_err:
+                    logging.getLogger("streamlit_app").error(f"Failed to link validation scorecard: {db_link_err}")
+
+                try:
+                    from monitoring.infrastructure.audit_logger import AuditLogger
+                    import multiprocessing
+                    cpu_threads = multiprocessing.cpu_count()
+                    gpu_active = torch.cuda.is_available() and device.type != "cpu"
+                    
+                    audit_logger = AuditLogger(db_path=DEFAULT_DB_PATH)
+                    audit_logger.log_execution(
+                        patient_id=patient_id,
+                        user=ref_physician or "Dr. Streamlit Default",
+                        model_version_cls=os.path.basename(CLS_CHECKPOINT),
+                        model_version_seg=os.path.basename(SEG_CHECKPOINT),
+                        runtime_sec=total_exec_time,
+                        gpu_active=gpu_active,
+                        cpu_threads=cpu_threads,
+                        warnings=quality_warnings,
+                        errors=[],
+                        report_status="Generated",
+                        database_status=database_status,
+                        prediction_id=pred_id
+                    )
+                except Exception as audit_err:
+                    logging.getLogger("streamlit_app").error(f"Failed to record AI Audit Log: {audit_err}")
+
+                if os.path.exists(temp_image_path):
+                    os.remove(temp_image_path)
+
+                # Store all results in state
+                st.session_state["workspace_state"]["scorecard"] = scorecard
+                st.session_state["workspace_state"]["classification_result"] = classification_result
+                st.session_state["workspace_state"]["xai_result"] = xai_result
+                st.session_state["workspace_state"]["segmentation_metrics"] = segmentation_metrics
+                st.session_state["workspace_state"]["severity_assessment"] = severity_assessment
+                st.session_state["workspace_state"]["clinical_report"] = clinical_report
+                st.session_state["workspace_state"]["db_report_id"] = db_report_id
+                st.session_state["workspace_state"]["quality_warnings"] = quality_warnings
+                st.session_state["workspace_state"]["clinical_insight_res"] = clinical_insight_res
+                if research_ensemble_mode and 'ensemble_res' in locals():
+                    st.session_state["workspace_state"]["ensemble_res"] = ensemble_res
+                else:
+                    st.session_state["workspace_state"]["ensemble_res"] = None
+                st.session_state["workspace_state"]["timeline"] = timeline
+                st.session_state["workspace_state"]["total_exec_time"] = total_exec_time
+                st.session_state["workspace_state"]["mask_path"] = mask_path
+                st.session_state["workspace_state"]["overlay_path"] = overlay_path
+                st.session_state["workspace_state"]["comparison_path"] = comparison_path
+                st.session_state["workspace_state"]["heatmap_path"] = heatmap_path
+                st.session_state["workspace_state"]["pdf_file"] = pdf_file
+                st.session_state["workspace_state"]["json_file"] = json_file
+                st.session_state["workspace_state"]["md_file"] = md_file
+                st.session_state["workspace_state"]["pdf_data"] = pdf_data
+                st.session_state["workspace_state"]["json_data"] = json_data
+                st.session_state["workspace_state"]["md_data"] = md_data
+                st.session_state["workspace_state"]["analysis_triggered"] = True
+                st.session_state["workspace_state"]["save_patient_clicked"] = False
+                
+                # Cleanup status loader and refresh page to show completed panel
+                status_container.empty()
+                render_toast(f"MRI diagnostic analysis completed successfully! Assigned Database ID: #{db_report_id}", "success")
+                st.rerun()
+
+            # Render Right Column outputs based on analysis status
+            state = st.session_state["workspace_state"]
+            if not state["analysis_triggered"]:
+                st.markdown("""
+                <div style="border: 2px dashed var(--border-color); border-radius: var(--radius); padding: 50px 30px; text-align: center; background-color: var(--bg-card); margin-top: 20px;">
+                    <div style="font-size: 54px; margin-bottom: 16px; animation: pulse 2s infinite ease-in-out;">🧠</div>
+                    <h3 style="margin: 0 0 10px 0; color: var(--text-primary); font-size: 18px; font-weight: 600;">AuraScan Clinical Workspace</h3>
+                    <p style="margin: 0; color: var(--text-muted); font-size: 12.5px; max-width: 440px; margin-left: auto; margin-right: auto; line-height: 1.6;">
+                        Awaiting Brain MRI Input. Complete patient demographics, load an axial MRI slice scan in the left panel, and click <b>Generate Report</b> to run clinical predictions.
+                    </p>
+                </div>
+                <style>
+                @keyframes pulse {
+                    0% { opacity: 0.5; transform: scale(0.98); }
+                    50% { opacity: 1; transform: scale(1.02); }
+                    100% { opacity: 0.5; transform: scale(0.98); }
+                }
+                </style>
+                """, unsafe_allow_html=True)
+            else:
+                scorecard = state["scorecard"]
+                if scorecard and not scorecard.is_valid:
+                    st.error("### ❌ MRI Scan Quality Validation Failed")
+                    st.markdown("The uploaded MRI scan did not pass clinical quality thresholds. Review the metrics below:")
+                    
                     scol1, scol2, scol3 = st.columns(3)
                     with scol1:
                         st.markdown("**File Verifications**")
@@ -428,914 +1146,580 @@ def main() -> None:
                         st.write(f"✅ Contrast (RMS: {qa.contrast_score:.1f})" if qa.contrast_valid else f"❌ Low Contrast ({qa.contrast_score:.1f})")
                         st.write(f"✅ Sharpness (Var: {qa.blur_score:.1f})" if qa.blur_valid else f"❌ Blur / Motion ({qa.blur_score:.1f})")
                         st.write(f"✅ SNR (Est: {qa.noise_score:.1f})" if qa.noise_valid else f"❌ High Noise SNR ({qa.noise_score:.1f})")
-                        
-                    if not scorecard.is_valid:
-                        st.error("### MRI Scan Upload Rejected")
-                        for err in scorecard.errors:
-                            st.markdown(f"- {err}")
-                        
-                        # Clean up temp file
-                        if os.path.exists(temp_image_path):
-                            os.remove(temp_image_path)
-                        return
 
-                    # Re-read original BGR image for OpenCV pipelines
-                    file_bytes_arr = np.frombuffer(raw_bytes, dtype=np.uint8)
-                    original_image = cv2.imdecode(file_bytes_arr, cv2.IMREAD_COLOR)
-                    if original_image is None:
-                        st.error("Failed to read the uploaded MRI file. Please upload a valid image.")
-                        return
-
-                    # 1. Run Classification (EfficientNet-B0) (B6.12 Retry & CPU fallback)
-                    from monitoring.application.pipeline_recovery import PipelineExecutionRecovery
-                    recovery = PipelineExecutionRecovery(logger=logging.getLogger("streamlit_app"))
-
-                    t_cls = time.time()
-                    config_cls = ClassificationConfig()
-                    image_tensor_cls = preprocess_classification_image(temp_image_path, config_cls)
-                    
-                    cls_warnings = []
-                    active_cls_device = str(device)
-                    try:
-                        ensemble_res = None
-                        if research_ensemble_mode:
-                            from research_framework.application.registry import ModelRegistry
-                            from research_framework.application.ensemble import EnsembleEngine
-                            
-                            registry = ModelRegistry(default_checkpoint_path=CLS_CHECKPOINT)
-                            predictions = registry.predict_all(image_tensor_cls, device=device_choice)
-                            
-                            prod_pred = next((p for p in predictions if p.model_name == "efficientnet_b0"), None)
-                            if prod_pred:
-                                uncal_conf = getattr(prod_pred, "uncalibrated_confidence_score", prod_pred.confidence)
-                                classification_result = PredictionResult(
-                                    label=["Glioma", "Meningioma", "Pituitary", "No Tumor"].index(prod_pred.predicted_class),
-                                    class_name=prod_pred.predicted_class,
-                                    confidence_score=prod_pred.confidence,
-                                    probabilities=prod_pred.probabilities,
-                                    uncalibrated_confidence_score=uncal_conf,
-                                    uncalibrated_probabilities=prod_pred.probabilities,
-                                    is_calibrated=False
-                                )
-                            else:
-                                classification_result = predict_use_case.execute(image_tensor_cls)
-                                
-                            engine = EnsembleEngine()
-                            ensemble_res = engine.compute_ensemble(predictions)
-                            
-                            # Swap production prediction with ensemble result
-                            class_to_label = {"Glioma": 0, "Meningioma": 1, "Pituitary": 2, "No Tumor": 3}
-                            ensemble_label = class_to_label.get(ensemble_res.predicted_class, 3)
-                            
-                            classification_result = PredictionResult(
-                                label=ensemble_label,
-                                class_name=ensemble_res.predicted_class,
-                                confidence_score=ensemble_res.confidence,
-                                probabilities=ensemble_res.probabilities,
-                                uncalibrated_confidence_score=classification_result.uncalibrated_confidence_score,
-                                uncalibrated_probabilities=classification_result.uncalibrated_probabilities,
-                                calibration_method="Ensemble (Soft Voting)",
-                                calibration_parameters={"num_models": len(predictions)},
-                                is_calibrated=True
-                            )
-                        else:
-                            classification_result = predict_use_case.execute(image_tensor_cls)
-                    except Exception as e:
-                        logging.getLogger("streamlit_app").warning(f"Classification failed on {device}: {e}. Retrying with CPU fallback...")
-                        try:
-                            model_cls.to("cpu")
-                            predict_use_case.model_adapter.device = "cpu"
-                            classification_result = predict_use_case.execute(image_tensor_cls)
-                            active_cls_device = "cpu"
-                            cls_warnings.append("Auto-recovery warning: Classification execution failed on GPU. Retried and completed on CPU fallback mode.")
-                        except Exception as cpu_err:
-                            logging.getLogger("streamlit_app").critical(f"CPU fallback for classification failed: {cpu_err}")
-                            st.error(f"Classification inference failed: {cpu_err}")
-                            return
-                    
-                    cls_latency = time.time() - t_cls
-                    timeline["Classification"] = time.time() - t_endpoint_start
-                    timeline["Calibration"] = time.time() - t_endpoint_start
-
-                    # 2. Run Explainability (XAI 2.0 Engine)
-                    from explainable_ai.infrastructure.services import PyTorchXAIEngine
-                    from explainable_ai.application.use_cases import GenerateExplanationUseCase
-                    from explainable_ai.infrastructure.visualization import overlay_tumor_contour
-
-                    # Map selected XAI method
-                    xai_param = "gradcam"
-                    if xai_method == "Grad-CAM++":
-                        xai_param = "gradcam_plus_plus"
-                    elif xai_method == "EigenCAM":
-                        xai_param = "eigencam"
-
-                    xai_engine = PyTorchXAIEngine(
-                        model=model_cls,
-                        target_layer=model_cls.backbone.features[8],
-                        device=device
-                    )
-                    
-                    class DummyXaiResult:
-                        def __init__(self):
-                            self.explanation_text = "Explanation generation failed due to hook limitations. Degraded gracefully."
-                            self.overlap_percentage = 0.0
-                            self.heatmap = np.zeros((original_image.shape[0], original_image.shape[1]), dtype=np.float32)
-
-                    def run_xai():
-                        heatmap_raw = xai_engine.generate_explanation(
-                            image_tensor=image_tensor_cls,
-                            target_class=classification_result.label,
-                            method=xai_param
+                    st.markdown("##### Errors reported:")
+                    for err in scorecard.errors:
+                        st.markdown(f"- {err}")
+                else:
+                    # RENDER STYLISH RESULTS VIEW
+                    # Actions Toolbar
+                    act_col1, act_col2, act_col3 = st.columns(3)
+                    with act_col1:
+                        st.download_button(
+                            label="Download PDF Report 📥",
+                            data=state["pdf_data"],
+                            file_name=os.path.basename(state["pdf_file"]),
+                            mime="application/pdf",
+                            use_container_width=True
                         )
-                        xai_use_case = GenerateExplanationUseCase(xai_engine=xai_engine)
-                        xai_res = xai_use_case.execute(
-                            image_tensor=image_tensor_cls,
-                            target_class=classification_result.label,
-                            method=xai_param,
-                            tumor_mask=final_mask
-                        )
-                        setattr(xai_res, "heatmap_raw", heatmap_raw)
-                        return xai_res
+                    with act_col2:
+                        if st.button("Save Patient Record 💾", use_container_width=True, key="save_patient_record_btn"):
+                            st.session_state["workspace_state"]["save_patient_clicked"] = True
+                            st.rerun()
+                    with act_col3:
+                        if st.button("Clear / Reset Analysis 🔄", use_container_width=True, key="reset_workspace_results_btn"):
+                            st.session_state["workspace_state"]["uploader_key"] += 1
+                            st.session_state["workspace_state"]["analysis_triggered"] = False
+                            st.session_state["workspace_state"]["scorecard"] = None
+                            st.session_state["workspace_state"]["classification_result"] = None
+                            st.session_state["workspace_state"]["xai_result"] = None
+                            st.session_state["workspace_state"]["segmentation_metrics"] = None
+                            st.session_state["workspace_state"]["severity_assessment"] = None
+                            st.session_state["workspace_state"]["clinical_report"] = None
+                            st.session_state["workspace_state"]["db_report_id"] = None
+                            st.session_state["workspace_state"]["quality_warnings"] = []
+                            st.session_state["workspace_state"]["clinical_insight_res"] = None
+                            st.session_state["workspace_state"]["ensemble_res"] = None
+                            st.session_state["workspace_state"]["timeline"] = {}
+                            st.session_state["workspace_state"]["total_exec_time"] = 0.0
+                            st.session_state["workspace_state"]["mask_path"] = ""
+                            st.session_state["workspace_state"]["overlay_path"] = ""
+                            st.session_state["workspace_state"]["comparison_path"] = ""
+                            st.session_state["workspace_state"]["heatmap_path"] = ""
+                            st.session_state["workspace_state"]["pdf_file"] = ""
+                            st.session_state["workspace_state"]["json_file"] = ""
+                            st.session_state["workspace_state"]["md_file"] = ""
+                            st.session_state["workspace_state"]["pdf_data"] = None
+                            st.session_state["workspace_state"]["json_data"] = None
+                            st.session_state["workspace_state"]["md_data"] = None
+                            st.session_state["workspace_state"]["save_patient_clicked"] = False
+                            st.rerun()
 
-                    # 3. Run Segmentation (UNeXt) (B6.12 Retry & CPU fallback)
-                    t_seg = time.time()
-                    input_tensor_seg = preprocess_segmentation_image(
-                        original_image, seg_config["input_h"], seg_config["input_w"]
-                    )
+                    # Save Confirmation Notification
+                    if state.get("save_patient_clicked", False):
+                        st.success(f"✅ **EHR Database Synchronization:** Record for {patient_name} ({patient_id}) has been successfully saved to SQLite as Scan ID #{state['db_report_id']}.")
+
+                    st.markdown("<br>", unsafe_allow_html=True)
                     
-                    seg_warnings = []
-                    active_seg_device = str(device)
-                    try:
-                        input_tensor_seg_dev = input_tensor_seg.to(device)
-                        device_type = device.type
-                        is_autocast_supported = device_type in ["cuda", "cpu"]
+                    # Core Side-by-Side Visualization Cards
+                    p_col1, p_col2, p_col3 = st.columns(3)
+                    
+                    # 1. Prediction Card
+                    with p_col1:
+                        tumor_type = state["classification_result"].class_name
+                        confidence = state["classification_result"].confidence_score
+                        is_cal = state["classification_result"].is_calibrated
+                        cal_method = state["classification_result"].calibration_method or "Platt Scaling Calibration"
+                        severity_assessment = state["severity_assessment"]
                         
-                        with torch.inference_mode():
-                            if is_autocast_supported:
-                                dtype = torch.float16 if device_type == "cuda" else torch.bfloat16
-                                with torch.amp.autocast(device_type=device_type, dtype=dtype):
-                                    output_seg = model_seg(input_tensor_seg_dev)
-                            else:
-                                output_seg = model_seg(input_tensor_seg_dev)
-                            
-                            if seg_config["deep_supervision"]:
-                                output_seg = output_seg[-1]
-                            output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()
-                    except Exception as e:
-                        logging.getLogger("streamlit_app").warning(f"Segmentation failed on {device}: {e}. Retrying with CPU fallback...")
-                        try:
-                            model_seg.to("cpu")
-                            active_seg_device = "cpu"
-                            input_tensor_seg_cpu = input_tensor_seg.to("cpu")
-                            with torch.inference_mode():
-                                output_seg = model_seg(input_tensor_seg_cpu)
-                                if seg_config["deep_supervision"]:
-                                    output_seg = output_seg[-1]
-                                output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()
-                            seg_warnings.append("Auto-recovery warning: Segmentation execution failed on GPU. Retried and completed on CPU fallback mode.")
-                        except Exception as cpu_err:
-                            logging.getLogger("streamlit_app").critical(f"CPU fallback for segmentation failed: {cpu_err}")
-                            st.error(f"Segmentation inference failed: {cpu_err}")
-                            return
-                    
-                    # Binarize and log debug statistics
-                    bin_mask = (output_seg > 0.5).astype(np.uint8)
-                    logging.getLogger("streamlit_app").info(
-                        f"UNeXt Segmentation Debug - min: {output_seg.min():.4f}, max: {output_seg.max():.4f}, "
-                        f"unique: {np.unique(bin_mask)}, shape: {output_seg.shape}, non-zero pixels: {bin_mask.sum()}"
-                    )
-
-                    # Resize to original MRI scale so post-processing runs at native resolution
-                    orig_h, orig_w = original_image.shape[:2]
-                    bin_mask_resized = cv2.resize(bin_mask, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST)
-                    prob_map_resized = cv2.resize(output_seg, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
-
-                    # Run modular post-processing pipeline
-                    from segmentation_postprocessing.infrastructure.processors import MedicalImagePostProcessor
-                    from segmentation_postprocessing.application.use_cases import PostProcessSegmentationUseCase
-                    from segmentation_postprocessing.infrastructure.visualization import create_segmentation_comparison_image
-
-                    post_proc = MedicalImagePostProcessor()
-                    post_proc_use_case = PostProcessSegmentationUseCase(post_processor=post_proc)
-                    final_mask, post_proc_meta = post_proc_use_case.execute(bin_mask_resized, prob_map_resized)
-                    
-                    seg_latency = time.time() - t_seg
-                    timeline["Segmentation"] = time.time() - t_endpoint_start
-
-                    # Run explanation with post-processed mask
-                    t_cam = time.time()
-                    xai_result, xai_warns = recovery.execute_graceful_stage(
-                        stage_name="Grad-CAM Explanation Generation",
-                        stage_fn=run_xai,
-                        default_fallback_value=DummyXaiResult()
-                    )
-                    
-                    # Extract heatmap
-                    if hasattr(xai_result, "heatmap_raw"):
-                        heatmap = xai_result.heatmap_raw
-                    else:
-                        heatmap = getattr(xai_result, "heatmap", np.zeros((original_image.shape[0], original_image.shape[1]), dtype=np.float32))
-
-                    cam_latency = time.time() - t_cam
-                    timeline["GradCAM"] = time.time() - t_endpoint_start
-
-                    # Save mask
-                    mask_path = os.path.join(OUTPUT_REPORTS_DIR, f"{patient_id}_segmentation_mask.jpg")
-                    cv2.imwrite(mask_path, (final_mask * 255).astype(np.uint8))
-
-                    # Generate comparison visualization
-                    comparison_path = os.path.join(OUTPUT_REPORTS_DIR, f"{patient_id}_segmentation_comparison.png")
-                    create_segmentation_comparison_image(
-                        original_image=original_image,
-                        before_mask=bin_mask_resized,
-                        after_mask=final_mask,
-                        output_path=comparison_path
-                    )
-
-                    # Save explanation visualizations with boundary overlays
-                    base_cam_name = f"{patient_id}_gradcam"
-                    from classification.infrastructure.visualization import overlay_heatmap
-                    raw_overlay = overlay_heatmap(original_image, heatmap, alpha=0.6)
-                    overlay_with_contour = overlay_tumor_contour(raw_overlay, final_mask)
-                    
-                    heatmap_path = os.path.join(OUTPUT_REPORTS_DIR, f"{base_cam_name}_heatmap.png")
-                    overlay_path = os.path.join(OUTPUT_REPORTS_DIR, f"{base_cam_name}_overlay.png")
-                    
-                    heatmap_uint8 = np.uint8(255 * cv2.resize(heatmap, (original_image.shape[1], original_image.shape[0])))
-                    heatmap_color = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
-                    cv2.imwrite(heatmap_path, heatmap_color)
-                    cv2.imwrite(overlay_path, overlay_with_contour)
-
-                    # 4. Morphological Analysis
-                    morph_analyzer = OpenCVTumorAnalyzer(low_thresh=1.0, med_thresh=5.0, high_thresh=15.0)
-                    morph_use_case = AnalyzeTumorUseCase(analyzer=morph_analyzer, logger=logging.getLogger("streamlit_app"))
-                    
-                    class DummyClinicalData:
-                        def __init__(self):
-                            from tumor_analysis.domain.entities import TumorAnalysisResult, SeverityLevel
-                            self.analysis = TumorAnalysisResult(
-                                pixel_count=0,
-                                tumor_area_mm2=0.0,
-                                tumor_percentage_brain=0.0,
-                                tumor_percentage_image=0.0,
-                                estimated_brain_pixel_count=0,
-                                severity_level=SeverityLevel.LOW,
-                                metadata={},
-                                rule_based_severity="LOW",
-                                severity_rule_description="Degraded stats.",
-                                stats=None
-                            )
-
-                    def run_morph():
-                        return morph_use_case.execute(
-                            mask=final_mask,
-                            patient_id=patient_id,
-                            tumor_class=classification_result.class_name,
-                            original_image=original_image,
-                            pixel_spacing_mm=pixel_spacing,
-                        )
-
-                    clinical_data, morph_warns = recovery.execute_graceful_stage(
-                        stage_name="Morphological Stats Extraction",
-                        stage_fn=run_morph,
-                        default_fallback_value=DummyClinicalData()
-                    )
-                    segmentation_metrics = clinical_data.analysis
-
-                    # Enrich segmentation_metrics with post-processing details
-                    from dataclasses import replace
-                    segmentation_metrics = replace(
-                        segmentation_metrics,
-                        quality_score=post_proc_meta["quality_score"],
-                        quality_category=post_proc_meta["quality_category"],
-                        post_processing_applied=True,
-                        post_processing_metadata=post_proc_meta
-                    )
-                    
-                    timeline["Statistics"] = time.time() - t_endpoint_start
-
-                    # 5. Rule-Based Severity Assessment
-                    severity_classifier = RuleBasedSeverityClassifier()
-                    severity_use_case = AssessSeverityUseCase(classifier=severity_classifier, logger=logging.getLogger("streamlit_app"))
-                    severity_assessment = severity_use_case.execute(
-                        tumor_type=classification_result.class_name,
-                        tumor_area_mm2=segmentation_metrics.tumor_area_mm2,
-                        tumor_percentage=segmentation_metrics.tumor_percentage_brain,
-                    )
-
-                    # Run Central Warning Engine Checks (B6.3, B6.4, B6.5, B6.7)
-                    from monitoring.infrastructure.segmentation_validator import SegmentationValidator
-                    from monitoring.infrastructure.consistency_checker import ConfidenceConsistencyChecker
-                    from monitoring.infrastructure.explainability_validator import ExplainabilityValidator
-                    from monitoring.application.warning_engine import CentralWarningEngine
-                    
-                    seg_validator = SegmentationValidator()
-                    consistency_checker = ConfidenceConsistencyChecker()
-                    explain_validator = ExplainabilityValidator()
-                    warning_engine = CentralWarningEngine(
-                        seg_validator=seg_validator,
-                        consistency_checker=consistency_checker,
-                        explain_validator=explain_validator
-                    )
-                    
-                    uncal_conf = getattr(classification_result, "uncalibrated_confidence_score", None)
-                    is_cal = getattr(classification_result, "is_calibrated", False)
-                    
-                    engine_result = warning_engine.collect_warnings(
-                        input_errors=[],
-                        predicted_class=classification_result.class_name,
-                        confidence_score=classification_result.confidence_score,
-                        is_calibrated=is_cal,
-                        uncalibrated_confidence=uncal_conf,
-                        probabilities=classification_result.probabilities,
-                        mask=final_mask,
-                        expected_shape=(original_image.shape[0], original_image.shape[1]),
-                        tumor_area_mm2=segmentation_metrics.tumor_area_mm2,
-                        heatmap=heatmap,
-                        overlap_percentage=xai_result.overlap_percentage,
-                        pixel_spacing_mm=pixel_spacing,
-                        brain_pixels=getattr(segmentation_metrics, "estimated_brain_pixel_count", None)
-                    )
-                    quality_warnings = engine_result["warnings"]
-
-                    # 6. Generate clinical reports (Markdown, JSON, PDF)
-                    scan_date_str = datetime.date.today().strftime("%Y-%m-%d")
-                    patient_info = PatientInfo(
-                        patient_id=patient_id,
-                        name=patient_name,
-                        age=patient_age,
-                        gender=patient_gender,
-                        scan_date=scan_date_str,
-                        ref_physician=ref_physician,
-                    )
-
-                    total_exec_time = time.time() - t_start
-                    processing_summary = ProcessingSummary(
-                        device=device_choice,
-                        execution_time_sec=total_exec_time,
-                        classification_model_path=CLS_CHECKPOINT,
-                        segmentation_model_path=SEG_CHECKPOINT,
-                        classification_latency_sec=cls_latency,
-                        segmentation_latency_sec=seg_latency,
-                        explainability_latency_sec=cam_latency,
-                    )
-
-                    def run_comparison():
-                        from longitudinal_analysis.infrastructure.services import OpenCVLongitudinalAnalyzer
-                        from longitudinal_analysis.application.use_cases import CompareScansUseCase
-                        curr_payload_dict = {
-                            "patient": {
-                                "patient_id": patient_id,
-                                "scan_date": scan_date_str
-                            },
-                            "classification": {
-                                "predicted_class": classification_result.class_name,
-                                "confidence_score": classification_result.confidence_score
-                            },
-                            "segmentation": {
-                                "tumor_area_mm2": segmentation_metrics.tumor_area_mm2 if segmentation_metrics else 0.0,
-                                "tumor_percentage_brain": segmentation_metrics.tumor_percentage_brain if segmentation_metrics else 0.0,
-                                "shape_statistics": {
-                                    "perimeter_mm": segmentation_metrics.stats.perimeter_mm if (segmentation_metrics and segmentation_metrics.stats) else None,
-                                    "solidity": segmentation_metrics.stats.solidity if (segmentation_metrics and segmentation_metrics.stats) else None,
-                                    "circularity": segmentation_metrics.stats.circularity if (segmentation_metrics and segmentation_metrics.stats) else None,
-                                    "major_axis_mm": segmentation_metrics.stats.major_axis_mm if (segmentation_metrics and segmentation_metrics.stats) else None,
-                                    "minor_axis_mm": segmentation_metrics.stats.minor_axis_mm if (segmentation_metrics and segmentation_metrics.stats) else None,
-                                    "bbox_w_mm": segmentation_metrics.stats.bbox_w_mm if (segmentation_metrics and segmentation_metrics.stats) else None,
-                                    "bbox_h_mm": segmentation_metrics.stats.bbox_h_mm if (segmentation_metrics and segmentation_metrics.stats) else None,
-                                }
-                            },
-                            "files": {
-                                "original_image": temp_image_path,
-                                "segmentation_mask": mask_path
-                            }
+                        risk_level = severity_assessment.category.value.upper()
+                        risk_colors = {
+                            "HIGH": ("var(--status-danger-bg)", "var(--status-danger)"),
+                            "MEDIUM": ("var(--status-warning-bg)", "var(--status-warning)"),
+                            "LOW": ("var(--status-success-bg)", "var(--status-success)")
                         }
-                        comp_canvas_path = os.path.join(OUTPUT_REPORTS_DIR, f"{patient_id}_longitudinal_comparison.png")
-                        long_analyzer = OpenCVLongitudinalAnalyzer()
-                        compare_use_case = CompareScansUseCase(analyzer=long_analyzer, db_path=DEFAULT_DB_PATH)
-                        return compare_use_case.execute(
-                            patient_id=patient_id,
-                            current_report_data=curr_payload_dict,
-                            output_image_path=comp_canvas_path
-                        )
-
-                    comparison_result, comp_warns = recovery.execute_graceful_stage(
-                        stage_name="Longitudinal Comparison",
-                        stage_fn=run_comparison,
-                        default_fallback_value=None
-                    )
-                    quality_warnings.extend(comp_warns)
-
-                    timeline["Comparison"] = time.time() - t_endpoint_start
-
-                    # Generate Clinical Insight (B6.15)
-                    from clinical_insight.application.use_cases import GenerateClinicalInsightUseCase
-                    insight_use_case = GenerateClinicalInsightUseCase()
-                    
-                    solidity_val = None
-                    circularity_val = None
-                    if segmentation_metrics and getattr(segmentation_metrics, "stats", None) is not None:
-                        solidity_val = segmentation_metrics.stats.solidity
-                        circularity_val = segmentation_metrics.stats.circularity
+                        risk_bg, risk_text = risk_colors.get(risk_level, ("rgba(148, 163, 184, 0.15)", "var(--text-muted)"))
                         
-                    clinical_insight_res = insight_use_case.execute(
-                        predicted_class=classification_result.class_name,
-                        confidence_score=classification_result.confidence_score,
-                        is_calibrated=is_cal,
-                        probabilities=classification_result.probabilities,
-                        tumor_area_mm2=segmentation_metrics.tumor_area_mm2,
-                        pixel_count=segmentation_metrics.pixel_count,
-                        solidity=solidity_val,
-                        circularity=circularity_val,
-                        xai_method=xai_param,
-                        xai_overlap_percentage=xai_result.overlap_percentage,
-                        longitudinal_comparison=comparison_result
-                    )
-
-                    clinical_report = ClinicalReport(
-                        patient_info=patient_info,
-                        processing_summary=processing_summary,
-                        classification=classification_result,
-                        segmentation_metrics=segmentation_metrics,
-                        severity_assessment=severity_assessment,
-                        original_image_path=temp_image_path,
-                        heatmap_image_path=heatmap_path,
-                        overlay_image_path=overlay_path,
-                        segmentation_mask_path=mask_path,
-                        comparison_image_path=comparison_path,
-                        xai_method=xai_param,
-                        xai_explanation_text=xai_result.explanation_text,
-                        xai_overlap_percentage=xai_result.overlap_percentage,
-                        longitudinal_comparison=comparison_result,
-                        quality_warnings=quality_warnings,
-                        clinical_insight=clinical_insight_res,
-                    )
-
-                    timeline["Clinical Report"] = time.time() - t_endpoint_start
-
-                    generator = MarkdownJSONReportGenerator()
-                    report_use_case = GenerateIntegratedReportUseCase(report_generator=generator, logger=logging.getLogger("streamlit_app"))
-                    md_file, json_file, pdf_file = report_use_case.execute(report=clinical_report, output_dir=OUTPUT_REPORTS_DIR)
-
-                    timeline["PDF"] = time.time() - t_endpoint_start
-
-                    # Run Email Reporter (B6.15)
-                    from clinical_reporting.infrastructure.email_sender import ClinicalEmailReporter
-                    email_reporter = ClinicalEmailReporter(logger=logging.getLogger("streamlit_app"))
-                    recipient_email = f"{ref_physician.replace(' ', '_').lower()}@hospital.org"
-                    email_reporter.send_report_email(
-                        report=clinical_report,
-                        recipient_email=recipient_email,
-                        output_dir=OUTPUT_REPORTS_DIR
-                    )
-
-                    # 7. Persist to SQLite Database
-                    db_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)
-                    db_repo.initialize_db()
-                    db_report_id = db_repo.save_report(clinical_report, output_dir=OUTPUT_REPORTS_DIR)
-
-                    timeline["Database"] = time.time() - t_endpoint_start
-                    timeline["Completed"] = time.time() - t_endpoint_start
-
-                    # Link validation record to prediction ID in DB and log audit metrics
-                    pred_id = None
-                    database_status = "Failed"
-                    try:
-                        import json
-                        conn = db_repo._get_connection()
-                        row = conn.execute("SELECT prediction_id FROM clinical_reports WHERE id = ?", (db_report_id,)).fetchone()
-                        if row:
-                            pred_id = row["prediction_id"]
-                            db_repo.save_validation_scorecard(
-                                file_hash=scorecard.duplicate_check.duplicate_hash,
-                                p_hash=validator.compute_perceptual_hash(raw_bytes),
-                                is_valid=scorecard.is_valid,
-                                scorecard_json=json.dumps(scorecard.to_dict()),
-                                prediction_id=pred_id
-                            )
-                            database_status = "Persisted"
-                            # Save Timeline Trace
-                            db_repo.save_timeline_trace(pred_id, timeline)
-                        conn.close()
-                    except Exception as db_link_err:
-                        logging.getLogger("streamlit_app").error(f"Failed to link validation scorecard: {db_link_err}")
-
-                    # Run AI Audit Logger (B6.6)
-                    try:
-                        from monitoring.infrastructure.audit_logger import AuditLogger
-                        import multiprocessing
-                        cpu_threads = multiprocessing.cpu_count()
-                        gpu_active = torch.cuda.is_available() and device.type != "cpu"
-                        
-                        audit_logger = AuditLogger(db_path=DEFAULT_DB_PATH)
-                        audit_logger.log_execution(
-                            patient_id=patient_id,
-                            user=ref_physician or "Dr. Streamlit Default",
-                            model_version_cls=os.path.basename(CLS_CHECKPOINT),
-                            model_version_seg=os.path.basename(SEG_CHECKPOINT),
-                            runtime_sec=total_exec_time,
-                            gpu_active=gpu_active,
-                            cpu_threads=cpu_threads,
-                            warnings=quality_warnings,
-                            errors=[],
-                            report_status="Generated",
-                            database_status=database_status,
-                            prediction_id=pred_id
-                        )
-                    except Exception as audit_err:
-                        logging.getLogger("streamlit_app").error(f"Failed to record AI Audit Log: {audit_err}")
-
-                    # Cleanup temp input
-                    if os.path.exists(temp_image_path):
-                        os.remove(temp_image_path)
-
-                # ================= DISPLAY OUTPUTS =================
-                st.success(f"MRI diagnostic analysis completed successfully! Assigned Database ID: #{db_report_id}")
-                
-                # B6.11 Prediction Timeline
-                with st.expander("🕒 View Pipeline Prediction Timeline Trace", expanded=True):
-                    steps_list = [
-                        ("Upload", "Upload & cached ingest"),
-                        ("Validation", "Intelligent MRI validations"),
-                        ("Classification", "EfficientNet classification"),
-                        ("Calibration", "Platt scaling calibration"),
-                        ("Segmentation", "UNeXt tumor contours segmentation"),
-                        ("GradCAM", "Grad-CAM spatial mappings"),
-                        ("Statistics", "Shape morph stats extraction"),
-                        ("Comparison", "Longitudinal scan comparisons"),
-                        ("Clinical Report", "Markdown/JSON report compiles"),
-                        ("PDF", "Clinical PDF reports generator"),
-                        ("Database", "SQLite records persistence"),
-                    ]
-                    
-                    timeline_html = "<div style='font-family: monospace; display: flex; flex-direction: column; gap: 8px; margin-top: 10px; margin-bottom: 10px;'>"
-                    prev_val = 0.0
-                    for key, desc in steps_list:
-                        val = timeline.get(key, 0.0)
-                        step_time = val - prev_val
-                        if step_time < 0:
-                            step_time = 0.0
-                        prev_val = val
-                        
-                        timeline_html += f"""
-                        <div style='display: flex; align-items: center; gap: 10px;'>
-                            <div style='width: 30px; font-weight: bold; color: #10b981; text-align: center;'>↓</div>
-                            <div style='background-color: #1e293b; padding: 6px 12px; border-radius: 4px; display: flex; justify-content: space-between; flex: 1;'>
-                                <span style='color: #f8fafc; font-weight: bold;'>{key}</span>
-                                <span style='color: #cbd5e1; font-size: 12px;'>{desc}</span>
-                                <span style='color: #38bdf8; font-weight: bold;'>{step_time:.3f} s</span>
+                        card_html = f"""
+                        <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-top: 4px solid var(--border-highlight); padding: 16px; border-radius: var(--radius); min-height: 290px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: var(--shadow-sm); margin-bottom: var(--space-8);">
+                            <div>
+                                <h4 style="margin: 0; color: var(--text-secondary); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">AI Prediction Card</h4>
+                                <h2 style="margin: 12px 0 6px 0; color: var(--text-primary); font-size: 22px; font-weight: 700;">{tumor_type}</h2>
+                                <span style="background: {risk_bg}; color: {risk_text}; padding: 3px 8px; border-radius: var(--radius-sm); font-size: 10px; font-weight: 600; text-transform: uppercase; display: inline-block;">{risk_level} RISK LEVEL</span>
+                            </div>
+                            
+                            <div style="background-color: var(--bg-secondary); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 6px; margin-top: var(--space-12);">
+                                <span style="font-size: 10px; color: var(--text-muted); display: block; text-transform: uppercase; font-weight: 600;">Calibration Context</span>
+                                <span style="font-size: 11px; color: var(--text-secondary); font-weight: 500; display: block; margin-top: 2px;">{cal_method}</span>
+                            </div>
+                            
+                            <div style="margin-top: auto; padding-top: var(--space-12);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <span style="color: var(--text-secondary); font-size: 11px; font-weight: 500;">Confidence Score</span>
+                                    <span style="color: var(--text-primary); font-weight: 700; font-size: 13px;">{confidence:.2%}</span>
+                                </div>
+                                <div style="width: 100%; height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden; border: 1px solid var(--border-color);">
+                                    <div style="width: {min(100, int(confidence * 100))}%; height: 100%; background: var(--border-highlight); border-radius: 3px;"></div>
+                                </div>
                             </div>
                         </div>
                         """
-                    total_time = timeline.get("Completed", total_exec_time)
-                    timeline_html += f"""
-                    <div style='display: flex; align-items: center; gap: 10px;'>
-                        <div style='width: 30px; font-weight: bold; color: #10b981; text-align: center;'>✔</div>
-                        <div style='background-color: #0f172a; border: 1px solid #10b981; padding: 8px 12px; border-radius: 4px; display: flex; justify-content: space-between; flex: 1;'>
-                            <span style='color: #10b981; font-weight: bold;'>Completed</span>
-                            <span style='color: #cbd5e1; font-size: 12px;'>E2E Diagnostic Pipeline Run</span>
-                            <span style='color: #10b981; font-weight: bold;'>{total_time:.3f} s</span>
-                        </div>
-                    </div>
-                    </div>
-                    """
-                    st.markdown(timeline_html, unsafe_allow_html=True)
-                
-                st.subheader("Diagnostic Assessment Summary")
-                res_col1, res_col2, res_col3 = st.columns(3)
-                with res_col1:
-                    st.metric("Primary Diagnosis Class", classification_result.class_name)
-                with res_col2:
-                    st.metric("Model Confidence Score", f"{classification_result.confidence_score:.2%}")
-                with res_col3:
-                    st.metric("AI Severity Category", severity_assessment.category.value.upper())
+                        st.markdown(card_html, unsafe_allow_html=True)
 
-                # Clinical Insight Summary Block (B6.15)
-                if clinical_insight_res is not None:
-                    st.markdown("### 🔍 AI Clinical Insights & Recommendations")
-                    st.markdown(f"""
-                        <div style="background-color: #0f172a; border-left: 5px solid #10b981; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-                            <h4 style="margin: 0 0 6px 0; color: #f8fafc; font-size: 14px; font-weight: 700;">AI Summary Narrative</h4>
-                            <p style="margin: 0; color: #cbd5e1; font-size: 13px; line-height: 1.5;">{clinical_insight_res.summary_narrative}</p>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    
-                    ci_col1, ci_col2 = st.columns(2)
-                    with ci_col1:
-                        st.markdown("**Key Findings:**")
-                        for f in clinical_insight_res.key_findings:
-                            st.write(f"- {f}")
-                    with ci_col2:
-                        st.markdown("**Clinical Recommendations:**")
-                        for r in clinical_insight_res.recommendations:
-                            st.write(f"- {r}")
+                    # 2. Segmentation Card
+                    with p_col2:
+                        seg_metrics = state["segmentation_metrics"]
+                        mask_path = state["mask_path"]
+                        
+                        area_val = f"{seg_metrics.tumor_area_mm2:.2f} mm²" if seg_metrics else "0.00 mm²"
+                        occupancy_val = f"{seg_metrics.tumor_percentage_brain:.4f}%" if seg_metrics else "0.00%"
+                        
+                        solidity_val = "N/A"
+                        circularity_val = "N/A"
+                        perimeter_val = "N/A"
+                        if seg_metrics and getattr(seg_metrics, "stats", None) is not None:
+                            solidity_val = f"{seg_metrics.stats.solidity:.4f}"
+                            circularity_val = f"{seg_metrics.stats.circularity:.4f}"
+                            perimeter_val = f"{seg_metrics.stats.perimeter_mm:.1f} mm"
                             
-                    st.warning(f"**Educational Disclaimer:** {clinical_insight_res.disclaimer}")
+                        card_html = f"""
+                        <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-top: 4px solid var(--status-success); padding: 16px; border-radius: var(--radius); min-height: 290px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: var(--shadow-sm); margin-bottom: var(--space-8);">
+                            <div>
+                                <h4 style="margin: 0; color: var(--text-secondary); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Segmentation Card</h4>
+                                <h2 style="margin: 12px 0 4px 0; color: var(--text-primary); font-size: 18px; font-weight: 700;">{area_val}</h2>
+                                <span style="color: var(--text-secondary); font-size: 10px; display: block; margin-bottom: 8px;">Estimated Tumor Area</span>
+                                
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 10px;">
+                                    <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); padding: 5px; border-radius: 4px;">
+                                        <span style="color: var(--text-muted); display: block;">Brain Occ %</span>
+                                        <span style="color: var(--text-primary); font-weight: bold;">{occupancy_val}</span>
+                                    </div>
+                                    <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); padding: 5px; border-radius: 4px;">
+                                        <span style="color: var(--text-muted); display: block;">Perimeter</span>
+                                        <span style="color: var(--text-primary); font-weight: bold;">{perimeter_val}</span>
+                                    </div>
+                                    <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); padding: 5px; border-radius: 4px;">
+                                        <span style="color: var(--text-muted); display: block;">Circularity</span>
+                                        <span style="color: var(--text-primary); font-weight: bold;">{circularity_val}</span>
+                                    </div>
+                                    <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); padding: 5px; border-radius: 4px;">
+                                        <span style="color: var(--text-muted); display: block;">Solidity</span>
+                                        <span style="color: var(--text-primary); font-weight: bold;">{solidity_val}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        """
+                        st.markdown(card_html, unsafe_allow_html=True)
+                        if os.path.exists(mask_path):
+                            st.image(mask_path, caption="UNeXt Contour Mask", use_container_width=True)
+
+                    # 3. GradCAM Card
+                    with p_col3:
+                        xai_text = state["clinical_report"].xai_explanation_text or "No explainability text generated."
+                        overlay_path = state["overlay_path"]
+                        
+                        card_html = f"""
+                        <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-top: 4px solid var(--status-info); padding: 16px; border-radius: var(--radius); min-height: 290px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: var(--shadow-sm); margin-bottom: var(--space-8);">
+                            <div>
+                                <h4 style="margin: 0; color: var(--text-secondary); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">GradCAM Card</h4>
+                                <h2 style="margin: 12px 0 4px 0; color: var(--text-primary); font-size: 14px; font-weight: 700;">Spatial Attention</h2>
+                                <p style="margin: 6px 0 0 0; color: var(--text-secondary); font-size: 11px; line-height: 1.35; max-height: 140px; overflow-y: auto;">
+                                    {xai_text}
+                                </p>
+                            </div>
+                        </div>
+                        """
+                        st.markdown(card_html, unsafe_allow_html=True)
+                        if os.path.exists(overlay_path):
+                            st.image(overlay_path, caption="Grad-CAM Focus Overlay", use_container_width=True)
+
+                    # Bounding Box Expandable Section
+                    if seg_metrics and getattr(seg_metrics, "stats", None) is not None:
+                        with st.expander("📊 Detailed Shape & Bounding Box Measurements", expanded=False):
+                            s = seg_metrics.stats
+                            scol1, scol2, scol3 = st.columns(3)
+                            with scol1:
+                                st.metric("Perimeter", f"{s.perimeter_mm:.2f} mm", help=f"{s.perimeter_pixels:.1f} pixels")
+                                st.metric("Bounding Box Width", f"{s.bbox_w_mm:.2f} mm", help=f"{s.bbox_w_px} pixels")
+                                st.metric("Solidity Index", f"{s.solidity:.4f}", help="Ratio of area to convex hull area")
+                            with scol2:
+                                st.metric("Major Axis Length", f"{s.major_axis_mm:.2f} mm")
+                                st.metric("Bounding Box Height", f"{s.bbox_h_mm:.2f} mm", help=f"{s.bbox_h_px} pixels")
+                                st.metric("Circularity Index", f"{s.circularity:.4f}")
+                            with scol3:
+                                st.metric("Minor Axis Length", f"{s.minor_axis_mm:.2f} mm")
+                                st.metric("Eccentricity", f"{s.eccentricity:.4f}")
+                                st.metric("Orientation Angle", f"{s.orientation_deg:.1f}°")
+
                     st.divider()
 
-                # Multi-Model Research Benchmarks Comparison Panel (B6.15)
-                if research_ensemble_mode and 'ensemble_res' in locals() and ensemble_res is not None:
-                    st.markdown("### 📊 Multi-Model Research Benchmarks & Agreement")
-                    
-                    # Render agreement status scorecard
-                    am = ensemble_res.agreement_metrics
-                    if am:
-                        color = "#27ae60" if "HIGH" in am.level else "#f39c12" if "MODERATE" in am.level else "#c0392b"
+                    # Telemetry & Processing Timeline
+                    with st.expander("🕒 View Pipeline Prediction Timeline Trace", expanded=False):
+                        steps_list = [
+                            ("Upload", "Upload & cached ingest"),
+                            ("Validation", "Intelligent MRI validations"),
+                            ("Classification", "EfficientNet classification"),
+                            ("Calibration", "Platt scaling calibration"),
+                            ("Segmentation", "UNeXt tumor contours segmentation"),
+                            ("GradCAM", "Grad-CAM spatial mappings"),
+                            ("Statistics", "Shape morph stats extraction"),
+                            ("Comparison", "Longitudinal scan comparisons"),
+                            ("Clinical Report", "Markdown/JSON report compiles"),
+                            ("PDF", "Clinical PDF reports generator"),
+                            ("Database", "SQLite records persistence"),
+                        ]
+                        
+                        timeline_html = "<div style='font-family: monospace; display: flex; flex-direction: column; gap: 8px; margin-top: 10px; margin-bottom: 10px;'>"
+                        prev_val = 0.0
+                        for key, desc in steps_list:
+                            val = state["timeline"].get(key, 0.0)
+                            step_time = val - prev_val
+                            if step_time < 0:
+                                step_time = 0.0
+                            prev_val = val
+                            
+                            timeline_html += f"""
+                            <div style='display: flex; align-items: center; gap: 10px;'>
+                                <div style='width: 30px; font-weight: bold; color: var(--status-success); text-align: center;'>↓</div>
+                                <div style='background-color: var(--bg-tertiary); border: 1px solid var(--border-color); padding: 6px 12px; border-radius: 4px; display: flex; justify-content: space-between; flex: 1;'>
+                                    <span style='color: var(--text-primary); font-weight: bold;'>{key}</span>
+                                    <span style='color: var(--text-secondary); font-size: 11px;'>{desc}</span>
+                                    <span style='color: var(--text-accent); font-weight: bold;'>{step_time:.3f} s</span>
+                                </div>
+                            </div>
+                            """
+                        total_time = state["timeline"].get("Completed", state["total_exec_time"])
+                        timeline_html += f"""
+                        <div style='display: flex; align-items: center; gap: 10px;'>
+                            <div style='width: 30px; font-weight: bold; color: var(--status-success); text-align: center;'>✔</div>
+                            <div style='background-color: var(--bg-card); border: 1px solid var(--status-success); padding: 8px 12px; border-radius: 4px; display: flex; justify-content: space-between; flex: 1;'>
+                                <span style='color: var(--status-success); font-weight: bold;'>Completed</span>
+                                <span style='color: var(--text-secondary); font-size: 11px;'>E2E Diagnostic Pipeline Run</span>
+                                <span style='color: var(--status-success); font-weight: bold;'>{total_time:.3f} s</span>
+                            </div>
+                        </div>
+                        </div>
+                        """
+                        st.markdown(timeline_html, unsafe_allow_html=True)
+
+                    # Clinical Insights
+                    clinical_insight_res = state["clinical_insight_res"]
+                    if clinical_insight_res is not None:
+                        st.markdown("### 🔍 AI Clinical Insights & Recommendations")
                         st.markdown(f"""
-                            <div style="background-color: #0f172a; border-left: 5px solid {color}; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                                <h4 style="margin: 0 0 4px 0; color: #f8fafc; font-size: 14px; font-weight: 700;">Model Agreement Status: <span style="color: {color};">{am.level}</span></h4>
-                                <p style="margin: 0 0 8px 0; color: #cbd5e1; font-size: 13px; line-height: 1.4;">{am.message}</p>
-                                <span style="font-size: 12px; color: #94a3b8;"><b>Cosine Similarity:</b> {am.cosine_similarity:.4f} | <b>JS Divergence:</b> {am.jensen_shannon_divergence:.4f}</span>
+                            <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-left: 5px solid var(--status-success); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                                <h4 style="margin: 0 0 6px 0; color: var(--text-primary); font-size: 13px; font-weight: 700;">AI Summary Narrative</h4>
+                                <p style="margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5;">{clinical_insight_res.summary_narrative}</p>
                             </div>
                         """, unsafe_allow_html=True)
-                    
-                    # Comparative metrics table
-                    comp_rows = []
-                    for ip in ensemble_res.individual_predictions:
-                        comp_rows.append({
-                            "Model Profile": ip.model_name.upper(),
-                            "Architecture": "EfficientNet-B0" if ip.model_name == "efficientnet_b0" else "ResNet-18" if ip.model_name == "resnet18" else "MobileNet-V3",
-                            "Predicted Class": ip.predicted_class,
-                            "Confidence": f"{ip.confidence:.2%}",
-                            "Inference Latency": f"{ip.runtime_sec:.3f} s"
-                        })
-                    st.table(comp_rows)
-                    
-                    # Comparative probabilities bar chart
-                    fig, ax = plt.subplots(figsize=(8, 4))
-                    fig.patch.set_facecolor('none')
-                    ax.set_facecolor('none')
-                    
-                    classes = ["Glioma", "Meningioma", "No Tumor", "Pituitary"]
-                    x_indices = np.arange(len(classes))
-                    width = 0.25
-                    
-                    for idx, ip in enumerate(ensemble_res.individual_predictions):
-                        probs_list = [ip.probabilities.get(c, 0.0) for c in classes]
-                        ax.bar(x_indices + (idx - 1) * width, probs_list, width, label=ip.model_name.upper())
                         
-                    ax.set_ylabel("Probability", color="#cbd5e1", fontsize=9)
-                    ax.set_title("Probability Distribution Comparison", color="#cbd5e1", fontsize=10)
-                    ax.set_xticks(x_indices)
-                    ax.set_xticklabels(classes, rotation=15)
-                    ax.tick_params(colors="#cbd5e1", labelsize=8)
-                    ax.legend(facecolor='#1e293b', edgecolor='#334155', labelcolor='#cbd5e1', fontsize=8)
-                    ax.grid(axis='y', linestyle='--', alpha=0.3)
-                    
-                    st.pyplot(fig)
-                    plt.close(fig)
-                    st.divider()
+                        ci_col1, ci_col2 = st.columns(2)
+                        with ci_col1:
+                            st.markdown("**Key Findings:**")
+                            for f in clinical_insight_res.key_findings:
+                                st.write(f"- {f}")
+                        with ci_col2:
+                            st.markdown("**Clinical Recommendations:**")
+                            for r in clinical_insight_res.recommendations:
+                                st.write(f"- {r}")
+                                
+                        st.warning(f"**Educational Disclaimer:** {clinical_insight_res.disclaimer}")
 
-                 # If confidence is calibrated, display calibration info
-                is_calibrated = getattr(classification_result, "is_calibrated", False)
-                if is_calibrated:
-                    cal_params = classification_result.calibration_parameters or {}
-                    param_str = ", ".join(f"{k}={v:.3f}" if isinstance(v, float) else f"{k}={v}" for k, v in cal_params.items())
-                    st.info(f"**Confidence Calibration Active:**\n"
-                            f"- Calibrated Confidence: **{classification_result.confidence_score:.2%}**\n"
-                            f"- Uncalibrated Confidence: **{classification_result.uncalibrated_confidence_score:.2%}**\n"
-                            f"- Calibration Method: **{classification_result.calibration_method}** ({param_str})")
+                    # Ensemble metrics
+                    ensemble_res = state["ensemble_res"]
+                    if ensemble_res is not None:
+                        st.markdown("### 📊 Multi-Model Research Benchmarks & Agreement")
+                        am = ensemble_res.agreement_metrics
+                        if am:
+                            color = "var(--status-success)" if "HIGH" in am.level else "var(--status-warning)" if "MODERATE" in am.level else "var(--status-danger)"
+                            st.markdown(f"""
+                                <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-left: 5px solid {color}; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                                    <h4 style="margin: 0 0 4px 0; color: var(--text-primary); font-size: 13px; font-weight: 700;">Model Agreement Status: <span style="color: {color};">{am.level}</span></h4>
+                                    <p style="margin: 0 0 8px 0; color: var(--text-secondary); font-size: 12px; line-height: 1.4;">{am.message}</p>
+                                    <span style="font-size: 11px; color: var(--text-muted);"><b>Cosine Similarity:</b> {am.cosine_similarity:.4f} | <b>JS Divergence:</b> {am.jensen_shannon_divergence:.4f}</span>
+                                </div>
+                            """, unsafe_allow_html=True)
+                        
+                        comp_rows = []
+                        for ip in ensemble_res.individual_predictions:
+                            comp_rows.append({
+                                "Model Profile": ip.model_name.upper(),
+                                "Architecture": "EfficientNet-B0" if ip.model_name == "efficientnet_b0" else "ResNet-18" if ip.model_name == "resnet18" else "MobileNet-V3",
+                                "Predicted Class": ip.predicted_class,
+                                "Confidence": f"{ip.confidence:.2%}",
+                                "Inference Latency": f"{ip.runtime_sec:.3f} s"
+                            })
+                        st.table(comp_rows)
 
-                # If post-processing was applied, display segmentation quality details
-                if segmentation_metrics is not None and getattr(segmentation_metrics, "post_processing_applied", False):
-                    q_score = segmentation_metrics.quality_score
-                    q_cat = segmentation_metrics.quality_category
-                    q_color = "#10b981" if q_cat == "HIGH" else "#f59e0b" if q_cat == "MEDIUM" else "#ef4444"
+                    # Quality Warnings
+                    if state["quality_warnings"]:
+                        st.warning("⚠️ **AI Diagnostic Quality & Consistency Warnings**")
+                        for warning in state["quality_warnings"]:
+                            st.markdown(f"- {warning}")
+
+                    # Severity matched rule
                     st.markdown(f"""
-                        <div style="background-color: #0f172a; border-left: 5px solid {q_color}; padding: 15px; border-radius: 8px; margin-top: 10px; margin-bottom: 10px;">
-                            <h4 style="margin: 0; color: #f8fafc; font-size: 14px; font-weight: 700;">AI Segmentation Quality Assessment</h4>
-                            <p style="margin: 6px 0 0 0; color: #cbd5e1; font-size: 16px; font-weight: 800;">
-                                Quality Score: <span style="color: {q_color};">{q_score:.1%} ({q_cat})</span>
-                            </p>
-                            <p style="margin: 4px 0 0 0; color: #94a3b8; font-size: 12px;">
-                                Morphological filters applied: {", ".join(segmentation_metrics.post_processing_metadata.get("steps_applied", []))}
-                            </p>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-
-                # Display Explainable AI (XAI 2.0) details
-                xai_text = getattr(clinical_report, "xai_explanation_text", None)
-                if xai_text:
-                    st.markdown(f"""
-                        <div style="background-color: #0f172a; border-left: 5px solid #38bdf8; padding: 15px; border-radius: 8px; margin-top: 10px; margin-bottom: 10px;">
-                            <h4 style="margin: 0; color: #f8fafc; font-size: 14px; font-weight: 700;">AI Explanation & Diagnostic Attention Focus</h4>
-                            <p style="margin: 6px 0 0 0; color: #cbd5e1; font-size: 13px;">{xai_text}</p>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-                st.divider()
-
-                # Shaded card for severity rule and disclaimer
-                sev_color = "#ef4444" if severity_assessment.category.value.lower() == "high" else "#f59e0b" if severity_assessment.category.value.lower() == "medium" else "#10b981"
-                st.markdown(f"""
-                    <div style="background-color: #0f172a; border-left: 5px solid {sev_color}; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                        <h4 style="margin: 0; color: #f8fafc; font-size: 14px; font-weight: 700;">Matched Risk Decision Rule</h4>
-                        <p style="margin: 6px 0 0 0; color: #cbd5e1; font-size: 13px;">{severity_assessment.rule_description}</p>
+                    <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-left: 5px solid {risk_text}; padding: 15px; border-radius: 8px; margin-bottom: 20px; margin-top: 15px;">
+                        <h4 style="margin: 0; color: var(--text-primary); font-size: 13px; font-weight: 700;">Matched Risk Decision Rule</h4>
+                        <p style="margin: 6px 0 0 0; color: var(--text-secondary); font-size: 12px;">{severity_assessment.rule_description}</p>
                     </div>
-                """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
 
-                # Display B6.3 & B6.4 Clinical quality warnings if present
-                if getattr(clinical_report, "quality_warnings", None):
-                    st.warning("⚠️ **AI Diagnostic Quality & Consistency Warnings**")
-                    for warning in clinical_report.quality_warnings:
-                        st.markdown(f"- {warning}")
-
-                st.subheader("Clinical Imaging Visualizations")
-                img_col1, img_col2, img_col3 = st.columns(3)
-                with img_col1:
-                    st.image(cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB), caption="Original brain MRI scan slice", use_container_width=True)
-                with img_col2:
-                    if os.path.exists(overlay_path):
-                        st.image(overlay_path, caption="Grad-CAM Attention Overlay", use_container_width=True)
-                with img_col3:
-                    if os.path.exists(mask_path):
-                        st.image(mask_path, caption="Post-Processed UNeXt Segmentation Mask", use_container_width=True)
-
-                # Show Before/After Post-Processing Comparison Image
-                if os.path.exists(comparison_path):
-                    with st.expander("🔬 View Detailed Segmentation Post-Processing Comparison (Before vs. After)", expanded=True):
-                        st.image(comparison_path, caption="Comparison Canvas: Original MRI | Initial UNeXt Mask (Red) | Post-Processed Mask (Green)", use_container_width=True)
-
-                st.divider()
-
-                st.subheader("Quantitative Morphology Stats")
-                morph_col1, morph_col2, morph_col3 = st.columns(3)
-                with morph_col1:
-                    st.metric("Estimated Tumor Area", f"{segmentation_metrics.tumor_area_mm2:.2f} mm²")
-                with morph_col2:
-                    st.metric("Tumor occupancy % (Brain)", f"{segmentation_metrics.tumor_percentage_brain:.4f}%")
-                with morph_col3:
-                    st.metric("Tumor Pixel count", f"{segmentation_metrics.pixel_count:,} px")
-
-                # Detailed shape & bounding box metrics if stats engine succeeded
-                if getattr(segmentation_metrics, "stats", None) is not None:
-                    with st.expander("📊 Detailed Shape & Bounding Box Measurements", expanded=True):
-                        s = segmentation_metrics.stats
-                        scol1, scol2, scol3 = st.columns(3)
-                        with scol1:
-                            st.metric("Perimeter", f"{s.perimeter_mm:.2f} mm", help=f"{s.perimeter_pixels:.1f} pixels")
-                            st.metric("Bounding Box Width", f"{s.bbox_w_mm:.2f} mm", help=f"{s.bbox_w_px} pixels")
-                            st.metric("Solidity Index", f"{s.solidity:.4f}", help="Ratio of area to convex hull area")
-                        with scol2:
-                            st.metric("Major Axis Length", f"{s.major_axis_mm:.2f} mm")
-                            st.metric("Bounding Box Height", f"{s.bbox_h_mm:.2f} mm", help=f"{s.bbox_h_px} pixels")
-                            st.metric("Circularity Index", f"{s.circularity:.4f}")
-                        with scol3:
-                            st.metric("Minor Axis Length", f"{s.minor_axis_mm:.2f} mm")
-                            st.metric("Eccentricity", f"{s.eccentricity:.4f}")
-                            st.metric("Orientation Angle", f"{s.orientation_deg:.1f}°")
-
-                st.divider()
-
-                # Document Download buttons
-                st.subheader("Report Export & Retrieval")
-                
-                with open(pdf_file, "rb") as f:
-                    pdf_data = f.read()
-                with open(json_file, "rb") as f:
-                    json_data = f.read()
-                with open(md_file, "rb") as f:
-                    md_data = f.read()
-
-                btn_col1, btn_col2, btn_col3 = st.columns(3)
-                with btn_col1:
-                    st.download_button(
-                        label="Download PDF Clinical Report",
-                        data=pdf_data,
-                        file_name=os.path.basename(pdf_file),
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-                with btn_col2:
-                    st.download_button(
-                        label="Download EHR JSON Payload",
-                        data=json_data,
-                        file_name=os.path.basename(json_file),
-                        mime="application/json",
-                        use_container_width=True
-                    )
-                with btn_col3:
-                    st.download_button(
-                        label="Download Markdown Summary",
-                        data=md_data,
-                        file_name=os.path.basename(md_file),
-                        mime="text/markdown",
-                        use_container_width=True
-                    )
-
-                st.info(severity_assessment.educational_disclaimer)
+                    st.info(severity_assessment.educational_disclaimer)
 
 
     # =================================================================
     # PAGE 3: PATIENT DATABASE HISTORY
     # =================================================================
-    elif page == "Patient Database History":
+    elif page in ["🗄️ Patient Database History", "Patient Database History"]:
         st.title("Patient Diagnostic Records Database Explorer")
         st.markdown("Search patient diagnostic history and download historical PDF reports.")
 
         st.divider()
 
-        # Search Bar
-        search_query = st.text_input("Search Database by Patient ID (partial text matching supported)", value="")
+        # Initialize database explorer state keys
+        if "db_state" not in st.session_state:
+            st.session_state["db_state"] = {
+                "search_query": "",
+                "filter_diagnosis": "All",
+                "filter_severity": "All",
+                "sort_col": "Report ID",
+                "sort_order": "Descending",
+                "current_page": 1,
+                "per_page": 5,
+                "selected_report_id": None
+            }
+
+        # ----------------- FILTERS & CONTROLS TOOLBAR -----------------
+        st.markdown("""
+        <div style="background-color: var(--bg-card); border-left: 4px solid var(--border-highlight); padding: 12px 16px; border-radius: var(--radius); margin-bottom: var(--space-12);">
+            <h4 style="margin: 0; color: var(--text-primary); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Clinical History Registry Database Filters</h4>
+        </div>
+        """, unsafe_allow_html=True)
         
-        # Pull history records
-        criteria = HistorySearchCriteria(patient_id=search_query if search_query.strip() else None)
+        search_val = st.text_input("Global Search Registry", value=st.session_state["db_state"]["search_query"], help="Search by Patient ID, Name, or Attending Physician")
+        st.session_state["db_state"]["search_query"] = search_val
+
+        fcol1, fcol2, fcol3, fcol4, fcol5 = st.columns(5)
+        with fcol1:
+            diag_val = st.selectbox("Primary Diagnosis", ["All", "Glioma", "Meningioma", "Pituitary", "No Tumor"], index=["All", "Glioma", "Meningioma", "Pituitary", "No Tumor"].index(st.session_state["db_state"]["filter_diagnosis"]))
+            st.session_state["db_state"]["filter_diagnosis"] = diag_val
+        with fcol2:
+            sev_val = st.selectbox("Severity Classification", ["All", "Low", "Medium", "High"], index=["All", "Low", "Medium", "High"].index(st.session_state["db_state"]["filter_severity"]))
+            st.session_state["db_state"]["filter_severity"] = sev_val
+        with fcol3:
+            sort_col_val = st.selectbox("Sort Attribute", ["Report ID", "Patient ID", "Patient Name", "Scan Date", "Primary Diagnosis", "Confidence"], index=["Report ID", "Patient ID", "Patient Name", "Scan Date", "Primary Diagnosis", "Confidence"].index(st.session_state["db_state"]["sort_col"]))
+            st.session_state["db_state"]["sort_col"] = sort_col_val
+        with fcol4:
+            sort_order_val = st.selectbox("Sorting Order", ["Ascending", "Descending"], index=["Ascending", "Descending"].index(st.session_state["db_state"]["sort_order"]))
+            st.session_state["db_state"]["sort_order"] = sort_order_val
+        with fcol5:
+            per_page_val = st.selectbox("Page Size Limit", [5, 10, 25], index=[5, 10, 25].index(st.session_state["db_state"]["per_page"]))
+            st.session_state["db_state"]["per_page"] = per_page_val
+
+        # Fetch records
         try:
-            summaries = history_repo.search_history(criteria)
+            all_criteria = HistorySearchCriteria()
+            all_summaries = history_repo.search_history(all_criteria)
         except Exception as e:
             st.error(f"Failed to query database history: {e}")
             return
 
-        if not summaries:
-            st.info("No matching records found in the database. Run analyses on the 'Inference Scan Analysis' page first.")
-        else:
-            # Display history records list
-            st.subheader(f"Search Results ({len(summaries)} scans found)")
-            
-            # Format to tabular list
-            table_rows = []
-            for s in summaries:
-                table_rows.append({
-                    "Report ID": s.report_id,
-                    "Patient ID": s.patient_id,
-                    "Patient Name": s.patient_name,
-                    "Scan Date": s.scan_date,
-                    "Primary Diagnosis": s.predicted_class,
-                    "Severity Category": s.rule_based_severity,
-                    "Model Confidence": f"{s.confidence_score:.2%}",
-                    "Processed At": s.created_at,
-                })
-            st.dataframe(table_rows, use_container_width=True)
-
-            st.divider()
-                    # Detailed Record Viewer expander
-            st.subheader("MRI Visual Overlay & PDF Retrieval Portal")
-            
-            report_ids = [s.report_id for s in summaries]
-            selected_report_id = st.selectbox("Select a Report ID to view visuals and download files", report_ids)
-
-            if selected_report_id:
-                # Query report details
-                conn = sqlite3.connect(DEFAULT_DB_PATH)
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT 
-                        cr.id as report_id, cr.prediction_id, p.patient_id, p.name as patient_name, p.age, p.gender,
-                        pr.predicted_class, pr.confidence_score, pr.tumor_area_mm2, pr.rule_based_severity, 
-                        pr.severity_rule_description, cr.pdf_path, cr.overlay_path, cr.mask_path
-                    FROM clinical_reports cr
-                    JOIN predictions pr ON cr.prediction_id = pr.id
-                    JOIN mri_scans s ON pr.scan_id = s.id
-                    JOIN patients p ON s.patient_id = p.patient_id
-                    WHERE cr.id = ?;
-                """, (selected_report_id,))
-                row = cursor.fetchone()
-                conn.close()
-
-                if row:
-                    st.markdown(f"#### Diagnosis Summary for Scan ID #{selected_report_id}")
+        # Python-side multi-filter & text matching
+        q = st.session_state["db_state"]["search_query"].strip().lower()
+        filtered_summaries = []
+        for s in all_summaries:
+            if q:
+                match = (q in s.patient_id.lower() or 
+                         q in s.patient_name.lower() or 
+                         q in s.predicted_class.lower() or 
+                         q in s.rule_based_severity.lower() or
+                         q in str(s.report_id))
+                if not match:
+                    continue
                     
-                    det_col1, det_col2, det_col3 = st.columns(3)
-                    with det_col1:
-                        st.markdown(f"**Patient:** {row['patient_name']} ({row['patient_id']})")
-                        st.markdown(f"**Demographics:** {row['age']} years / {row['gender']}")
-                    with det_col2:
-                        st.markdown(f"**Diagnosis:** {row['predicted_class']}")
-                        st.markdown(f"**Confidence:** {row['confidence_score']:.2%}")
-                    with det_col3:
-                        st.markdown(f"**Severity Category:** {row['rule_based_severity'].upper()}")
-                        st.markdown(f"**Tumor Area:** {row['tumor_area_mm2']:.2f} mm²")
+            diag_f = st.session_state["db_state"]["filter_diagnosis"]
+            if diag_f != "All":
+                if s.predicted_class.lower() != diag_f.lower():
+                    continue
+                    
+            sev_f = st.session_state["db_state"]["filter_severity"]
+            if sev_f != "All":
+                if s.rule_based_severity.lower() != sev_f.lower():
+                    continue
+                    
+            filtered_summaries.append(s)
+
+        # Apply Sort
+        sort_col = st.session_state["db_state"]["sort_col"]
+        reverse_sort = (st.session_state["db_state"]["sort_order"] == "Descending")
+        
+        def get_sort_key(s):
+            if sort_col == "Report ID":
+                return s.report_id
+            elif sort_col == "Patient ID":
+                return s.patient_id
+            elif sort_col == "Patient Name":
+                return s.patient_name
+            elif sort_col == "Scan Date":
+                return s.scan_date
+            elif sort_col == "Primary Diagnosis":
+                return s.predicted_class
+            elif sort_col == "Confidence":
+                return s.confidence_score
+            return s.report_id
+
+        filtered_summaries.sort(key=get_sort_key, reverse=reverse_sort)
+
+        # Pagination
+        total_items = len(filtered_summaries)
+        per_page = st.session_state["db_state"]["per_page"]
+        
+        import math
+        total_pages = max(1, math.ceil(total_items / per_page))
+        
+        if st.session_state["db_state"]["current_page"] > total_pages:
+            st.session_state["db_state"]["current_page"] = total_pages
+        if st.session_state["db_state"]["current_page"] < 1:
+            st.session_state["db_state"]["current_page"] = 1
+            
+        curr_page = st.session_state["db_state"]["current_page"]
+        start_idx = (curr_page - 1) * per_page
+        end_idx = start_idx + per_page
+        page_items = filtered_summaries[start_idx:end_idx]
+
+        if not filtered_summaries:
+            render_empty_state("🗄️", "No Diagnostic Scans Found", "No patient records matched your search query. Try searching with a different Patient ID or run a new scan analysis in the AI Workspace.")
+        else:
+            # Modern table UI headers
+            st.markdown("""
+            <div style="background-color: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; margin-bottom: 8px;">
+                <div style="display: grid; grid-template-columns: 1fr 2fr 2fr 3fr 2fr 2fr; font-weight: bold; color: var(--text-primary); font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase;">
+                    <div>Report ID</div>
+                    <div>Patient Name</div>
+                    <div>Scan Date</div>
+                    <div>Diagnosis Class & Conf</div>
+                    <div>Risk Severity</div>
+                    <div style="text-align: right;">EHR Actions</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            for s in page_items:
+                r_col1, r_col2, r_col3, r_col4, r_col5, r_col6 = st.columns([1, 2, 2, 3, 2, 2])
+                
+                risk_level = s.rule_based_severity.upper()
+                risk_colors = {
+                    "HIGH": ("var(--status-danger-bg)", "var(--status-danger)"),
+                    "MEDIUM": ("var(--status-warning-bg)", "var(--status-warning)"),
+                    "LOW": ("var(--status-success-bg)", "var(--status-success)")
+                }
+                risk_bg, risk_text = risk_colors.get(risk_level, ("rgba(148, 163, 184, 0.15)", "var(--text-muted)"))
+                
+                with r_col1:
+                    st.write(f"#{s.report_id}")
+                with r_col2:
+                    st.markdown(f"**{s.patient_name}**\n`{s.patient_id}`")
+                with r_col3:
+                    st.write(s.scan_date)
+                with r_col4:
+                    st.write(f"**{s.predicted_class}** ({s.confidence_score:.1%})")
+                with r_col5:
+                    st.markdown(f"""<span style="background: {risk_bg}; color: {risk_text}; padding: 2px 8px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 600; text-transform: uppercase; display: inline-block;">{risk_level}</span>""", unsafe_allow_html=True)
+                with r_col6:
+                    if st.button("Open Profile 👤", key=f"select_drawer_p_{s.report_id}", use_container_width=True):
+                        st.session_state["db_state"]["selected_report_id"] = s.report_id
+                        st.rerun()
+
+            # Pagination controls
+            st.divider()
+            pag_col1, pag_col2, pag_col3 = st.columns([1, 2, 1])
+            with pag_col1:
+                if st.button("◀ Previous", disabled=(curr_page == 1), use_container_width=True, key="prev_page_btn"):
+                    st.session_state["db_state"]["current_page"] -= 1
+                    st.rerun()
+            with pag_col2:
+                st.markdown(f"<div style='text-align: center; margin-top: 6px; font-weight: 600; color: var(--text-secondary);'>Page {curr_page} of {total_pages} ({total_items} scans discovered)</div>", unsafe_allow_html=True)
+            with pag_col3:
+                if st.button("Next ▶", disabled=(curr_page == total_pages), use_container_width=True, key="next_page_btn"):
+                    st.session_state["db_state"]["current_page"] += 1
+                    st.rerun()
+
+        # ----------------- PATIENT DRAWER SPLIT BOARD -----------------
+        selected_report_id = st.session_state["db_state"]["selected_report_id"]
+        if selected_report_id:
+            # Query detailed EHR elements
+            conn = sqlite3.connect(DEFAULT_DB_PATH)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 
+                    cr.id as report_id, cr.prediction_id, p.patient_id, p.name as patient_name, p.age, p.gender,
+                    pr.predicted_class, pr.confidence_score, pr.tumor_area_mm2, pr.rule_based_severity, 
+                    pr.severity_rule_description, cr.pdf_path, cr.overlay_path, cr.mask_path, cr.json_path, cr.markdown_path,
+                    s.ref_physician, s.scan_date, pr.created_at
+                FROM clinical_reports cr
+                JOIN predictions pr ON cr.prediction_id = pr.id
+                JOIN mri_scans s ON pr.scan_id = s.id
+                JOIN patients p ON s.patient_id = p.patient_id
+                WHERE cr.id = ?;
+            """, (selected_report_id,))
+            row = cursor.fetchone()
+            conn.close()
+
+            if row:
+                st.markdown("""<br><hr style="border-top: 2px solid var(--border-highlight);">""", unsafe_allow_html=True)
+                
+                # Drawer header control
+                d_header_col1, d_header_col2 = st.columns([4, 1])
+                with d_header_col1:
+                    st.markdown(f"### 👤 Clinical Profile: {row['patient_name']} ({row['patient_id']})")
+                with d_header_col2:
+                    if st.button("Close Drawer ✖", use_container_width=True, type="secondary", key="close_drawer_btn_right"):
+                        st.session_state["db_state"]["selected_report_id"] = None
+                        st.rerun()
+
+                st.markdown(f"""
+                <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-left: 5px solid var(--border-highlight); padding: 15px; border-radius: var(--radius); margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">AuraScan System Patient Case Record</span>
+                        <span class="user-badge-pill" style="font-size: 10px;">Scan Report #{row['report_id']}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                tab_intake, tab_trace, tab_viewports, tab_history, tab_transfer = st.tabs([
+                    "Intake & Diagnosis",
+                    "Pipeline Trace Tree",
+                    "Visual Viewports",
+                    "Scan History Trend",
+                    "EHR Data Export"
+                ])
+
+                # Tab 1: Intake details
+                with tab_intake:
+                    in_col1, in_col2 = st.columns(2)
+                    with in_col1:
+                        st.markdown("**Demographic Profile**")
+                        st.write(f"- **Patient Full Name:** {row['patient_name']}")
+                        st.write(f"- **Gender:** {row['gender']}")
+                        st.write(f"- **Age (Years):** {row['age']} yr")
+                        st.write(f"- **Attending Physician:** {row['ref_physician']}")
+                    with in_col2:
+                        st.markdown("**Neural Network Diagnosis**")
+                        st.write(f"- **Predicted Class:** **{row['predicted_class']}**")
+                        st.write(f"- **Calibration Confidence:** **{row['confidence_score']:.2%}**")
+                        st.write(f"- **Severity Risk Level:** **{row['rule_based_severity'].upper()}**")
+                        st.write(f"- **Tumor Area:** **{row['tumor_area_mm2']:.2f} mm²**")
 
                     st.markdown(f"""
-                        <div style="background-color: #0f172a; padding: 10px; border-radius: 8px; border: 1px solid #1e293b; margin-top: 10px; margin-bottom: 15px;">
-                            <span style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #94a3b8;">Matched Severity Rule:</span>
-                            <p style="margin: 4px 0 0 0; font-size: 12px; color: #cbd5e1;">{row['severity_rule_description']}</p>
-                        </div>
+                    <div style="background-color: var(--bg-card); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); margin-top: 15px;">
+                        <span style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: var(--text-muted);">Matched Severity Decision Rule</span>
+                        <p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-secondary);">{row['rule_based_severity'].upper()}: {row['severity_rule_description']}</p>
+                    </div>
                     """, unsafe_allow_html=True)
 
-                    # Load timeline trace if available
+                # Tab 2: Timeline Trace tree
+                with tab_trace:
                     db_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)
                     timeline_trace = db_repo.get_timeline_trace(row["prediction_id"])
                     
-                    st.subheader("🔍 Prediction Pipeline Traceability Tree (B6.14)")
-                    
-                    # Compute latency values
+                    st.markdown("##### Pipeline Trace Tree Telemetry")
                     if timeline_trace:
                         steps_text = []
                         prev_t = 0.0
                         for step_key, step_desc in [
                             ("Upload", "Ingestion"),
-                            ("Validation", "Validation"),
+                            ("Validation", "QA Validations"),
                             ("Classification", "Classification"),
                             ("Calibration", "Calibration"),
                             ("Segmentation", "Segmentation"),
-                            ("GradCAM", "GradCAM"),
-                            ("Statistics", "Statistics"),
-                            ("Comparison", "Comparison"),
-                            ("Clinical Report", "Report Compile"),
-                            ("PDF", "PDF Gen"),
+                            ("GradCAM", "GradCAM Focus"),
+                            ("Statistics", "Morphology Stats"),
+                            ("Comparison", "Longitudinal Comp"),
+                            ("Clinical Report", "Report Compilation"),
+                            ("PDF", "PDF Generation"),
                             ("Database", "Database Save"),
                         ]:
                             step_val = timeline_trace.get(step_key, 0.0)
@@ -1347,66 +1731,252 @@ def main() -> None:
                         
                         trace_details_str = " | ".join(steps_text)
                     else:
-                        trace_details_str = "Standard pipeline latencies (historical run)"
- 
+                        trace_details_str = "Historical run telemetry is unavailable on server disk"
+
                     trace_html = f"""
-                    <div style="font-family: monospace; background-color: #0f172a; padding: 20px; border-radius: 8px; color: #cbd5e1; border: 1px solid #1e293b; margin-bottom: 20px;">
-                        <div style="color: #10b981; font-weight: bold; font-size: 14px; margin-bottom: 12px;">★ TRACE ROOT: Prediction ID #{row['prediction_id']} (Report #{selected_report_id})</div>
-                        <div style="margin-left: 15px; border-left: 2px dashed #334155; padding-left: 15px; display: flex; flex-direction: column; gap: 8px;">
-                            <div>├─ 📥 Ingestion & Upload: <span style="color: #10b981; font-weight: bold;">🟢 COMPLETED</span></div>
-                            <div>├─ 🩺 MRI Validation: <span style="color: #10b981; font-weight: bold;">🟢 PASSED (Scorecard OK)</span></div>
-                            <div>├─ 🧠 Classification: <span style="color: #10b981; font-weight: bold;">🟢 COMPLETED</span> ({row['predicted_class']} @ {row['confidence_score']:.2%})</div>
-                            <div>├─ 📐 UNeXt Segmentation: <span style="color: #10b981; font-weight: bold;">🟢 COMPLETED</span> ({row['tumor_area_mm2']:.2f} mm²)</div>
-                            <div>├─ 🗺️ Explainability Mapping: <span style="color: #10b981; font-weight: bold;">🟢 COMPLETED</span> (Grad-CAM overlays generated)</div>
-                            <div>├─ 📏 Morphology Statistics: <span style="color: #10b981; font-weight: bold;">🟢 EXTRACTED</span> (Bounding boxes & shape descriptors)</div>
-                            <div>├─ 📋 Clinical Report: <span style="color: #10b981; font-weight: bold;">🟢 COMPILED</span> (Markdown & JSON persisted)</div>
-                            <div>├─ 📄 PDF Generation: <span style="color: #10b981; font-weight: bold;">🟢 GENERATED</span> (Download active)</div>
-                            <div>├─ 🗄️ SQLite Database: <span style="color: #10b981; font-weight: bold;">🟢 PERSISTED</span> (Transaction committed)</div>
-                            <div>└─ 📊 Dashboard Sync: <span style="color: #10b981; font-weight: bold;">🟢 ACTIVE</span> (Health telemetry synced)</div>
+                    <div style="font-family: monospace; background-color: var(--bg-card); padding: 20px; border-radius: 8px; color: var(--text-secondary); border: 1px solid var(--border-color); margin-bottom: 10px;">
+                        <div style="color: var(--status-success); font-weight: bold; font-size: 13px; margin-bottom: 12px;">★ TRACE ROOT: Scan Prediction ID #{row['prediction_id']}</div>
+                        <div style="margin-left: 15px; border-left: 2px dashed var(--border-color); padding-left: 15px; display: flex; flex-direction: column; gap: 8px; font-size: 11px;">
+                            <div>├─ 📥 Ingestion & Upload: <span style="color: var(--status-success); font-weight: bold;">🟢 COMPLETED</span></div>
+                            <div>├─ 🩺 MRI Validation: <span style="color: var(--status-success); font-weight: bold;">🟢 PASSED</span></div>
+                            <div>├─ 🧠 Classification: <span style="color: var(--status-success); font-weight: bold;">🟢 COMPLETED</span></div>
+                            <div>├─ 📐 UNeXt Segmentation: <span style="color: var(--status-success); font-weight: bold;">🟢 COMPLETED</span></div>
+                            <div>├─ 🗺️ Explainability Mapping: <span style="color: var(--status-success); font-weight: bold;">🟢 COMPLETED</span></div>
+                            <div>├─ 📏 Morphology Statistics: <span style="color: var(--status-success); font-weight: bold;">🟢 EXTRACTED</span></div>
+                            <div>├─ 📋 Clinical Report: <span style="color: var(--status-success); font-weight: bold;">🟢 COMPILED</span></div>
+                            <div>├─ 📄 PDF Generation: <span style="color: var(--status-success); font-weight: bold;">🟢 GENERATED</span></div>
+                            <div>├─ 🗄️ SQLite Database: <span style="color: var(--status-success); font-weight: bold;">🟢 PERSISTED</span></div>
+                            <div>└─ 📊 Dashboard Sync: <span style="color: var(--status-success); font-weight: bold;">🟢 ACTIVE</span></div>
                         </div>
-                        <div style="margin-top: 15px; font-size: 11px; color: #94a3b8; border-top: 1px solid #1e293b; padding-top: 8px;">
+                        <div style="margin-top: 15px; font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border-color); padding-top: 8px;">
                             <strong>Trace Latencies:</strong> {trace_details_str}
                         </div>
                     </div>
                     """
                     st.markdown(trace_html, unsafe_allow_html=True)
 
-                    # Show images side-by-side
-                    view_col1, view_col2 = st.columns(2)
-                    with view_col1:
+                # Tab 3: Visual overlays
+                with tab_viewports:
+                    viewport_col1, viewport_col2 = st.columns(2)
+                    with viewport_col1:
                         overlay_p = row["overlay_path"]
                         if overlay_p and os.path.exists(overlay_p):
-                            st.image(overlay_p, caption="Grad-CAM Overlay", use_container_width=True)
+                            st.image(overlay_p, caption="Grad-CAM Focus Overlay", use_container_width=True)
                         else:
                             st.warning("Overlay image file missing on server disk.")
-                    with view_col2:
+                    with viewport_col2:
                         mask_p = row["mask_path"]
                         if mask_p and os.path.exists(mask_p):
                             st.image(mask_p, caption="UNeXt Segmentation Mask", use_container_width=True)
                         else:
                             st.warning("Segmentation mask file missing on server disk.")
 
-                    # Download PDF
-                    pdf_p = row["pdf_path"]
-                    if pdf_p and os.path.exists(pdf_p):
-                        with open(pdf_p, "rb") as f:
-                            pdf_data = f.read()
-                        st.download_button(
-                            label="Download Saved PDF Report",
-                            data=pdf_data,
-                            file_name=os.path.basename(pdf_p),
-                            mime="application/pdf"
-                        )
+                # Tab 4: Medical History Trend
+                with tab_history:
+                    # Query all scan history records
+                    conn = sqlite3.connect(DEFAULT_DB_PATH)
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT 
+                            cr.id as report_id, s.scan_date, pr.predicted_class, pr.confidence_score, pr.tumor_area_mm2
+                        FROM clinical_reports cr
+                        JOIN predictions pr ON cr.prediction_id = pr.id
+                        JOIN mri_scans s ON pr.scan_id = s.id
+                        WHERE s.patient_id = ?
+                        ORDER BY s.scan_date ASC;
+                    """, (row["patient_id"],))
+                    history_rows = cursor.fetchall()
+                    conn.close()
+
+                    st.markdown("##### Longitudinal Patient History Records")
+                    
+                    hist_table = []
+                    for h_row in history_rows:
+                        hist_table.append({
+                            "Report ID": f"#{h_row['report_id']}",
+                            "Scan Date": h_row["scan_date"],
+                            "Diagnosis": h_row["predicted_class"],
+                            "Confidence": f"{h_row['confidence_score']:.2%}",
+                            "Tumor Area": f"{h_row['tumor_area_mm2']:.2f} mm²"
+                        })
+                    st.table(hist_table)
+
+                    # Plot Progression curve if multiple scans exist
+                    if len(history_rows) > 1:
+                        st.markdown("##### Tumor Area Progression Curve")
+                        dates = [r["scan_date"] for r in history_rows]
+                        areas = [r["tumor_area_mm2"] for r in history_rows]
+                        
+                        fig, ax = plt.subplots(figsize=(8, 3.2))
+                        fig.patch.set_facecolor('none')
+                        ax.set_facecolor('none')
+                        
+                        current_theme = st.session_state.get("theme", "dark")
+                        chart_colors = get_theme_chart_colors(current_theme)
+                        
+                        ax.plot(dates, areas, marker='o', color=chart_colors["text_accent"], linewidth=2, label="Tumor Area (mm²)")
+                        ax.set_ylabel("Tumor Area (mm²)", color=chart_colors["text_hex"], fontsize=9)
+                        ax.set_xlabel("Scan Date", color=chart_colors["text_hex"], fontsize=9)
+                        ax.set_title(f"Tumor Surface Progression Trend: Patient {row['patient_name']}", color=chart_colors["text_hex"], fontsize=10)
+                        ax.tick_params(colors=chart_colors["text_hex"], labelsize=8)
+                        ax.grid(axis='both', linestyle='--', alpha=0.3, color=chart_colors["grid"])
+                        
+                        st.pyplot(fig)
+                        plt.close(fig)
                     else:
-                        st.error("Report PDF document is missing or not compiled.")
+                        st.info("Medical History Trend plots require at least 2 historical scan records.")
+
+                # Tab 5: EHR Export
+                with tab_transfer:
+                    st.markdown("##### Export Local Patient Record Backup")
+                    
+                    pdf_p = row["pdf_path"]
+                    json_p = row["json_path"]
+                    md_p = row["markdown_path"]
+                    
+                    ex_col1, ex_col2, ex_col3 = st.columns(3)
+                    with ex_col1:
+                        if pdf_p and os.path.exists(pdf_p):
+                            with open(pdf_p, "rb") as f:
+                                pdf_data = f.read()
+                            st.download_button(
+                                label="Export PDF Report",
+                                data=pdf_data,
+                                file_name=os.path.basename(pdf_p),
+                                mime="application/pdf",
+                                use_container_width=True,
+                                key=f"ex_pdf_{selected_report_id}"
+                            )
+                        else:
+                            st.warning("PDF document missing on disk.")
+                    with ex_col2:
+                        if json_p and os.path.exists(json_p):
+                            with open(json_p, "rb") as f:
+                                json_data = f.read()
+                            st.download_button(
+                                label="Export EHR JSON",
+                                data=json_data,
+                                file_name=os.path.basename(json_p),
+                                mime="application/json",
+                                use_container_width=True,
+                                key=f"ex_json_{selected_report_id}"
+                            )
+                        else:
+                            st.warning("JSON record missing on disk.")
+                    with ex_col3:
+                        if md_p and os.path.exists(md_p):
+                            with open(md_p, "rb") as f:
+                                md_data = f.read()
+                            st.download_button(
+                                label="Export Markdown Report",
+                                data=md_data,
+                                file_name=os.path.basename(md_p),
+                                mime="text/markdown",
+                                use_container_width=True,
+                                key=f"ex_md_{selected_report_id}"
+                            )
+                        else:
+                            st.warning("Markdown summary missing on disk.")
+
+        # ----------------- REGISTRY BACKUP IMPORT PORTAL -----------------
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("📥 Import EHR Record Backup Package (JSON)", expanded=False):
+            st.markdown("Upload a previously exported clinical diagnostic JSON payload package to restore it in the local database registry.")
+            
+            import_file = st.file_uploader(
+                "Select EHR JSON Backup File", 
+                type=["json"], 
+                key="clinical_backup_importer",
+                label_visibility="collapsed"
+            )
+            
+            if import_file is not None:
+                try:
+                    import json
+                    import_data = json.load(import_file)
+                    
+                    if "patient" not in import_data or "classification" not in import_data:
+                        st.error("Invalid EHR Backup package format: missing Patient or Classification root keys.")
+                    else:
+                        p = import_data["patient"]
+                        c = import_data["classification"]
+                        seg = import_data.get("segmentation") or {"tumor_area_mm2": 0.0, "tumor_percentage_brain": 0.0, "pixel_count": 0, "estimated_brain_pixel_count": 0}
+                        sev = import_data.get("severity") or {"category": "Low", "rule_description": "Imported report."}
+                        files = import_data.get("files") or {"original_image": "", "overlay_image": "", "segmentation_mask": "", "heatmap_image": ""}
+                        xai = import_data.get("explainability") or {"method": "gradcam", "explanation_text": "Imported context."}
+                        
+                        conn = sqlite3.connect(DEFAULT_DB_PATH)
+                        try:
+                            with conn:
+                                # Insert patient
+                                conn.execute("""
+                                    INSERT INTO patients (patient_id, name, age, gender, created_at)
+                                    VALUES (?, ?, ?, ?, ?)
+                                    ON CONFLICT(patient_id) DO UPDATE SET
+                                        name=excluded.name, age=excluded.age, gender=excluded.gender;
+                                """, (p["patient_id"], p["name"], p["age"], p["gender"], datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                                
+                                # Insert scan
+                                cursor = conn.cursor()
+                                cursor.execute("""
+                                    INSERT INTO mri_scans (patient_id, image_path, pixel_spacing_mm, ref_physician, scan_date, created_at)
+                                    VALUES (?, ?, ?, ?, ?, ?);
+                                """, (p["patient_id"], files.get("original_image", ""), p.get("pixel_spacing_mm", 1.0), p.get("ref_physician", "N/A"), p["scan_date"], datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                                scan_id = cursor.lastrowid
+                                
+                                # Insert prediction
+                                cursor.execute("""
+                                    INSERT INTO predictions (
+                                        scan_id, predicted_class, confidence_score, prob_glioma, prob_meningioma, 
+                                        prob_pituitary, prob_no_tumor, tumor_pixel_count, tumor_area_mm2, 
+                                        tumor_percentage_brain, tumor_percentage_image, estimated_brain_pixel_count, 
+                                        rule_based_severity, severity_rule_description, created_at
+                                    )
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                                """, (
+                                    scan_id, c["predicted_class"], c["confidence_score"], 
+                                    c.get("probabilities", {}).get("Glioma", 0.0), 
+                                    c.get("probabilities", {}).get("Meningioma", 0.0), 
+                                    c.get("probabilities", {}).get("Pituitary", 0.0), 
+                                    c.get("probabilities", {}).get("No Tumor", 0.0),
+                                    seg.get("pixel_count", 0), seg.get("tumor_area_mm2", 0.0), 
+                                    seg.get("tumor_percentage_brain", 0.0), seg.get("tumor_percentage_image", 0.0), 
+                                    seg.get("estimated_brain_pixel_count", 0),
+                                    sev["category"], sev["rule_description"], datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                ))
+                                prediction_id = cursor.lastrowid
+                                
+                                # Insert report
+                                cursor.execute("""
+                                    INSERT INTO clinical_reports (
+                                        prediction_id, markdown_path, json_path, pdf_path, heatmap_path, overlay_path, mask_path, xai_method, xai_overlap_percentage, created_at
+                                    )
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                                """, (
+                                    prediction_id, "", "", files.get("pdf_path", ""), files.get("heatmap_image", ""), 
+                                    files.get("overlay_image", ""), files.get("segmentation_mask", ""),
+                                    xai.get("method", "gradcam"), xai.get("overlap_percentage", 0.0), datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                ))
+                                
+                            st.success(f"✅ **EHR Database Import Success:** Patient scan records successfully restored for {p['name']} (ID: {p['patient_id']}).")
+                            st.session_state["db_state"]["current_page"] = 1
+                            st.rerun()
+                        except Exception as import_db_err:
+                            st.error(f"Failed to write record to EHR database: {import_db_err}")
+                        finally:
+                            conn.close()
+                except Exception as parse_err:
+                    st.error(f"Failed to parse EHR JSON file: {parse_err}")
 
 
     # =================================================================
     # PAGE 4: AI PIPELINE HEALTH
     # =================================================================
-    elif page == "AI Pipeline Health":
+    elif page in ["🩺 AI Pipeline Health", "AI Pipeline Health"]:
         st.title("AI Pipeline Health & Telemetry Dashboard")
         st.markdown("Real-time diagnostic health check of application resources, neural networks, and analytical pipeline services.")
+
         
         # Load cached deep learning pipelines to pass for health check
         model_cls_ref = None
@@ -1430,11 +2000,11 @@ def main() -> None:
             )
             
         # Overall Status Banner
-        status_color = "#10b981" if report.overall_status == "HEALTHY" else "#f59e0b" if report.overall_status == "WARNING" else "#ef4444"
+        status_color = "var(--status-success)" if report.overall_status == "HEALTHY" else "var(--status-warning)" if report.overall_status == "WARNING" else "var(--status-danger)"
         st.markdown(f"""
-            <div style="background-color: #0f172a; border-left: 8px solid {status_color}; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-                <h2 style="margin: 0; color: #f8fafc; font-size: 20px; font-weight: 800;">OVERALL STATUS: {report.overall_status}</h2>
-                <p style="margin: 6px 0 0 0; color: #cbd5e1; font-size: 13px;">Uptime: {report.system_uptime_sec/3600:.2f} hours | Generated: {report.timestamp}</p>
+            <div style="background-color: var(--bg-card); border-left: 8px solid {status_color}; padding: 20px; border-radius: 8px; margin-bottom: 25px; border-top: 1px solid var(--border-color); border-right: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color);">
+                <h2 style="margin: 0; color: var(--text-primary); font-size: 20px; font-weight: 800;">OVERALL STATUS: {report.overall_status}</h2>
+                <p style="margin: 6px 0 0 0; color: var(--text-secondary); font-size: 13px;">Uptime: {report.system_uptime_sec/3600:.2f} hours | Generated: {report.timestamp}</p>
             </div>
         """, unsafe_allow_html=True)
         
@@ -1647,6 +2217,14 @@ def main() -> None:
         with lt_col4:
             st.metric("Active RAM Resource Usage", f"{res['ram_percent']:.1f}%")
 
+    # =================================================================
+    # PAGE 5: SETTINGS & USER PROFILE
+    # =================================================================
+    elif page in ["⚙️ Settings & Profile", "Settings & Profile"]:
+        user_data = st.session_state.get("user") or {"full_name": "Dr. Sarah Smith", "email": "admin@aurascan.ai", "role": "doctor"}
+        render_user_profile(user_data)
+
 
 if __name__ == "__main__":
     main()
+
