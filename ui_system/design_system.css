@@ -3068,3 +3068,23 @@ html, body, [data-testid="stAppViewContainer"], .stApp, .main, .auth-right-glass
         padding: 20px !important;
     }
 }
+
+/* ==========================================================================
+   HIDDEN THEME TOGGLE BUTTON STYLING
+   ========================================================================== */
+
+/* Completely hide the helper theme toggle buttons but keep them clickable in the DOM */
+.header-columns-wrapper + div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child button,
+.auth-header-columns-wrapper + div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child button {
+    opacity: 0 !important;
+    position: absolute !important;
+    pointer-events: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    min-height: 0 !important;
+}
