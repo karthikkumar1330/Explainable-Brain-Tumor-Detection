@@ -48,7 +48,7 @@ from security.infrastructure.repository import SQLiteUserRepository
 from security.infrastructure.jwt_service import JWTService
 from security.application.use_cases import AuthUseCases
 
-from ui_system.theme import inject_design_system, toggle_theme
+from ui_system.theme import inject_design_system
 from ui_system.components import (
     render_header,
     render_toast,

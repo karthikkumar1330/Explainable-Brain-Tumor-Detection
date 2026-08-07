@@ -1,6 +1,6 @@
 import streamlit as st
 import textwrap
-from ui_system.theme import toggle_theme, clean_html, st_html
+from ui_system.theme import clean_html, st_html
 
 
 def get_user_initials(name: str) -> str:
@@ -54,10 +54,7 @@ def render_password_strength_meter(password: str) -> None:
 
 
 def render_header(user=None, active_page: str = "🚀 Product Overview") -> None:
-    """Renders the top enterprise SaaS navbar header with ARIA accessibility labels, breadcrumbs, search, notification bell, user avatar, and theme toggle."""
-    current_theme = st.session_state.get("theme", "dark")
-    theme_icon = "☀️ Light" if current_theme == "dark" else "🌙 Dark"
-    
+    """Renders the top enterprise SaaS navbar header with ARIA accessibility labels, breadcrumbs, search, notification bell, and user avatar."""
     clean_page_name = active_page.split(" ", 1)[-1] if " " in active_page else active_page
     
     user_initials = get_user_initials(user.get("full_name", "Doctor User")) if user else "AI"
@@ -100,35 +97,6 @@ def render_header(user=None, active_page: str = "🚀 Product Overview") -> None
         </header>
     """
     st_html(header_html)
-    
-    col_l, col_r = st.columns([6, 1])
-    with col_r:
-        theme_class = "dark" if current_theme == "dark" else "light"
-        theme_icon_svg = """
-            <svg class="sun-svg" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px; height:14px;"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-        """ if current_theme == "light" else """
-            <svg class="moon-svg" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px; height:14px;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-        """
-        st_html(f"""
-            <div class="header-columns-wrapper" style="display:none;"></div>
-            <div class="display-flex justify-content-end align-items-center height-full" style="padding-top: 4px;">
-                <div class="theme-toggle-switch-wrapper" title="Toggle color theme" tabindex="0" aria-label="Toggle color theme"
-                     onclick="const btn = Array.from(document.querySelectorAll('button')).find(el => el.textContent.trim() === 'Hidden Global Toggle'); if (btn) btn.click();"
-                     onkeydown="if (event.key === 'Enter' || event.key === ' ') {{ const btn = Array.from(document.querySelectorAll('button')).find(el => el.textContent.trim() === 'Hidden Global Toggle'); if (btn) btn.click(); }}">
-                    <div class="theme-toggle-track {theme_class}">
-                        <div class="theme-toggle-knob">
-                            <span class="theme-icon-container">
-                                {theme_icon_svg}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="hidden-theme-btn-global" style="display:none;">
-        """)
-        if st.button("Hidden Global Toggle", key="global_theme_toggle_btn_hidden"):
-            toggle_theme()
-        st_html("</div>")
 
 
 def render_sidebar_user_footer(user=None) -> None:
@@ -1086,14 +1054,6 @@ def render_user_profile(user: dict) -> None:
         elif active_tab == "appearance":
             st.markdown("### Appearance Customization")
             st.markdown("---")
-            
-            st.write("**Interface Theme**")
-            current_theme = st.session_state.get("theme", "dark")
-            theme_choice = st.radio("Select color contrast scheme", ["Light Mode", "Dark Mode"], index=0 if current_theme == "light" else 1)
-            
-            if (theme_choice == "Light Mode" and current_theme == "dark") or (theme_choice == "Dark Mode" and current_theme == "light"):
-                toggle_theme()
-                st.rerun()
                 
             st.write("**Font Typography**")
             font_choice = st.selectbox("Dashboard Primary Font Family", ["Outfit (Default)", "Inter", "Source Code Pro (Monospace)"])
@@ -1272,17 +1232,8 @@ def render_user_profile(user: dict) -> None:
 # =====================================================================
 
 def render_auth_nav_header() -> None:
-    """Renders the top navbar header for unauthenticated portal visitors with a modern animated theme toggle."""
-    current_theme = st.session_state.get("theme", "dark")
-    theme_class = "dark" if current_theme == "dark" else "light"
-    
-    theme_icon_svg = """
-        <svg class="sun-svg" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px; height:14px;"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-    """ if current_theme == "light" else """
-        <svg class="moon-svg" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px; height:14px;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-    """
-
-    col_logo, col_nav, col_theme = st.columns([3, 2.5, 1.8])
+    """Renders the top navbar header for unauthenticated portal visitors."""
+    col_logo, col_nav = st.columns([4.8, 2.5])
     with col_logo:
         st_html("""
             <div class="display-flex align-items-center gap-10 py-4">
@@ -1303,27 +1254,6 @@ def render_auth_nav_header() -> None:
             if st.button("Register", key="unauth_nav_reg", use_container_width=True):
                 st.session_state["auth_page"] = "register"
                 st.rerun()
-    with col_theme:
-        st_html(f"""
-            <div class="auth-header-columns-wrapper" style="display:none;"></div>
-            <div class="display-flex justify-content-end align-items-center height-full" style="padding-top: 4px;">
-                <div class="theme-toggle-switch-wrapper" title="Toggle color theme" tabindex="0" aria-label="Toggle color theme"
-                     onclick="const btn = Array.from(document.querySelectorAll('button')).find(el => el.textContent.trim() === 'Hidden Toggle'); if (btn) btn.click();"
-                     onkeydown="if (event.key === 'Enter' || event.key === ' ') {{ const btn = Array.from(document.querySelectorAll('button')).find(el => el.textContent.trim() === 'Hidden Toggle'); if (btn) btn.click(); }}">
-                    <div class="theme-toggle-track {theme_class}">
-                        <div class="theme-toggle-knob">
-                            <span class="theme-icon-container">
-                                {theme_icon_svg}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="hidden-theme-btn-auth" style="display:none;">
-        """)
-        if st.button("Hidden Toggle", key="unauth_theme_toggle_hidden"):
-            toggle_theme()
-        st_html("</div>")
     st_html("<hr class=\"hr-divider\">")
 
 

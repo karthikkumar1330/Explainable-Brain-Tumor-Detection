@@ -6,7 +6,6 @@ Provides modern 2026 healthcare SaaS design tokens, theme state management, and 
 from ui_system.theme import (
     inject_design_system,
     init_theme_state,
-    toggle_theme,
     get_css_filepath,
 )
 
@@ -32,7 +31,6 @@ from ui_system.components import (
 __all__ = [
     "inject_design_system",
     "init_theme_state",
-    "toggle_theme",
     "get_css_filepath",
     "render_header",
     "render_sidebar_user_footer",
