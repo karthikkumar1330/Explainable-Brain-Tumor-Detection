@@ -436,7 +436,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
             logger.warning(f"Classification failed on {device}: {e}. Retrying with CPU fallback...")
             try:
                 model_cls.to("cpu")
-                predict_use_case.model_adapter.device = "cpu"
+                predict_use_case.model_adapter.device = torch.device("cpu")
                 classification_result = predict_use_case.execute(image_tensor_cls)
                 active_cls_device = "cpu"
                 cls_warnings.append("Auto-recovery warning: Classification execution failed on GPU. Retried and completed on CPU fallback mode.")

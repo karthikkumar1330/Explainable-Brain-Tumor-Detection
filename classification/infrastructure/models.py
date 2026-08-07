@@ -106,7 +106,19 @@ class PyTorchModelAdapter(IModelAdapter):
         self.criterion = criterion
         self.metrics_calculator = metrics_calculator
         self.calibrator = calibrator
-        self.device = torch.device(device)
+        self.device = device
+
+    @property
+    def device(self) -> torch.device:
+        return self._device
+
+    @device.setter
+    def device(self, val: Any) -> None:
+        if isinstance(val, str):
+            self._device = torch.device(val)
+        else:
+            self._device = val
+
 
     def train_epoch(self, dataloader: DataLoader) -> float:
         if self.optimizer is None or self.criterion is None:

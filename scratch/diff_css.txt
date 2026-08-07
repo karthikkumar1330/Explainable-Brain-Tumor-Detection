@@ -1,0 +1,666 @@
+﻿diff --git a/ui_system/design_system.css b/ui_system/design_system.css
+index 0f3b742..22eb787 100644
+--- a/ui_system/design_system.css
++++ b/ui_system/design_system.css
+@@ -31,10 +31,10 @@
+     --space-xl: var(--space-32);
+     --space-2xl: var(--space-48);
+ 
+-    /* Border Radius Token (Required 10px baseline) */
+-    --radius: 10px;
+-    --radius-sm: 6px;
+-    --radius-md: 10px;
++    /* Border Radius Token (Required 14px baseline) */
++    --radius: 14px;
++    --radius-sm: 8px;
++    --radius-md: 14px;
+     --radius-lg: 14px;
+     --radius-full: 9999px;
+ 
+@@ -219,7 +219,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
+ 
+ /* 1. PRIMARY BUTTON */
+ 
+-.btn-primary, .stButton > button {
++.btn-primary, .stButton > button, .stDownloadButton > button {
+     background: var(--accent-primary) !important;
+     color: var(--text-inverse) !important;
+     border-radius: var(--radius) !important;
+@@ -238,7 +238,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
+     gap: var(--space-8) !important;
+ }
+ 
+-.btn-primary:hover, .stButton > button:hover {
++.btn-primary:hover, .stButton > button:hover, .stDownloadButton > button:hover {
+     background: var(--accent-primary-hover) !important;
+ }
+ 
+@@ -2450,7 +2450,7 @@ svg path, svg circle, svg rect, svg polygon, svg ellipse {
+     color: #FFFFFF !important;
+ }
+ 
+-.stButton > button[kind="secondary"], .auth-btn-secondary {
++.stButton > button[kind="secondary"], .stDownloadButton > button, .auth-btn-secondary {
+     background: var(--bg-tertiary) !important;
+     border: 1px solid var(--border-color) !important;
+     border-radius: var(--radius-md) !important;
+@@ -2460,7 +2460,7 @@ svg path, svg circle, svg rect, svg polygon, svg ellipse {
+     transition: all 0.2s ease !important;
+ }
+ 
+-.stButton > button[kind="secondary"]:hover, .auth-btn-secondary:hover {
++.stButton > button[kind="secondary"]:hover, .stDownloadButton > button:hover, .auth-btn-secondary:hover {
+     background: var(--bg-card-hover) !important;
+     border-color: var(--border-highlight) !important;
+     transform: translateY(-1px) !important;
+@@ -2772,7 +2772,7 @@ div[data-testid="stTextInput"] input:focus {
+ 
+ .password-toggle-btn {
+     position: absolute !important;
+-    right: 10px !important;
++    right: 12px !important;
+     bottom: 6px !important; /* aligns with vertical center of 44px input (accounting for label on top) */
+     width: 32px !important;
+     height: 32px !important;
+@@ -2786,13 +2786,18 @@ div[data-testid="stTextInput"] input:focus {
+     z-index: 10 !important;
+     padding: 0 !important;
+     border-radius: 6px !important;
+-    transition: color 200ms ease, background-color 200ms ease !important;
++    transition: color 200ms cubic-bezier(0.4, 0, 0.2, 1), background-color 200ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms ease !important;
+     outline: none !important;
+ }
+ 
+ .password-toggle-btn:hover {
+     color: var(--primary) !important;
+-    background-color: rgba(255, 255, 255, 0.06) !important;
++    background-color: rgba(128, 128, 128, 0.15) !important;
++    transform: scale(1.05) !important;
++}
++
++.password-toggle-btn:active {
++    transform: scale(0.95) !important;
+ }
+ 
+ .password-toggle-btn:focus-visible {
+@@ -2886,7 +2891,7 @@ input:disabled, textarea:disabled, select:disabled, div[data-testid="stTextInput
+ }
+ 
+ /* Ensure focus outline on standard buttons */
+-.stButton > button:focus-visible {
++.stButton > button:focus-visible, .stDownloadButton > button:focus-visible {
+     outline: 2px solid var(--primary) !important;
+     outline-offset: 2px !important;
+ }
+@@ -2927,7 +2932,7 @@ div[data-testid="stSpinner"] svg {
+ 
+ /* Button Active pressed state transitions */
+ 
+-.stButton > button:active {
++.stButton > button:active, .stDownloadButton > button:active {
+     transform: translateY(0px) !important;
+     box-shadow: var(--shadow-sm) !important;
+ }
+@@ -2952,89 +2957,107 @@ div[data-testid="stSpinner"] svg {
+ }
+ 
+ /* Smooth fade transitions for theme swapping */
+-html, body, [data-testid="stAppViewContainer"], .stApp, .main, .auth-right-glass-card, .auth-left-brand-panel, input, select, textarea, .stButton > button, .theme-toggle-track, .theme-toggle-knob {
++html, body, [data-testid="stAppViewContainer"], .stApp, .main, .auth-right-glass-card, .auth-left-brand-panel, input, select, textarea, .stButton > button, .stDownloadButton > button {
+     transition: background-color 250ms ease, color 250ms ease, border-color 250ms ease, box-shadow 250ms ease, transform 200ms ease !important;
+ }
+ 
+-/* Animated Sun/Moon Theme Toggle Switch (iOS / Windows 11 style) */
++/* Premium Production Theme Toggle Switch (iOS / Windows 11 style) */
+ 
+-.theme-toggle-switch-wrapper {
+-    display: inline-flex !important;
++/* Fully collapse the anchor container to prevent layout shifting */
++div:has(> div[data-testid="stMarkdownContainer"] > .production-theme-switch-anchor) {
++    position: absolute !important;
++    width: 0 !important;
++    height: 0 !important;
++    margin: 0 !important;
++    padding: 0 !important;
++    overflow: hidden !important;
++    border: none !important;
++}
++
++/* Align only the theme switch button wrapper to the right of the header column */
++div:has(.production-theme-switch-anchor) + div {
++    display: flex !important;
++    justify-content: flex-end !important;
+     align-items: center !important;
+-    justify-content: center !important;
+-    cursor: pointer !important;
+-    user-select: none !important;
++    width: 100% !important;
+ }
+ 
+-.theme-toggle-track {
++/* Style the Streamlit button element as the switch track */
++div:has(.production-theme-switch-anchor) + div button {
+     position: relative !important;
+     width: 60px !important;
++    min-width: 60px !important;
++    max-width: 60px !important;
+     height: 32px !important;
++    min-height: 32px !important;
++    max-height: 32px !important;
+     border-radius: 999px !important;
+-    background-color: #E2E8F0 !important; /* Light mode track bg */
+-    border: 1px solid #CBD5E1 !important;
+-    transition: background-color 250ms cubic-bezier(0.4, 0, 0.2, 1), border-color 250ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+-    display: flex !important;
+-    align-items: center !important;
+-    padding: 0 4px !important;
+-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.06) !important;
++    padding: 0 !important;
++    margin: 0 !important;
++    border: none !important;
++    background-color: var(--switch-bg) !important;
++    box-shadow: var(--switch-shadow) !important;
++    cursor: pointer !important;
++    overflow: hidden !important;
++    transition: background-color 250ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 250ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+ }
+ 
+-.theme-toggle-track.dark {
+-    background-color: #1E293B !important; /* Dark mode track bg */
+-    border-color: rgba(255, 255, 255, 0.08) !important;
+-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2) !important;
++/* Hide Streamlit default button label elements (text, containers) completely */
++div:has(.production-theme-switch-anchor) + div button * {
++    display: none !important;
++    font-size: 0 !important;
++    color: transparent !important;
++    opacity: 0 !important;
++    width: 0 !important;
++    height: 0 !important;
++    margin: 0 !important;
++    padding: 0 !important;
+ }
+ 
+-.theme-toggle-knob {
++/* Switch Knob / Thumb */
++div:has(.production-theme-switch-anchor) + div button::before {
++    content: "" !important;
+     position: absolute !important;
+-    left: 4px !important;
+-    width: 24px !important;
+-    height: 24px !important;
++    top: 3px !important;
++    left: 3px !important;
++    width: 26px !important;
++    height: 26px !important;
+     border-radius: 50% !important;
+-    background-color: #FFFFFF !important;
+-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15), 0 0 1px rgba(0, 0, 0, 0.1) !important;
+-    display: flex !important;
+-    align-items: center !important;
+-    justify-content: center !important;
+-    transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1), background-color 250ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+-    z-index: 2 !important;
++    background-color: var(--thumb-bg) !important;
++    box-shadow: var(--thumb-shadow) !important;
++    background-repeat: no-repeat !important;
++    background-position: center !important;
++    background-size: 14px 14px !important;
++    background-image: var(--thumb-icon) !important;
++    transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1), background-color 250ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 250ms cubic-bezier(0.4, 0, 0.2, 1) !important;
++    transform: var(--thumb-transform) !important;
++    will-change: transform !important;
+ }
+ 
+-.theme-toggle-track.dark .theme-toggle-knob {
+-    transform: translateX(26px) !important;
+-    background-color: #0F172A !important;
+-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3), 0 0 1px rgba(255, 255, 255, 0.1) !important;
++/* Micro-animations on hover */
++div:has(.production-theme-switch-anchor) + div button:hover::before {
++    transform: var(--thumb-transform) scale(1.06) !important;
+ }
+ 
+-.theme-icon-container {
+-    display: flex !important;
+-    align-items: center !important;
+-    justify-content: center !important;
+-    width: 100% !important;
+-    height: 100% !important;
+-}
+-
+-.theme-icon-container svg {
+-    width: 14px !important;
+-    height: 14px !important;
+-    transition: transform 250ms ease, opacity 250ms ease !important;
+-}
+-
+-.theme-toggle-track:hover .theme-toggle-knob {
+-    box-shadow: 0 3px 8px rgba(33, 150, 243, 0.3) !important;
+-}
+-
+-.theme-toggle-track.dark:hover .theme-toggle-knob {
+-    box-shadow: 0 3px 8px rgba(33, 150, 243, 0.4) !important;
++/* Disable Streamlit default focus box-shadow and style keyboard focus-visible */
++div:has(.production-theme-switch-anchor) + div button:focus {
++    outline: none !important;
++    border: none !important;
++    box-shadow: var(--switch-shadow) !important;
+ }
+ 
+-/* Ensure focus ring on keyboard navigation */
+-.theme-toggle-track:focus-visible {
++div:has(.production-theme-switch-anchor) + div button:focus-visible {
+     outline: 2px solid var(--primary) !important;
+     outline-offset: 2px !important;
+ }
+ 
++/* Disable active state color shifts from Streamlit */
++div:has(.production-theme-switch-anchor) + div button:active {
++    background-color: var(--switch-bg) !important;
++    border: none !important;
++    box-shadow: var(--switch-shadow) !important;
++}
++
+ /* Responsive Layout Improvements for Laptop (1366x768) and Tablets */
+ @media (max-height: 820px) {
+     .mri-illustration-container svg {
+@@ -3067,4 +3090,397 @@ html, body, [data-testid="stAppViewContainer"], .stApp, .main, .auth-right-glass
+     .auth-right-glass-card {
+         padding: 20px !important;
+     }
++}
++
++/* ==========================================================================
++   MICROSOFT FLUENT & PACS CLINICAL DASHBOARD COMPONENTS
++   ========================================================================== */
++
++/* Overwrite default KPI card to add premium accent border and shadow */
++.metric-card-saas {
++    background: var(--bg-secondary) !important;
++    border: 1px solid var(--border-color) !important;
++    border-left: 4px solid var(--primary) !important;
++    border-radius: 8px !important;
++    padding: 16px 20px !important;
++    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03) !important;
++    transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease !important;
++}
++
++.metric-card-saas:hover {
++    transform: translateY(-2px) !important;
++    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(33, 150, 243, 0.04) !important;
++    border-color: rgba(33, 150, 243, 0.4) !important;
++}
++
++/* Premium Chart Cards */
++.chart-card-saas {
++    background: var(--bg-secondary) !important;
++    border: 1px solid var(--border-color) !important;
++    border-radius: 10px !important;
++    padding: 20px !important;
++    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
++    margin-bottom: 24px !important;
++    transition: border-color 200ms ease, box-shadow 200ms ease !important;
++}
++
++.chart-card-saas:hover {
++    border-color: rgba(33, 150, 243, 0.3) !important;
++    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
++}
++
++.chart-card-header {
++    display: flex !important;
++    align-items: center !important;
++    gap: 8px !important;
++    margin-bottom: 16px !important;
++    border-bottom: 1px solid var(--border-color) !important;
++    padding-bottom: 10px !important;
++}
++
++.chart-card-icon {
++    font-size: 16px !important;
++}
++
++.chart-card-title {
++    font-family: 'Outfit', sans-serif !important;
++    font-size: 12px !important;
++    font-weight: 600 !important;
++    color: var(--text-secondary) !important;
++    text-transform: uppercase !important;
++    letter-spacing: 0.05em !important;
++}
++
++/* Sidebar user profile card alignment */
++.sidebar-profile-card {
++    background: var(--bg-secondary) !important;
++    border: 1px solid var(--border-color) !important;
++    border-radius: 8px !important;
++    padding: 12px 14px !important;
++    display: flex !important;
++    align-items: center !important;
++    gap: 12px !important;
++    margin-bottom: 20px !important;
++    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
++}
++
++.sidebar-profile-avatar {
++    width: 36px !important;
++    height: 36px !important;
++    border-radius: 50% !important;
++    background-color: rgba(33, 150, 243, 0.1) !important;
++    display: flex !important;
++    align-items: center !important;
++    justify-content: center !important;
++    font-size: 13px !important;
++    border: 1px solid rgba(33, 150, 243, 0.2) !important;
++    flex-shrink: 0 !important;
++}
++
++.sidebar-profile-info {
++    flex: 1 !important;
++    min-width: 0 !important;
++}
++
++.sidebar-profile-name {
++    font-family: 'Inter', sans-serif !important;
++    font-size: 13px !important;
++    font-weight: 600 !important;
++    color: var(--text-primary) !important;
++    white-space: nowrap !important;
++    overflow: hidden !important;
++    text-overflow: ellipsis !important;
++}
++
++.sidebar-profile-role {
++    font-family: 'Inter', sans-serif !important;
++    font-size: 11px !important;
++    color: var(--text-muted) !important;
++    font-weight: 500 !important;
++    margin-top: 2px !important;
++}
++
++.sidebar-profile-status {
++    font-family: 'Inter', sans-serif !important;
++    font-size: 10px !important;
++    color: var(--status-success) !important;
++    font-weight: 600 !important;
++    display: flex !important;
++    align-items: center !important;
++    gap: 4px !important;
++    margin-top: 2px !important;
++    text-transform: uppercase !important;
++    letter-spacing: 0.03em !important;
++}
++
++.status-indicator-green {
++    width: 6px !important;
++    height: 6px !important;
++    background-color: var(--status-success) !important;
++    border-radius: 50% !important;
++    display: inline-block !important;
++}
++
++/* ==========================================================================
++   PRODUCTION AUTH PORTAL NAVIGATION & TOGGLE ALIGNMENT (Issue 1 & Issue 2)
++   ========================================================================== */
++
++/* 1. Flex layout container for Sign In, Register, and Theme Switch */
++div[data-testid="stVerticalBlock"]:has(> div > div > [data-testid="stMarkdownContainer"] > .auth-nav-container-anchor),
++div[data-testid="stVerticalBlock"]:has(> div > [data-testid="stMarkdownContainer"] > .auth-nav-container-anchor),
++div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) {
++    display: flex !important;
++    flex-direction: row !important;
++    align-items: center !important;
++    justify-content: flex-end !important;
++    gap: 16px !important;
++    width: 100% !important;
++    flex-wrap: nowrap !important;
++}
++
++/* Collapse the anchor markdown wrappers completely so they don't break flex layout flow */
++div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) > div:has(.auth-nav-container-anchor),
++div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) > div:has(.production-theme-switch-anchor) {
++    position: absolute !important;
++    width: 0 !important;
++    height: 0 !important;
++    margin: 0 !important;
++    padding: 0 !important;
++    overflow: hidden !important;
++    border: none !important;
++    display: none !important;
++}
++
++/* Ensure the button wrapper blocks in this nav bar act as inline flex children */
++div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) > div:has(.stButton) {
++    width: auto !important;
++    margin: 0 !important;
++    padding: 0 !important;
++    display: inline-flex !important;
++    align-items: center !important;
++}
++
++/* Equal height and styling for all controls (50px height, matching border radius) */
++div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) .stButton > button {
++    height: 50px !important;
++    min-height: 50px !important;
++    max-height: 50px !important;
++    padding: 0 24px !important;
++    font-size: 14px !important;
++    font-weight: 600 !important;
++    border-radius: var(--radius) !important; /* 14px */
++    display: inline-flex !important;
++    align-items: center !important;
++    justify-content: center !important;
++    box-sizing: border-box !important;
++    margin: 0 !important;
++    transform: none !important;
++}
++
++/* Style the Theme Switch button specifically inside the auth navigation container */
++div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) div:has(.production-theme-switch-anchor) + div button {
++    width: 72px !important;
++    min-width: 72px !important;
++    max-width: 72px !important;
++    height: 50px !important;
++    min-height: 50px !important;
++    max-height: 50px !important;
++    border-radius: var(--radius) !important; /* Matches 14px border radius of navigation buttons */
++    background-color: var(--switch-bg) !important;
++    box-shadow: var(--switch-shadow) !important;
++    border: 1px solid var(--border) !important;
++    position: relative !important;
++    padding: 0 !important;
++    margin: 0 !important;
++    cursor: pointer !important;
++    overflow: hidden !important;
++    display: flex !important;
++    align-items: center !important;
++    justify-content: flex-start !important;
++    transform: none !important;
++}
++
++/* Override child hiding for the custom auth switch button to make sure it doesn't hide our pseudo-element knob */
++div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) div:has(.production-theme-switch-anchor) + div button * {
++    display: none !important;
++    width: 0 !important;
++    height: 0 !important;
++    opacity: 0 !important;
++}
++
++/* Theme Switch Knob / Thumb inside the 72px button */
++div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) div:has(.production-theme-switch-anchor) + div button::before {
++    content: "" !important;
++    position: absolute !important;
++    top: 5px !important; /* Centered vertically inside 48px inner height (50px - 2px border) */
++    left: 5px !important;
++    width: 38px !important;
++    height: 38px !important;
++    border-radius: calc(var(--radius) - 3px) !important; /* Matches capsule outer curve perfectly (11px) */
++    background-color: var(--thumb-bg) !important;
++    box-shadow: var(--thumb-shadow) !important;
++    background-repeat: no-repeat !important;
++    background-position: center !important;
++    background-size: 18px 18px !important;
++    background-image: var(--thumb-icon) !important;
++    transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1), background-color 250ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 250ms cubic-bezier(0.4, 0, 0.2, 1) !important;
++    transform: translate3d(0, 0, 0) !important;
++    will-change: transform !important;
++    z-index: 2 !important;
++}
++
++/* Dark mode slide offset for the 72px switcher knob: (72px width - 38px knob - 10px total margins = 24px travel distance) */
++[data-theme="dark"] div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) div:has(.production-theme-switch-anchor) + div button::before {
++    transform: translate3d(22px, 0, 0) !important;
++}
++
++/* Knob Hover micro-animation */
++div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) div:has(.production-theme-switch-anchor) + div button:hover::before {
++    transform: scale(1.05) !important;
++}
++[data-theme="dark"] div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) div:has(.production-theme-switch-anchor) + div button:hover::before {
++    transform: translate3d(22px, 0, 0) scale(1.05) !important;
++}
++
++/* Keyboard focus-visible styling for premium accessibility */
++div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) div:has(.production-theme-switch-anchor) + div button:focus {
++    outline: none !important;
++    border-color: var(--primary) !important;
++    box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.2) !important;
++}
++
++/* Hide duplicate native Streamlit eye toggle button inside password wrappers */
++.password-input-wrapper div[data-testid="stTextInput"] button {
++    display: none !important;
++}
++
++/* 2. Authentication Card Styles (Inputs, Buttons, Radios & Margins) */
++
++/* Uniform 50px control height & 14px border radius for all inputs and buttons inside card */
++.auth-right-glass-card div[data-testid="stTextInput"] input {
++    height: 50px !important;
++    min-height: 50px !important;
++    max-height: 50px !important;
++    border-radius: var(--radius) !important; /* 14px */
++    padding: 12px 16px !important;
++    font-size: 14px !important;
++    box-sizing: border-box !important;
++}
++
++.auth-right-glass-card .stButton > button {
++    height: 50px !important;
++    min-height: 50px !important;
++    max-height: 50px !important;
++    border-radius: var(--radius) !important; /* 14px */
++    font-size: 14px !important;
++    font-weight: 600 !important;
++    display: inline-flex !important;
++    align-items: center !important;
++    justify-content: center !important;
++    margin: 0 !important;
++}
++
++/* Enforce equal spacing of 16px between all controls */
++.auth-right-glass-card div[data-testid="stTextInput"],
++.auth-right-glass-card div[data-testid="stCheckbox"],
++.auth-right-glass-card div[data-testid="stRadio"],
++.auth-right-glass-card .password-input-wrapper {
++    margin-top: 0 !important;
++    margin-bottom: 16px !important;
++}
++
++/* Align password toggle button vertically inside 50px input (bottom: (50 - 32)/2 = 9px) */
++.auth-right-glass-card .password-toggle-btn {
++    bottom: 9px !important;
++    right: 12px !important;
++}
++
++/* Premium Segmented Radio Buttons for Account Type Selection */
++.auth-right-glass-card div[data-testid="stRadio"] > label {
++    font-size: 13px !important;
++    font-weight: 500 !important;
++    color: var(--text-muted) !important;
++    margin-bottom: 8px !important;
++}
++
++.auth-right-glass-card div[data-testid="stRadio"] div[role="radiogroup"] {
++    display: flex !important;
++    flex-direction: row !important;
++    gap: 8px !important;
++}
++
++.auth-right-glass-card div[data-testid="stRadio"] div[role="radiogroup"] label {
++    flex: 1 !important;
++    background-color: var(--bg-secondary) !important;
++    border: 1px solid var(--border-color) !important;
++    padding: 12px 14px !important;
++    border-radius: var(--radius) !important; /* 14px */
++    text-align: center !important;
++    display: flex !important;
++    align-items: center !important;
++    justify-content: center !important;
++    cursor: pointer !important;
++    font-size: 12px !important;
++    color: var(--text-secondary) !important;
++    transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1) !important;
++}
++
++.auth-right-glass-card div[data-testid="stRadio"] div[role="radiogroup"] label:hover {
++    border-color: var(--border-highlight) !important;
++    background-color: var(--bg-card-hover) !important;
++}
++
++/* 3. Smooth Transitions & Premium Animations for all controls */
++.auth-right-glass-card input,
++.auth-right-glass-card button,
++.auth-right-glass-card label,
++.auth-right-glass-card div[role="radiogroup"] label {
++    transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1) !important;
++}
++
++/* Premium Focus Animation & Shadows */
++.auth-right-glass-card div[data-testid="stTextInput"] input:focus {
++    border-color: var(--primary) !important;
++    box-shadow: 0 0 0 4px rgba(33, 150, 243, 0.25) !important;
++    background-color: var(--surface) !important;
++    outline: none !important;
++}
++
++.auth-right-glass-card .stButton > button:focus-visible {
++    outline: none !important;
++    border-color: var(--primary) !important;
++    box-shadow: 0 0 0 4px rgba(33, 150, 243, 0.35) !important;
++}
++
++/* 4. Responsive media queries for Viewport resizing down to Tablet screens (under 768px) */
++@media (max-width: 768px) {
++    div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) {
++        justify-content: center !important;
++        flex-wrap: wrap !important;
++        gap: 8px !important;
++    }
++    div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) .stButton > button {
++        height: 44px !important;
++        min-height: 44px !important;
++        max-height: 44px !important;
++        font-size: 13px !important;
++        padding: 0 16px !important;
++    }
++    div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) div:has(.production-theme-switch-anchor) + div button {
++        width: 60px !important;
++        min-width: 60px !important;
++        max-width: 60px !important;
++        height: 44px !important;
++        min-height: 44px !important;
++        max-height: 44px !important;
++    }
++    div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) div:has(.production-theme-switch-anchor) + div button::before {
++        width: 32px !important;
++        height: 32px !important;
++        top: 5px !important;
++        left: 5px !important;
++    }
++    [data-theme="dark"] div[data-testid="stVerticalBlock"]:has(.auth-nav-container-anchor) div:has(.production-theme-switch-anchor) + div button::before {
++        transform: translate3d(16px, 0, 0) !important;
++    }
+ }
+\ No newline at end of file
