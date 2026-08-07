@@ -1,4 +1,8 @@
 import streamlit as st
+import textwrap
+from ui_system.theme import clean_html, st_html
+from typing import Optional, Dict, Any, Tuple, List
+
 import os
 import sys
 import time
@@ -49,7 +53,6 @@ from ui_system.components import (
     render_header,
     render_toast,
     render_skeleton_loader,
-    render_landing_page,
     render_metric_card,
     render_empty_state,
     render_empty_state_preset,
@@ -57,7 +60,6 @@ from ui_system.components import (
     render_user_profile,
     render_sidebar_user_footer,
     render_password_strength_meter,
-    render_social_login_buttons,
     render_unauthenticated_app,
 )
 
@@ -135,6 +137,35 @@ def preprocess_segmentation_image(img_bgr: np.ndarray, h: int, w: int) -> torch.
     return torch.from_numpy(img_tensor).unsqueeze(0)  # 1, C, H, W
 
 
+@st.cache_resource
+def init_ngrok_tunnel(port: int, authtoken: str) -> Optional[str]:
+    """Starts and caches an ngrok tunnel on Streamlit port."""
+    import logging
+    logger = logging.getLogger("AuraScanAI.Ngrok")
+    try:
+        from pyngrok import ngrok
+        if authtoken:
+            ngrok.set_auth_token(authtoken)
+            
+        tunnels = ngrok.get_tunnels()
+        for t in tunnels:
+            if t.proto == "https" or t.public_url.startswith("https://"):
+                if str(port) in t.config.get("addr", ""):
+                    logger.info(f"Using existing ngrok tunnel: {t.public_url}")
+                    return t.public_url
+                    
+        logger.info(f"Starting ngrok HTTPS tunnel on port {port}...")
+        tunnel = ngrok.connect(port, "http")
+        url = tunnel.public_url
+        if url.startswith("http://"):
+            url = url.replace("http://", "https://")
+        logger.info(f"Ngrok HTTPS tunnel established: {url}")
+        return url
+    except Exception as e:
+        logger.error(f"Failed to start ngrok tunnel: {e}")
+        return None
+
+
 # =====================================================================
 # UI LAYOUT & PAGES
 # =====================================================================
@@ -151,11 +182,34 @@ def main() -> None:
     # 2. Inject Reusable Design System & Theme CSS Tokens
     inject_design_system()
 
+    # 2.5 Initialize ngrok tunnel if enabled
+    import app_config
+    if app_config.USE_NGROK and app_config.NGROK_AUTHTOKEN:
+        ngrok_url = init_ngrok_tunnel(app_config.STREAMLIT_PORT, app_config.NGROK_AUTHTOKEN)
+        if ngrok_url:
+            app_config.set_base_url(ngrok_url)
+            st.sidebar.success(f"📱 Tunnel Active: {ngrok_url}")
+
     # Security Auth setup
     sec_repo = SQLiteUserRepository(db_path=DEFAULT_DB_PATH)
     sec_repo.initialize_security_tables()
     sec_repo.bootstrap_admin()
     auth_use_cases = AuthUseCases(user_repo=sec_repo)
+
+    # Simplify query routing for clean Login/Register/Forgot entry points
+    query_view = st.query_params.get("view", None)
+    if query_view:
+        if query_view == "login":
+            st.session_state["auth_page"] = "login"
+            st.session_state["user"] = None
+        elif query_view == "register":
+            st.session_state["auth_page"] = "register"
+            st.session_state["user"] = None
+        elif query_view == "forgot":
+            st.session_state["auth_page"] = "forgot"
+            st.session_state["user"] = None
+        elif query_view == "dashboard":
+            st.session_state["user"] = {"full_name": "Dr. Sarah Smith", "email": "admin@aurascan.ai", "role": "doctor"}
 
     if "user" not in st.session_state:
         st.session_state["user"] = None
@@ -166,34 +220,71 @@ def main() -> None:
         st.stop()
 
     # 3. Sidebar Header & Authenticated User Status Controls
-    st.sidebar.markdown("<h3 style='text-align: center; color: var(--text-accent); margin-bottom: 0;'>🧠 AuraScan AI</h3>", unsafe_allow_html=True)
-    st.sidebar.markdown("<p style='text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-muted); margin-top: -6px;'>SaaS MRI Clinical Platform</p>", unsafe_allow_html=True)
+    st_html("<h3 style='text-align: center; color: var(--text-accent); margin-bottom: 0;'>🧠 AuraScan AI</h3>", container=st.sidebar)
+    st_html("<p style='text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-muted); margin-top: -6px;'>SaaS MRI Clinical Platform</p>", container=st.sidebar)
     
     u = st.session_state["user"]
     st.sidebar.markdown(f"👤 **User:** `{u['full_name']}`")
     st.sidebar.markdown(f"🏷️ **Role:** `{u['role'].upper()}`")
     st.sidebar.markdown("✅ **Status:** `VERIFIED CLINICIAN`")
     if st.sidebar.button("🚪 Logout Session", key="st_logout_btn", use_container_width=True):
+        token = st.session_state.get("access_token")
+        refresh_token = st.session_state.get("refresh_token")
+        if token or refresh_token:
+            try:
+                auth_use_cases.logout(token=token or "", refresh_token=refresh_token)
+            except Exception:
+                pass
         st.session_state["user"] = None
+        st.session_state["access_token"] = None
+        st.session_state["refresh_token"] = None
         render_toast("Logged out of session.", "info")
         st.rerun()
     st.sidebar.divider()
 
 
-    if "nav_page" not in st.session_state:
-        st.session_state["nav_page"] = "🚀 Product Overview"
+    u = st.session_state["user"]
+    user_role = u.get("role", "patient")
+    role_val = user_role.value if hasattr(user_role, "value") else str(user_role)
+    role_lower = role_val.lower().strip()
 
-    nav_list = [
-        "🚀 Product Overview",
-        "📊 Dashboard Analytics",
-        "🧠 AI Workspace",
-        "🗄️ Patient Database History",
-        "🩺 AI Pipeline Health",
-        "⚙️ Settings & Profile"
-    ]
-    
+    if role_lower == "admin":
+        nav_list = [
+            "🚀 Product Overview",
+            "🔑 Admin Dashboard",
+            "🩺 AI Pipeline Health",
+            "⚙️ Settings & Profile"
+        ]
+    elif role_lower == "doctor":
+        nav_list = [
+            "🚀 Product Overview",
+            "🩺 Doctor Dashboard",
+            "🧠 AI Workspace",
+            "🗄️ Patient Database History",
+            "⚙️ Settings & Profile"
+        ]
+    else:  # patient
+        nav_list = [
+            "🚀 Product Overview",
+            "👤 Patient Dashboard",
+            "⚙️ Settings & Profile"
+        ]
+
+    if "nav_page" not in st.session_state or st.session_state["nav_page"] not in nav_list:
+        if role_lower == "admin":
+            st.session_state["nav_page"] = "🔑 Admin Dashboard"
+        elif role_lower == "doctor":
+            st.session_state["nav_page"] = "🩺 Doctor Dashboard"
+        else:
+            st.session_state["nav_page"] = "👤 Patient Dashboard"
+
     current_nav_index = nav_list.index(st.session_state["nav_page"]) if st.session_state["nav_page"] in nav_list else 0
     page = st.sidebar.radio("Navigation", nav_list, index=current_nav_index, key="sb_nav_radio")
+    
+    # Route guard: force page to stay within authorized nav_list
+    if page not in nav_list:
+        page = nav_list[0]
+        
     st.session_state["nav_page"] = page
     render_sidebar_user_footer(st.session_state.get("user"))
     st.sidebar.divider()
@@ -232,10 +323,221 @@ def main() -> None:
         render_landing_page()
 
     # =================================================================
-
-    # PAGE 1: DASHBOARD ANALYTICS
+    # PAGE: ADMIN DASHBOARD
     # =================================================================
-    elif page in ["📊 Dashboard Analytics", "Dashboard Analytics"]:
+    elif page == "🔑 Admin Dashboard":
+        st.title("🔑 System Administration Dashboard")
+        st.markdown("Monitor system telemetry, manage user access credentials, and audit security events.")
+        
+        # Fetch data
+        try:
+            users_list = sec_repo.list_users(limit=1000)
+            audit_logs = sec_repo.get_security_audit_logs(limit=100)
+        except Exception as db_err:
+            st.error(f"Failed to fetch administrative data: {db_err}")
+            st.stop()
+            
+        # Metric cards row
+        st.divider()
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            render_metric_card("Total Registered Users", str(len(users_list)))
+        with col2:
+            active_users = sum(1 for u in users_list if u.is_active)
+            render_metric_card("Active User Accounts", str(active_users), border_color="var(--status-success)", value_color="var(--status-success)")
+        with col3:
+            render_metric_card("Security Logged Events", str(len(audit_logs)), border_color="var(--status-info)", value_color="var(--status-info)")
+            
+        st.divider()
+        
+        tab_users, tab_audit = st.tabs(["👥 User Management", "🛡️ Security Audit Logs"])
+        
+        with tab_users:
+            st.subheader("User Directory & Access Control")
+            
+            # Select user to edit
+            user_emails = [f"{u.email} ({u.full_name})" for u in users_list]
+            selected_email_str = st.selectbox("Select User Account to Modify", user_emails, key="admin_select_user")
+            
+            if selected_email_str:
+                # Find selected user
+                email_part = selected_email_str.split(" (")[0]
+                user_to_edit = next((u for u in users_list if u.email == email_part), None)
+                
+                if user_to_edit:
+                    st.write(f"Editing User: **{user_to_edit.full_name}** (`{user_to_edit.email}`)")
+                    
+                    ecol1, ecol2 = st.columns(2)
+                    with ecol1:
+                        role_str_val = user_to_edit.role.value if hasattr(user_to_edit.role, "value") else str(user_to_edit.role)
+                        role_idx = ["patient", "doctor", "admin"].index(role_str_val.lower().strip()) if role_str_val.lower().strip() in ["patient", "doctor", "admin"] else 0
+                        new_role = st.selectbox(
+                            "Assign Account Role",
+                            ["patient", "doctor", "admin"],
+                            index=role_idx,
+                            key="admin_edit_role"
+                        )
+                    with ecol2:
+                        is_active_toggle = st.toggle(
+                            "Account Active Status",
+                            value=user_to_edit.is_active,
+                            key="admin_edit_active"
+                        )
+                    
+                    st.markdown("##### Administrative Password Reset")
+                    new_password = st.text_input("Enter New Password", type="password", key="admin_reset_pass_input", help="Create a secure new password for this user.")
+                    
+                    if st.button("Save User Modifications", key="admin_save_user_btn", type="primary"):
+                        try:
+                            # Update role and status
+                            user_to_edit.role = Role.from_string(new_role)
+                            user_to_edit.is_active = is_active_toggle
+                            
+                            # Update password if provided
+                            if new_password:
+                                from security.infrastructure.password import PasswordHasher
+                                valid_pass, pass_err = PasswordHasher.validate_password_strength(new_password)
+                                if not valid_pass:
+                                    st.error(pass_err)
+                                    st.stop()
+                                user_to_edit.password_hash = PasswordHasher.hash_password(new_password)
+                                
+                            sec_repo.update_user(user_to_edit)
+                            render_toast(f"Successfully updated user {user_to_edit.email}!", "success")
+                            st.rerun()
+                        except Exception as save_err:
+                            st.error(f"Failed to update user profile: {save_err}")
+                            
+            # User table view
+            st.write("#### Registered Users Database")
+            user_table_data = []
+            for u in users_list:
+                role_str = u.role.value if hasattr(u.role, "value") else str(u.role)
+                status_str = "🟢 Active" if u.is_active else "🔴 Locked/Inactive"
+                verified_str = "✅ Verified" if u.is_verified else "❌ Unverified"
+                user_table_data.append({
+                    "ID": u.id,
+                    "Name": u.full_name,
+                    "Email": u.email,
+                    "Role": role_str.upper(),
+                    "Status": status_str,
+                    "Email Verified": verified_str,
+                    "Created At": u.created_at[:19].replace("T", " ")
+                })
+            import pandas as pd
+            st.dataframe(pd.DataFrame(user_table_data), use_container_width=True)
+            
+        with tab_audit:
+            st.subheader("Recent Security Logged Events")
+            audit_data = []
+            for log in audit_logs:
+                audit_data.append({
+                    "Timestamp": log.created_at[:19].replace("T", " "),
+                    "Event Type": log.action,
+                    "User ID": log.user_id or "N/A",
+                    "Email": log.email or "Guest/Anonymous",
+                    "IP Address": log.ip_address,
+                    "Status": log.status,
+                    "Details": log.details
+                })
+            import pandas as pd
+            st.dataframe(pd.DataFrame(audit_data), use_container_width=True)
+
+    # =================================================================
+    # PAGE: PATIENT DASHBOARD
+    # =================================================================
+    elif page == "👤 Patient Dashboard":
+        st.title("👤 My Neurological Diagnostics Portal")
+        st.markdown("Access your MRI scan results, neurological analysis reports, and clinician diagnostic feedback.")
+        
+        st.divider()
+        
+        # Greeting card
+        st_html(f"""
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+                <h4 style="margin: 0 0 8px 0; color: var(--text-accent);">Welcome back, {st.session_state["user"]["full_name"]}</h4>
+                <p style="margin: 0; font-size: 13px; color: var(--text-muted);">Below you will find neurological reports and MRI analytics ordered by your attending clinicians.</p>
+            </div>
+        """)
+        
+        # Load patient reports
+        criteria = HistorySearchCriteria(patient_id=st.session_state["user"]["uuid"])
+        try:
+            patient_reports = history_repo.search_history(criteria)
+        except Exception as query_err:
+            st.error(f"Failed to fetch clinical records: {query_err}")
+            st.stop()
+            
+        if not patient_reports:
+            st.info("No MRI scan reports recorded under your patient account yet.")
+        else:
+            st.subheader("Your Neurological Scan Reports")
+            
+            # Format report table list
+            for idx, r in enumerate(patient_reports):
+                severity_color = "var(--status-info)"
+                if r.rule_based_severity.lower() == "high":
+                    severity_color = "var(--status-danger)"
+                elif r.rule_based_severity.lower() == "medium":
+                    severity_color = "var(--status-warning)"
+                    
+                status_html = f"""
+                    <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; margin-bottom: 12px;">
+                        <div style="width: 100%;">
+                            <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted);">Scan Date: {r.scan_date}</span>
+                            <h5 style="margin: 4px 0; font-size: 16px; color: var(--text-primary);">Diagnosis: {r.predicted_class}</h5>
+                            <p style="margin: 0; font-size: 13px; color: var(--text-muted);">Confidence Score: <b>{r.confidence_score * 100:.1f}%</b> | Severity: <span style="color: {severity_color}; font-weight: bold;">{r.rule_based_severity}</span></p>
+                        </div>
+                    </div>
+                """
+                st_html(status_html)
+                
+                # Expandable details
+                with st.expander(f"View Report Details & Scorecard (Report #{r.report_id})"):
+                    st.write("##### Clinical Details")
+                    det_col1, det_col2 = st.columns(2)
+                    with det_col1:
+                        st.markdown(f"**Primary Diagnosis:** `{r.predicted_class}`")
+                        st.markdown(f"**Confidence:** `{r.confidence_score * 100:.2f}%`")
+                    with det_col2:
+                        st.markdown(f"**Tumor Area:** `{r.tumor_area_mm2:.2f} mm²`" if r.tumor_area_mm2 else "**Tumor Area:** `0.00 mm²`")
+                        st.markdown(f"**Risk Severity:** `{r.rule_based_severity}`")
+                        
+                    st.write("##### Attending Feedback")
+                    # We can fetch detailed report JSON if available
+                    try:
+                        import sqlite3
+                        conn = sqlite3.connect(DEFAULT_DB_PATH)
+                        conn.row_factory = sqlite3.Row
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT severity_rule_description FROM predictions WHERE id = (SELECT prediction_id FROM clinical_reports WHERE id = ?);", (r.report_id,))
+                        desc_row = cursor.fetchone()
+                        desc = desc_row["severity_rule_description"] if desc_row else "No description provided."
+                        st.info(desc)
+                    except Exception:
+                        st.info("No detailed analysis description found.")
+                    finally:
+                        conn.close()
+                        
+                    # PDF Download link
+                    pdf_paths = history_repo.get_report_paths(r.report_id)
+                    if pdf_paths and pdf_paths[2] and os.path.exists(pdf_paths[2]):
+                        with open(pdf_paths[2], "rb") as pdf_file:
+                            pdf_bytes = pdf_file.read()
+                        st.download_button(
+                            label="📥 Download Official Clinical Report (PDF)",
+                            data=pdf_bytes,
+                            file_name=f"Neurological_Report_{r.report_id}.pdf",
+                            mime="application/pdf",
+                            key=f"patient_dl_pdf_{r.report_id}"
+                        )
+                    else:
+                        st.warning("Official PDF document is currently being compiled by the clinic.")
+
+    # =================================================================
+    # PAGE 1: DOCTOR DASHBOARD / CLINICAL DIAGNOSTICS ANALYTICS
+    # =================================================================
+    elif page in ["📊 Dashboard Analytics", "Dashboard Analytics", "🩺 Doctor Dashboard"]:
 
         st.title("Clinical Diagnostics Analytics Dashboard")
         st.markdown("Real-time telemetry and aggregated patient metrics compiled from the database.")
@@ -376,11 +678,11 @@ def main() -> None:
         col_form, col_results = st.columns([1, 2])
 
         with col_form:
-            st.markdown("""
+            st_html("""
             <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 16px; margin-bottom: 16px;">
                 <h3 style="margin: 0; font-size: 15px; color: var(--text-primary); border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">Patient Clinical Intake</h3>
             </div>
-            """, unsafe_allow_html=True)
+            """)
             
             patient_id = st.text_input("Patient / Scan ID", value="PATIENT_001", help="Unique identifier assigned to the patient or MRI scan slice")
             patient_name = st.text_input("Patient Full Name", value="Alice Smith", help="Patient's legal full name for clinical EHR documentation")
@@ -397,11 +699,11 @@ def main() -> None:
             st.markdown("##### Research Configuration")
             research_ensemble_mode = st.checkbox("Enable Multi-Model Research Mode", value=False, help="Runs parallel ResNet-18 & MobileNet-V3 models to calculate ensemble predictions and check consensus metrics.")
 
-            st.markdown("""
+            st_html("""
             <div style="margin-top: 24px; margin-bottom: 8px;">
                 <span style="font-weight: 600; color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;">Scan Acquisition Port</span>
             </div>
-            """, unsafe_allow_html=True)
+            """)
             
             uploaded_file = st.file_uploader(
                 "Upload MRI Brain Scan Slice (PNG/JPG/TIF)",
@@ -413,14 +715,14 @@ def main() -> None:
 
             # Image Preview Card
             if uploaded_file is not None:
-                st.markdown(f"""
+                st_html(f"""
                 <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 12px; margin-top: 10px; margin-bottom: 10px;">
                     <span style="font-size: 11px; font-weight: 700; color: var(--text-accent); text-transform: uppercase; display: block; margin-bottom: 4px;">MRI Image Preview</span>
                     <div style="font-size: 10px; color: var(--text-muted);">
                         <b>Name:</b> {uploaded_file.name} | <b>Size:</b> {uploaded_file.size / 1024:.1f} KB
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
+                """)
                 st.image(uploaded_file, use_container_width=True)
 
             st.divider()
@@ -525,7 +827,7 @@ def main() -> None:
                     </style>
                 </div>
                 """
-                status_container.markdown(html, unsafe_allow_html=True)
+                st_html(html, container=status_container)
 
             if submit_btn:
                 st.session_state["workspace_state"]["analysis_triggered"] = False
@@ -1107,7 +1409,7 @@ def main() -> None:
             # Render Right Column outputs based on analysis status
             state = st.session_state["workspace_state"]
             if not state["analysis_triggered"]:
-                st.markdown("""
+                st_html("""
                 <div style="border: 2px dashed var(--border-color); border-radius: var(--radius); padding: 50px 30px; text-align: center; background-color: var(--bg-card); margin-top: 20px;">
                     <div style="font-size: 54px; margin-bottom: 16px; animation: pulse 2s infinite ease-in-out;">🧠</div>
                     <h3 style="margin: 0 0 10px 0; color: var(--text-primary); font-size: 18px; font-weight: 600;">AuraScan Clinical Workspace</h3>
@@ -1122,7 +1424,7 @@ def main() -> None:
                     100% { opacity: 0.5; transform: scale(0.98); }
                 }
                 </style>
-                """, unsafe_allow_html=True)
+                """)
             else:
                 scorecard = state["scorecard"]
                 if scorecard and not scorecard.is_valid:
@@ -1199,7 +1501,7 @@ def main() -> None:
                     if state.get("save_patient_clicked", False):
                         st.success(f"✅ **EHR Database Synchronization:** Record for {patient_name} ({patient_id}) has been successfully saved to SQLite as Scan ID #{state['db_report_id']}.")
 
-                    st.markdown("<br>", unsafe_allow_html=True)
+                    st_html("<br>")
                     
                     # Core Side-by-Side Visualization Cards
                     p_col1, p_col2, p_col3 = st.columns(3)
@@ -1244,7 +1546,7 @@ def main() -> None:
                             </div>
                         </div>
                         """
-                        st.markdown(card_html, unsafe_allow_html=True)
+                        st_html(card_html)
 
                     # 2. Segmentation Card
                     with p_col2:
@@ -1290,7 +1592,7 @@ def main() -> None:
                             </div>
                         </div>
                         """
-                        st.markdown(card_html, unsafe_allow_html=True)
+                        st_html(card_html)
                         if os.path.exists(mask_path):
                             st.image(mask_path, caption="UNeXt Contour Mask", use_container_width=True)
 
@@ -1310,7 +1612,7 @@ def main() -> None:
                             </div>
                         </div>
                         """
-                        st.markdown(card_html, unsafe_allow_html=True)
+                        st_html(card_html)
                         if os.path.exists(overlay_path):
                             st.image(overlay_path, caption="Grad-CAM Focus Overlay", use_container_width=True)
 
@@ -1381,18 +1683,18 @@ def main() -> None:
                         </div>
                         </div>
                         """
-                        st.markdown(timeline_html, unsafe_allow_html=True)
+                        st_html(timeline_html)
 
                     # Clinical Insights
                     clinical_insight_res = state["clinical_insight_res"]
                     if clinical_insight_res is not None:
                         st.markdown("### 🔍 AI Clinical Insights & Recommendations")
-                        st.markdown(f"""
+                        st_html(f"""
                             <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-left: 5px solid var(--status-success); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
                                 <h4 style="margin: 0 0 6px 0; color: var(--text-primary); font-size: 13px; font-weight: 700;">AI Summary Narrative</h4>
                                 <p style="margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5;">{clinical_insight_res.summary_narrative}</p>
                             </div>
-                        """, unsafe_allow_html=True)
+                        """)
                         
                         ci_col1, ci_col2 = st.columns(2)
                         with ci_col1:
@@ -1413,13 +1715,13 @@ def main() -> None:
                         am = ensemble_res.agreement_metrics
                         if am:
                             color = "var(--status-success)" if "HIGH" in am.level else "var(--status-warning)" if "MODERATE" in am.level else "var(--status-danger)"
-                            st.markdown(f"""
+                            st_html(f"""
                                 <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-left: 5px solid {color}; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
                                     <h4 style="margin: 0 0 4px 0; color: var(--text-primary); font-size: 13px; font-weight: 700;">Model Agreement Status: <span style="color: {color};">{am.level}</span></h4>
                                     <p style="margin: 0 0 8px 0; color: var(--text-secondary); font-size: 12px; line-height: 1.4;">{am.message}</p>
                                     <span style="font-size: 11px; color: var(--text-muted);"><b>Cosine Similarity:</b> {am.cosine_similarity:.4f} | <b>JS Divergence:</b> {am.jensen_shannon_divergence:.4f}</span>
                                 </div>
-                            """, unsafe_allow_html=True)
+                            """)
                         
                         comp_rows = []
                         for ip in ensemble_res.individual_predictions:
@@ -1439,12 +1741,12 @@ def main() -> None:
                             st.markdown(f"- {warning}")
 
                     # Severity matched rule
-                    st.markdown(f"""
+                    st_html(f"""
                     <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-left: 5px solid {risk_text}; padding: 15px; border-radius: 8px; margin-bottom: 20px; margin-top: 15px;">
                         <h4 style="margin: 0; color: var(--text-primary); font-size: 13px; font-weight: 700;">Matched Risk Decision Rule</h4>
                         <p style="margin: 6px 0 0 0; color: var(--text-secondary); font-size: 12px;">{severity_assessment.rule_description}</p>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """)
 
                     st.info(severity_assessment.educational_disclaimer)
 
@@ -1472,11 +1774,11 @@ def main() -> None:
             }
 
         # ----------------- FILTERS & CONTROLS TOOLBAR -----------------
-        st.markdown("""
+        st_html("""
         <div style="background-color: var(--bg-card); border-left: 4px solid var(--border-highlight); padding: 12px 16px; border-radius: var(--radius); margin-bottom: var(--space-12);">
             <h4 style="margin: 0; color: var(--text-primary); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Clinical History Registry Database Filters</h4>
         </div>
-        """, unsafe_allow_html=True)
+        """)
         
         search_val = st.text_input("Global Search Registry", value=st.session_state["db_state"]["search_query"], help="Search by Patient ID, Name, or Attending Physician")
         st.session_state["db_state"]["search_query"] = search_val
@@ -1573,7 +1875,7 @@ def main() -> None:
             render_empty_state("🗄️", "No Diagnostic Scans Found", "No patient records matched your search query. Try searching with a different Patient ID or run a new scan analysis in the AI Workspace.")
         else:
             # Modern table UI headers
-            st.markdown("""
+            st_html("""
             <div style="background-color: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; margin-bottom: 8px;">
                 <div style="display: grid; grid-template-columns: 1fr 2fr 2fr 3fr 2fr 2fr; font-weight: bold; color: var(--text-primary); font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase;">
                     <div>Report ID</div>
@@ -1584,7 +1886,7 @@ def main() -> None:
                     <div style="text-align: right;">EHR Actions</div>
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            """)
 
             for s in page_items:
                 r_col1, r_col2, r_col3, r_col4, r_col5, r_col6 = st.columns([1, 2, 2, 3, 2, 2])
@@ -1606,7 +1908,7 @@ def main() -> None:
                 with r_col4:
                     st.write(f"**{s.predicted_class}** ({s.confidence_score:.1%})")
                 with r_col5:
-                    st.markdown(f"""<span style="background: {risk_bg}; color: {risk_text}; padding: 2px 8px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 600; text-transform: uppercase; display: inline-block;">{risk_level}</span>""", unsafe_allow_html=True)
+                    st_html(f"""<span style="background: {risk_bg}; color: {risk_text}; padding: 2px 8px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 600; text-transform: uppercase; display: inline-block;">{risk_level}</span>""")
                 with r_col6:
                     if st.button("Open Profile 👤", key=f"select_drawer_p_{s.report_id}", use_container_width=True):
                         st.session_state["db_state"]["selected_report_id"] = s.report_id
@@ -1620,7 +1922,7 @@ def main() -> None:
                     st.session_state["db_state"]["current_page"] -= 1
                     st.rerun()
             with pag_col2:
-                st.markdown(f"<div style='text-align: center; margin-top: 6px; font-weight: 600; color: var(--text-secondary);'>Page {curr_page} of {total_pages} ({total_items} scans discovered)</div>", unsafe_allow_html=True)
+                st_html(f"<div style='text-align: center; margin-top: 6px; font-weight: 600; color: var(--text-secondary);'>Page {curr_page} of {total_pages} ({total_items} scans discovered)</div>")
             with pag_col3:
                 if st.button("Next ▶", disabled=(curr_page == total_pages), use_container_width=True, key="next_page_btn"):
                     st.session_state["db_state"]["current_page"] += 1
@@ -1649,7 +1951,7 @@ def main() -> None:
             conn.close()
 
             if row:
-                st.markdown("""<br><hr style="border-top: 2px solid var(--border-highlight);">""", unsafe_allow_html=True)
+                st_html("""<br><hr style="border-top: 2px solid var(--border-highlight);">""")
                 
                 # Drawer header control
                 d_header_col1, d_header_col2 = st.columns([4, 1])
@@ -1660,14 +1962,14 @@ def main() -> None:
                         st.session_state["db_state"]["selected_report_id"] = None
                         st.rerun()
 
-                st.markdown(f"""
+                st_html(f"""
                 <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-left: 5px solid var(--border-highlight); padding: 15px; border-radius: var(--radius); margin-bottom: 20px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">AuraScan System Patient Case Record</span>
                         <span class="user-badge-pill" style="font-size: 10px;">Scan Report #{row['report_id']}</span>
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
+                """)
 
                 tab_intake, tab_trace, tab_viewports, tab_history, tab_transfer = st.tabs([
                     "Intake & Diagnosis",
@@ -1693,12 +1995,12 @@ def main() -> None:
                         st.write(f"- **Severity Risk Level:** **{row['rule_based_severity'].upper()}**")
                         st.write(f"- **Tumor Area:** **{row['tumor_area_mm2']:.2f} mm²**")
 
-                    st.markdown(f"""
+                    st_html(f"""
                     <div style="background-color: var(--bg-card); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); margin-top: 15px;">
                         <span style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: var(--text-muted);">Matched Severity Decision Rule</span>
                         <p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-secondary);">{row['rule_based_severity'].upper()}: {row['severity_rule_description']}</p>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """)
 
                 # Tab 2: Timeline Trace tree
                 with tab_trace:
@@ -1753,7 +2055,7 @@ def main() -> None:
                         </div>
                     </div>
                     """
-                    st.markdown(trace_html, unsafe_allow_html=True)
+                    st_html(trace_html)
 
                 # Tab 3: Visual overlays
                 with tab_viewports:
@@ -1880,7 +2182,7 @@ def main() -> None:
                             st.warning("Markdown summary missing on disk.")
 
         # ----------------- REGISTRY BACKUP IMPORT PORTAL -----------------
-        st.markdown("<br>", unsafe_allow_html=True)
+        st_html("<br>")
         with st.expander("📥 Import EHR Record Backup Package (JSON)", expanded=False):
             st.markdown("Upload a previously exported clinical diagnostic JSON payload package to restore it in the local database registry.")
             
@@ -2001,12 +2303,12 @@ def main() -> None:
             
         # Overall Status Banner
         status_color = "var(--status-success)" if report.overall_status == "HEALTHY" else "var(--status-warning)" if report.overall_status == "WARNING" else "var(--status-danger)"
-        st.markdown(f"""
+        st_html(f"""
             <div style="background-color: var(--bg-card); border-left: 8px solid {status_color}; padding: 20px; border-radius: 8px; margin-bottom: 25px; border-top: 1px solid var(--border-color); border-right: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color);">
                 <h2 style="margin: 0; color: var(--text-primary); font-size: 20px; font-weight: 800;">OVERALL STATUS: {report.overall_status}</h2>
                 <p style="margin: 6px 0 0 0; color: var(--text-secondary); font-size: 13px;">Uptime: {report.system_uptime_sec/3600:.2f} hours | Generated: {report.timestamp}</p>
             </div>
-        """, unsafe_allow_html=True)
+        """)
         
         # Model Version Manager (B6.9)
         st.subheader("Model Version Configuration Manager")

@@ -154,3 +154,24 @@ Open in browser:
 ```
 http://localhost:5000
 ```
+
+---
+
+## Testing Verification Links on Mobile (ngrok Integration)
+
+To test the account email verification links on physical mobile devices (e.g. Android/iOS phones), you can route traffic through a public HTTPS ngrok tunnel.
+
+### Configuration
+
+1. Install the `pyngrok` package (automatically done via `requirements.txt`).
+2. Add the following parameters to your `.env` file:
+   ```env
+   USE_NGROK=true
+   NGROK_AUTHTOKEN=your_actual_ngrok_authtoken
+   ```
+3. Run the Streamlit application:
+   ```bash
+   streamlit run app.py
+   ```
+4. The system will programmatically establish an HTTPS tunnel to Streamlit on port `8501`, automatically detect the public URL, and output it in the sidebar.
+5. All verification emails sent while ngrok is active will automatically use the public HTTPS tunnel URL, allowing you to click the link on your mobile phone and complete verification.

@@ -11,6 +11,16 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 
+class TokenExpiredError(Exception):
+    """Exception raised when a JWT is expired."""
+    pass
+
+
+class TokenInvalidError(Exception):
+    """Exception raised when a JWT is invalid."""
+    pass
+
+
 class JWTService:
     """Enterprise JWT Token generation and verification service."""
 
@@ -45,10 +55,16 @@ class JWTService:
         }
         return jwt.encode(payload, self.secret_key, algorithm=ALGORITHM)
 
-    def decode_token(self, token: str) -> Optional[TokenPayload]:
+    def decode_token(self, token: str, expected_type: Optional[TokenType] = None, verify_exp: bool = True) -> TokenPayload:
+        """Decodes and validates a token. Raises TokenExpiredError or TokenInvalidError."""
         try:
-            payload_dict = jwt.decode(token, self.secret_key, algorithms=[ALGORITHM])
-            return TokenPayload(
+            options = {}
+            if not verify_exp:
+                options["verify_signature"] = True
+                options["verify_exp"] = False
+
+            payload_dict = jwt.decode(token, self.secret_key, algorithms=[ALGORITHM], options=options)
+            payload = TokenPayload(
                 sub=payload_dict["sub"],
                 user_id=payload_dict["user_id"],
                 email=payload_dict["email"],
@@ -58,5 +74,11 @@ class JWTService:
                 exp=float(payload_dict["exp"]),
                 iat=float(payload_dict["iat"]),
             )
-        except (jwt.PyJWTError, KeyError, ValueError):
-            return None
+            if expected_type and payload.type != expected_type:
+                raise TokenInvalidError(f"Invalid token type: expected {expected_type.value}, got {payload.type.value}")
+            return payload
+        except jwt.ExpiredSignatureError as e:
+            raise TokenExpiredError("Token has expired.") from e
+        except (jwt.PyJWTError, KeyError, ValueError) as e:
+            raise TokenInvalidError("Invalid authentication token.") from e
+

@@ -3,13 +3,13 @@ import datetime
 import uuid
 import logging
 from typing import Optional, List, Dict, Any
-from security.domain.entities import User, Role, VerificationToken, OTPRecord, SecurityAuditLog, TokenType, OtpPurpose
+from security.domain.entities import User, Role, SecurityAuditLog, TokenType
 from security.domain.interfaces import IUserRepository
 from security.infrastructure.password import PasswordHasher
 
 
 class SQLiteUserRepository(IUserRepository):
-    """SQLite persistence layer for users, auth tokens, OTP codes, session revocations, and audit logs."""
+    """SQLite persistence layer for users, auth tokens, session revocations, and audit logs."""
 
     def __init__(self, db_path: str, logger: Optional[logging.Logger] = None) -> None:
         self.db_path = db_path
@@ -22,11 +22,24 @@ class SQLiteUserRepository(IUserRepository):
         return conn
 
     def initialize_security_tables(self) -> None:
-        """Creates security schema tables if they do not exist."""
+        """Creates security schema tables if they do not exist. Cleans old schemas if google_id is present."""
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            
+
+            # Check if old table with google_id column exists
+            cursor.execute("PRAGMA table_info(users);")
+            columns = [row["name"] for row in cursor.fetchall()]
+            if "google_id" in columns or "two_factor_enabled" in columns:
+                self.logger.info("Legacy columns detected in users table. Cleaning and recreating security tables...")
+                cursor.execute("DROP TABLE IF EXISTS verification_tokens;")
+                cursor.execute("DROP TABLE IF EXISTS otp_codes;")
+                cursor.execute("DROP TABLE IF EXISTS users;")
+
+            # Also drop token/otp tables if they exist (since they are permanently removed)
+            cursor.execute("DROP TABLE IF EXISTS verification_tokens;")
+            cursor.execute("DROP TABLE IF EXISTS otp_codes;")
+
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,39 +48,15 @@ class SQLiteUserRepository(IUserRepository):
                 password_hash TEXT NOT NULL,
                 full_name TEXT NOT NULL,
                 role TEXT NOT NULL,
-                is_verified INTEGER DEFAULT 0,
+                is_verified INTEGER DEFAULT 1,
                 is_active INTEGER DEFAULT 1,
-                two_factor_enabled INTEGER DEFAULT 0,
-                two_factor_secret TEXT,
+                profile_pic TEXT,
+                sessions_revoked_at TEXT,
+                failed_login_attempts INTEGER DEFAULT 0,
+                lockout_until TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 last_login_at TEXT
-            );
-            """)
-
-            cursor.execute("""
-            CREATE TABLE IF NOT EXISTS verification_tokens (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                token TEXT UNIQUE NOT NULL,
-                token_type TEXT NOT NULL,
-                expires_at TEXT NOT NULL,
-                used_at TEXT,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            );
-            """)
-
-            cursor.execute("""
-            CREATE TABLE IF NOT EXISTS otp_codes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                otp_code TEXT NOT NULL,
-                purpose TEXT NOT NULL,
-                expires_at TEXT NOT NULL,
-                used_at TEXT,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
             """)
 
@@ -90,7 +79,8 @@ class SQLiteUserRepository(IUserRepository):
                 email TEXT,
                 ip_address TEXT NOT NULL,
                 status TEXT NOT NULL,
-                details TEXT NOT NULL
+                details TEXT NOT NULL,
+                user_agent TEXT
             );
             """)
 
@@ -118,8 +108,8 @@ class SQLiteUserRepository(IUserRepository):
             pass_hash = PasswordHasher.hash_password(admin_pass)
 
             cursor.execute("""
-            INSERT INTO users (uuid, email, password_hash, full_name, role, is_verified, is_active, two_factor_enabled, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 1, 1, 0, ?, ?);
+            INSERT INTO users (uuid, email, password_hash, full_name, role, is_verified, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 1, 1, ?, ?);
             """, (user_uuid, admin_email, pass_hash, "System Administrator", Role.ADMIN.value, now, now))
             conn.commit()
 
@@ -148,10 +138,12 @@ class SQLiteUserRepository(IUserRepository):
             password_hash=row["password_hash"],
             full_name=row["full_name"],
             role=Role.from_string(row["role"]),
-            is_verified=bool(row["is_verified"]),
-            is_active=bool(row["is_active"]),
-            two_factor_enabled=bool(row["two_factor_enabled"]),
-            two_factor_secret=row["two_factor_secret"],
+            is_verified=bool(row["is_verified"]) if "is_verified" in row.keys() else True,
+            is_active=bool(row["is_active"]) if "is_active" in row.keys() else True,
+            profile_pic=row["profile_pic"] if "profile_pic" in row.keys() else None,
+            sessions_revoked_at=row["sessions_revoked_at"] if "sessions_revoked_at" in row.keys() else None,
+            failed_login_attempts=row["failed_login_attempts"] if "failed_login_attempts" in row.keys() else 0,
+            lockout_until=row["lockout_until"] if "lockout_until" in row.keys() else None,
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             last_login_at=row["last_login_at"],
@@ -162,8 +154,8 @@ class SQLiteUserRepository(IUserRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-            INSERT INTO users (uuid, email, password_hash, full_name, role, is_verified, is_active, two_factor_enabled, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            INSERT INTO users (uuid, email, password_hash, full_name, role, is_verified, is_active, profile_pic, sessions_revoked_at, failed_login_attempts, lockout_until, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """, (
                 user.uuid,
                 user.email.lower().strip(),
@@ -172,7 +164,10 @@ class SQLiteUserRepository(IUserRepository):
                 user.role.value if isinstance(user.role, Role) else user.role,
                 1 if user.is_verified else 0,
                 1 if user.is_active else 0,
-                1 if user.two_factor_enabled else 0,
+                user.profile_pic,
+                user.sessions_revoked_at,
+                user.failed_login_attempts,
+                user.lockout_until,
                 user.created_at,
                 user.updated_at,
             ))
@@ -226,8 +221,10 @@ class SQLiteUserRepository(IUserRepository):
                 role = ?,
                 is_verified = ?,
                 is_active = ?,
-                two_factor_enabled = ?,
-                two_factor_secret = ?,
+                profile_pic = ?,
+                sessions_revoked_at = ?,
+                failed_login_attempts = ?,
+                lockout_until = ?,
                 updated_at = ?,
                 last_login_at = ?
             WHERE id = ?;
@@ -238,14 +235,25 @@ class SQLiteUserRepository(IUserRepository):
                 user.role.value if isinstance(user.role, Role) else user.role,
                 1 if user.is_verified else 0,
                 1 if user.is_active else 0,
-                1 if user.two_factor_enabled else 0,
-                user.two_factor_secret,
+                user.profile_pic,
+                user.sessions_revoked_at,
+                user.failed_login_attempts,
+                user.lockout_until,
                 user.updated_at,
                 user.last_login_at,
                 user.id
             ))
             conn.commit()
             return user
+        finally:
+            conn.close()
+
+    def delete_user(self, user_id: int) -> None:
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM users WHERE id = ?;", (user_id,))
+            conn.commit()
         finally:
             conn.close()
 
@@ -256,113 +264,6 @@ class SQLiteUserRepository(IUserRepository):
             cursor.execute("SELECT * FROM users ORDER BY id ASC LIMIT ? OFFSET ?;", (limit, offset))
             rows = cursor.fetchall()
             return [self._row_to_user(row) for row in rows]
-        finally:
-            conn.close()
-
-    def save_verification_token(self, token_record: VerificationToken) -> VerificationToken:
-        conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-            INSERT INTO verification_tokens (user_id, token, token_type, expires_at, used_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?);
-            """, (
-                token_record.user_id,
-                token_record.token,
-                token_record.token_type.value if isinstance(token_record.token_type, TokenType) else token_record.token_type,
-                token_record.expires_at,
-                token_record.used_at,
-                token_record.created_at,
-            ))
-            conn.commit()
-            token_record.id = cursor.lastrowid
-            return token_record
-        finally:
-            conn.close()
-
-    def get_verification_token(self, token: str, token_type: TokenType) -> Optional[VerificationToken]:
-        conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
-            t_type = token_type.value if isinstance(token_type, TokenType) else token_type
-            cursor.execute("SELECT * FROM verification_tokens WHERE token = ? AND token_type = ?;", (token, t_type))
-            row = cursor.fetchone()
-            if not row:
-                return None
-            return VerificationToken(
-                id=row["id"],
-                user_id=row["user_id"],
-                token=row["token"],
-                token_type=TokenType(row["token_type"]),
-                expires_at=row["expires_at"],
-                used_at=row["used_at"],
-                created_at=row["created_at"],
-            )
-        finally:
-            conn.close()
-
-    def mark_token_used(self, token_id: int) -> None:
-        conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
-            now = datetime.datetime.utcnow().isoformat()
-            cursor.execute("UPDATE verification_tokens SET used_at = ? WHERE id = ?;", (now, token_id))
-            conn.commit()
-        finally:
-            conn.close()
-
-    def save_otp(self, otp_record: OTPRecord) -> OTPRecord:
-        conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-            INSERT INTO otp_codes (user_id, otp_code, purpose, expires_at, used_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?);
-            """, (
-                otp_record.user_id,
-                otp_record.otp_code,
-                otp_record.purpose.value if isinstance(otp_record.purpose, OtpPurpose) else otp_record.purpose,
-                otp_record.expires_at,
-                otp_record.used_at,
-                otp_record.created_at,
-            ))
-            conn.commit()
-            otp_record.id = cursor.lastrowid
-            return otp_record
-        finally:
-            conn.close()
-
-    def get_latest_otp(self, user_id: int, purpose: OtpPurpose) -> Optional[OTPRecord]:
-        conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
-            p_str = purpose.value if isinstance(purpose, OtpPurpose) else purpose
-            cursor.execute("""
-            SELECT * FROM otp_codes WHERE user_id = ? AND purpose = ? AND used_at IS NULL
-            ORDER BY id DESC LIMIT 1;
-            """, (user_id, p_str))
-            row = cursor.fetchone()
-            if not row:
-                return None
-            return OTPRecord(
-                id=row["id"],
-                user_id=row["user_id"],
-                otp_code=row["otp_code"],
-                purpose=OtpPurpose(row["purpose"]),
-                expires_at=row["expires_at"],
-                used_at=row["used_at"],
-                created_at=row["created_at"],
-            )
-        finally:
-            conn.close()
-
-    def mark_otp_used(self, otp_id: int) -> None:
-        conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
-            now = datetime.datetime.utcnow().isoformat()
-            cursor.execute("UPDATE otp_codes SET used_at = ? WHERE id = ?;", (now, otp_id))
-            conn.commit()
         finally:
             conn.close()
 
@@ -393,8 +294,8 @@ class SQLiteUserRepository(IUserRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-            INSERT INTO security_audit_logs (timestamp, event_type, user_id, email, ip_address, status, details)
-            VALUES (?, ?, ?, ?, ?, ?, ?);
+            INSERT INTO security_audit_logs (timestamp, event_type, user_id, email, ip_address, status, details, user_agent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
             """, (
                 event.timestamp,
                 event.event_type,
@@ -403,6 +304,7 @@ class SQLiteUserRepository(IUserRepository):
                 event.ip_address,
                 event.status,
                 event.details,
+                event.user_agent,
             ))
             conn.commit()
         except Exception as e:
@@ -415,7 +317,7 @@ class SQLiteUserRepository(IUserRepository):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-            SELECT id, timestamp, event_type, user_id, email, ip_address, status, details
+            SELECT id, timestamp, event_type, user_id, email, ip_address, status, details, user_agent
             FROM security_audit_logs ORDER BY id DESC LIMIT ?;
             """, (limit,))
             rows = cursor.fetchall()

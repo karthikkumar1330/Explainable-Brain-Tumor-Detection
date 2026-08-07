@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any
-from security.domain.entities import User, VerificationToken, OTPRecord, SecurityAuditLog, TokenType, OtpPurpose, Role
+from security.domain.entities import User, SecurityAuditLog, TokenType, Role
 
 
 class IUserRepository(ABC):
@@ -26,30 +26,6 @@ class IUserRepository(ABC):
 
     @abstractmethod
     def list_users(self, limit: int = 100, offset: int = 0) -> List[User]:
-        pass
-
-    @abstractmethod
-    def save_verification_token(self, token_record: VerificationToken) -> VerificationToken:
-        pass
-
-    @abstractmethod
-    def get_verification_token(self, token: str, token_type: TokenType) -> Optional[VerificationToken]:
-        pass
-
-    @abstractmethod
-    def mark_token_used(self, token_id: int) -> None:
-        pass
-
-    @abstractmethod
-    def save_otp(self, otp_record: OTPRecord) -> OTPRecord:
-        pass
-
-    @abstractmethod
-    def get_latest_otp(self, user_id: int, purpose: OtpPurpose) -> Optional[OTPRecord]:
-        pass
-
-    @abstractmethod
-    def mark_otp_used(self, otp_id: int) -> None:
         pass
 
     @abstractmethod

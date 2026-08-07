@@ -1,11 +1,11 @@
 import os
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, HTTPException, Depends, Header, Request, status
+from fastapi import APIRouter, HTTPException, Depends, Header, Request, Response, status, Cookie
 from pydantic import BaseModel, EmailStr, Field
 
-from security.domain.entities import Role, User
+from security.domain.entities import Role, User, TokenType
 from security.infrastructure.repository import SQLiteUserRepository
-from security.infrastructure.jwt_service import JWTService
+from security.infrastructure.jwt_service import JWTService, TokenExpiredError, TokenInvalidError
 from security.application.use_cases import AuthUseCases
 
 DEFAULT_DB_PATH = os.environ.get("DB_PATH", "outputs/clinical_reports.db")
@@ -21,7 +21,6 @@ def get_auth_use_cases() -> AuthUseCases:
     return AuthUseCases(user_repo=repo, jwt_service=jwt_svc)
 
 
-
 # Dependencies for Auth & RBAC
 def extract_token_from_header(authorization: Optional[str] = Header(None)) -> Optional[str]:
     if not authorization:
@@ -34,22 +33,29 @@ def extract_token_from_header(authorization: Optional[str] = Header(None)) -> Op
 
 def get_current_user(
     authorization: Optional[str] = Header(None),
+    access_token: Optional[str] = Cookie(None),
     use_cases: AuthUseCases = Depends(get_auth_use_cases)
 ) -> User:
-    token = extract_token_from_header(authorization)
+    token = extract_token_from_header(authorization) or access_token
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication token missing in Authorization header.",
+            detail="Authentication token missing.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Check JTI revocation
-    payload = use_cases.jwt_service.decode_token(token)
-    if not payload:
+    try:
+        payload = use_cases.jwt_service.decode_token(token, expected_type=TokenType.ACCESS)
+    except TokenExpiredError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired authentication token.",
+            detail="Authentication token has expired.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except TokenInvalidError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -89,38 +95,22 @@ class RegisterSchema(BaseModel):
     role: str = "patient"
 
 
-class VerifyEmailSchema(BaseModel):
-    token_or_otp: str
-    email: Optional[str] = None
-
-
 class LoginSchema(BaseModel):
     email: EmailStr
     password: str
+    remember_me: bool = False
 
 
-class VerifyOtpSchema(BaseModel):
-    user_id: int
-    otp_code: str
+class RefreshSchema(BaseModel):
+    refresh_token: Optional[str] = None
 
 
 class LogoutSchema(BaseModel):
     token: Optional[str] = None
 
 
-class ForgotPasswordSchema(BaseModel):
-    email: EmailStr
-
-
-class ResetPasswordSchema(BaseModel):
-    reset_token_or_otp: str
-    new_password: str = Field(..., min_length=8)
-    email: Optional[str] = None
-
-
 class ProfileUpdateSchema(BaseModel):
     full_name: Optional[str] = None
-    enable_2fa: Optional[bool] = None
 
 
 class ChangePasswordSchema(BaseModel):
@@ -153,65 +143,108 @@ def register(data: RegisterSchema, request: Request, use_cases: AuthUseCases = D
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@auth_router.post("/verify-email")
-def verify_email(data: VerifyEmailSchema, request: Request, use_cases: AuthUseCases = Depends(get_auth_use_cases)):
-    client_ip = request.client.host if request.client else "127.0.0.1"
-    try:
-        return use_cases.verify_email(token_or_otp=data.token_or_otp, email=data.email, ip_address=client_ip)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
 @auth_router.post("/login")
-def login(data: LoginSchema, request: Request, use_cases: AuthUseCases = Depends(get_auth_use_cases)):
+def login(
+    data: LoginSchema,
+    request: Request,
+    response: Response,
+    use_cases: AuthUseCases = Depends(get_auth_use_cases)
+):
     client_ip = request.client.host if request.client else "127.0.0.1"
     try:
-        return use_cases.login(email=data.email, password=data.password, ip_address=client_ip)
+        res = use_cases.login(email=data.email, password=data.password, ip_address=client_ip, remember_me=data.remember_me)
+        if "access_token" in res:
+            is_secure = request.headers.get("x-forwarded-proto", "").lower() == "https"
+            response.set_cookie(
+                "access_token",
+                res["access_token"],
+                max_age=30 * 60,
+                httponly=True,
+                secure=is_secure,
+                samesite="lax"
+            )
+            refresh_max_age = 30 * 86400 if data.remember_me else None
+            response.set_cookie(
+                "refresh_token",
+                res["refresh_token"],
+                max_age=refresh_max_age,
+                httponly=True,
+                secure=is_secure,
+                samesite="lax"
+            )
+        return res
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@auth_router.post("/verify-otp")
-def verify_otp(data: VerifyOtpSchema, request: Request, use_cases: AuthUseCases = Depends(get_auth_use_cases)):
+@auth_router.post("/refresh")
+def refresh(
+    data: RefreshSchema,
+    request: Request,
+    response: Response,
+    refresh_token_cookie: Optional[str] = Cookie(None, alias="refresh_token"),
+    use_cases: AuthUseCases = Depends(get_auth_use_cases)
+):
+    token = (data.refresh_token if data else None) or refresh_token_cookie
+    if not token:
+        raise HTTPException(status_code=401, detail="Refresh token is missing.")
+
     client_ip = request.client.host if request.client else "127.0.0.1"
     try:
-        return use_cases.verify_login_otp(user_id=data.user_id, otp_code=data.otp_code, ip_address=client_ip)
+        res = use_cases.refresh_token(refresh_token=token, ip_address=client_ip)
+        is_secure = request.headers.get("x-forwarded-proto", "").lower() == "https"
+        
+        try:
+            payload = use_cases.jwt_service.decode_token(res["refresh_token"], expected_type=TokenType.REFRESH)
+            duration_days = (payload.exp - payload.iat) / 86400.0
+            remember_me = duration_days > 8.0
+        except Exception:
+            remember_me = False
+
+        response.set_cookie(
+            "access_token",
+            res["access_token"],
+            max_age=30 * 60,
+            httponly=True,
+            secure=is_secure,
+            samesite="lax"
+        )
+        refresh_max_age = 30 * 86400 if remember_me else None
+        response.set_cookie(
+            "refresh_token",
+            res["refresh_token"],
+            max_age=refresh_max_age,
+            httponly=True,
+            secure=is_secure,
+            samesite="lax"
+        )
+        return res
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        response.delete_cookie("access_token")
+        response.delete_cookie("refresh_token")
+        raise HTTPException(status_code=401, detail=str(e))
 
 
 @auth_router.post("/logout")
 def logout(
     data: LogoutSchema,
     request: Request,
+    response: Response,
     authorization: Optional[str] = Header(None),
+    access_token_cookie: Optional[str] = Cookie(None, alias="access_token"),
+    refresh_token_cookie: Optional[str] = Cookie(None, alias="refresh_token"),
     use_cases: AuthUseCases = Depends(get_auth_use_cases)
 ):
-    token = data.token or extract_token_from_header(authorization)
-    if not token:
-        return {"message": "Logout successful (no active token)."}
+    token = data.token or extract_token_from_header(authorization) or access_token_cookie
+    refresh_token = refresh_token_cookie
     client_ip = request.client.host if request.client else "127.0.0.1"
-    return use_cases.logout(token=token, ip_address=client_ip)
-
-
-@auth_router.post("/forgot-password")
-def forgot_password(data: ForgotPasswordSchema, request: Request, use_cases: AuthUseCases = Depends(get_auth_use_cases)):
-    client_ip = request.client.host if request.client else "127.0.0.1"
-    return use_cases.forgot_password(email=data.email, ip_address=client_ip)
-
-
-@auth_router.post("/reset-password")
-def reset_password(data: ResetPasswordSchema, request: Request, use_cases: AuthUseCases = Depends(get_auth_use_cases)):
-    client_ip = request.client.host if request.client else "127.0.0.1"
-    try:
-        return use_cases.reset_password(
-            reset_token_or_otp=data.reset_token_or_otp,
-            new_password=data.new_password,
-            email=data.email,
-            ip_address=client_ip
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    
+    if token or refresh_token:
+        use_cases.logout(token=token or "", refresh_token=refresh_token, ip_address=client_ip)
+        
+    response.delete_cookie("access_token")
+    response.delete_cookie("refresh_token")
+    return {"message": "Logout successful."}
 
 
 @auth_router.get("/profile")
@@ -228,8 +261,7 @@ def update_profile(
     try:
         return use_cases.update_profile(
             user_id=current_user.id,
-            full_name=data.full_name,
-            enable_2fa=data.enable_2fa
+            full_name=data.full_name
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -2,23 +2,22 @@ import datetime
 import uuid
 from typing import Optional, Dict, Any, Tuple, List
 
-from security.domain.entities import User, Role, TokenType, OtpPurpose, SecurityAuditLog
+from security.domain.entities import User, Role, TokenType, SecurityAuditLog
 from security.domain.interfaces import IUserRepository
 from security.infrastructure.password import PasswordHasher
-from security.infrastructure.jwt_service import JWTService
-from security.infrastructure.otp_service import OTPService
+from security.infrastructure.jwt_service import JWTService, REFRESH_TOKEN_EXPIRE_DAYS
 from security.infrastructure.rate_limiter import global_rate_limiter
 
 
 class AuthUseCases:
-    """Application level use-cases coordinating authentication, authorization, OTP, and user profile operations."""
+    """Application level use-cases coordinating simplified authentication, authorization, and user profile operations."""
 
     def __init__(self, user_repo: IUserRepository, jwt_service: Optional[JWTService] = None):
         self.user_repo = user_repo
         self.jwt_service = jwt_service or JWTService()
 
     def register(self, email: str, password: str, full_name: str, role_str: str = "patient", ip_address: str = "127.0.0.1") -> Dict[str, Any]:
-        """Registers a new user account with OWASP password complexity and email verification token."""
+        """Registers a new user account and activates them immediately."""
         # Check rate limit
         limited, remaining = global_rate_limiter.is_rate_limited(f"register:{ip_address}", max_requests=10, window_seconds=600)
         if limited:
@@ -52,20 +51,16 @@ class AuthUseCases:
             password_hash=pass_hash,
             full_name=full_name.strip(),
             role=user_role,
-            is_verified=False,
+            is_verified=True,  # Default to True to bypass verification entirely
             is_active=True,
-            two_factor_enabled=False,
             created_at=now,
             updated_at=now,
         )
         created_user = self.user_repo.create_user(new_user)
 
-        # Create Email Verification Token & OTP
-        token_record, token_str = OTPService.create_verification_token(created_user.id, TokenType.EMAIL_VERIFICATION, validity_hours=24)
-        self.user_repo.save_verification_token(token_record)
-
-        otp_record, otp_code = OTPService.create_otp_record(created_user.id, OtpPurpose.EMAIL_VERIFICATION, validity_minutes=15)
-        self.user_repo.save_otp(otp_record)
+        # Generate tokens for immediate login
+        access_token = self.jwt_service.create_access_token(created_user.uuid, created_user.id, created_user.email, created_user.role)
+        refresh_token = self.jwt_service.create_refresh_token(created_user.uuid, created_user.id, created_user.email, created_user.role)
 
         # Audit log
         self.user_repo.log_security_event(SecurityAuditLog(
@@ -80,113 +75,84 @@ class AuthUseCases:
         ))
 
         return {
-            "message": "User registered successfully. Please verify your email using the verification code/token provided.",
+            "message": "User registered successfully.",
             "user": created_user.to_dict(),
-            "verification_token": token_str,
-            "verification_otp": otp_code,
+            "access_token": access_token,
+            "refresh_token": refresh_token,
         }
 
-    def verify_email(self, token_or_otp: str, email: Optional[str] = None, ip_address: str = "127.0.0.1") -> Dict[str, Any]:
-        """Verifies email using URL verification token or 6-digit OTP code."""
-        now = datetime.datetime.utcnow().isoformat()
-
-        # Try URL token first
-        token_record = self.user_repo.get_verification_token(token_or_otp, TokenType.EMAIL_VERIFICATION)
-        if token_record:
-            if token_record.used_at:
-                raise ValueError("Verification token has already been used.")
-            if token_record.expires_at < now:
-                raise ValueError("Verification token has expired.")
-
-            user = self.user_repo.get_by_id(token_record.user_id)
-            if not user:
-                raise ValueError("User not found.")
-
-            user.is_verified = True
-            self.user_repo.update_user(user)
-            self.user_repo.mark_token_used(token_record.id)
-
-            self.user_repo.log_security_event(SecurityAuditLog(
-                id=None, timestamp=now, event_type="EMAIL_VERIFICATION", user_id=user.id, email=user.email,
-                ip_address=ip_address, status="SUCCESS", details="Email verified via link token"
-            ))
-            return {"message": "Email verified successfully.", "user": user.to_dict()}
-
-        # Try OTP code with email
-        if email:
-            user = self.user_repo.get_by_email(email)
-            if user:
-                otp_rec = self.user_repo.get_latest_otp(user.id, OtpPurpose.EMAIL_VERIFICATION)
-                if otp_rec and otp_rec.otp_code == token_or_otp.strip():
-                    if otp_rec.expires_at < now:
-                        raise ValueError("Verification OTP code has expired.")
-
-                    user.is_verified = True
-                    self.user_repo.update_user(user)
-                    self.user_repo.mark_otp_used(otp_rec.id)
-
-                    self.user_repo.log_security_event(SecurityAuditLog(
-                        id=None, timestamp=now, event_type="EMAIL_VERIFICATION", user_id=user.id, email=user.email,
-                        ip_address=ip_address, status="SUCCESS", details="Email verified via OTP code"
-                    ))
-                    return {"message": "Email verified successfully.", "user": user.to_dict()}
-
-        raise ValueError("Invalid or expired email verification token / OTP code.")
-
-    def login(self, email: str, password: str, ip_address: str = "127.0.0.1") -> Dict[str, Any]:
-        """Authenticates user credentials and returns JWT tokens or triggers 2FA OTP flow."""
+    def login(self, email: str, password: str, ip_address: str = "127.0.0.1", remember_me: bool = False, user_agent: str = "Unknown") -> Dict[str, Any]:
+        """Authenticates user credentials and returns JWT tokens immediately without 2FA OTP flow."""
         email_clean = email.lower().strip()
         now = datetime.datetime.utcnow().isoformat()
 
         # Brute force rate check
-        limited, remaining = global_rate_limiter.is_rate_limited(f"login:{ip_address}", max_requests=5, window_seconds=300)
+        limited, remaining = global_rate_limiter.is_rate_limited(f"login:{ip_address}", max_requests=10, window_seconds=300)
         if limited:
             self.user_repo.log_security_event(SecurityAuditLog(
                 id=None, timestamp=now, event_type="LOGIN_ATTEMPT", user_id=None, email=email_clean,
-                ip_address=ip_address, status="BLOCKED", details=f"Rate limited for {remaining} seconds"
+                ip_address=ip_address, status="BLOCKED", details=f"Rate limited for {remaining} seconds", user_agent=user_agent
             ))
             raise ValueError(f"Too many failed login attempts. Account temporarily locked. Please try again in {remaining} seconds.")
 
         user = self.user_repo.get_by_email(email_clean)
+
+        # Check Account Lockout status
+        if user and user.lockout_until:
+            try:
+                lock_dt = datetime.datetime.fromisoformat(user.lockout_until.replace("Z", "+00:00"))
+                if datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc) < lock_dt:
+                    remaining_seconds = int((lock_dt - datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)).total_seconds())
+                    self.user_repo.log_security_event(SecurityAuditLog(
+                        id=None, timestamp=now, event_type="LOGIN_ATTEMPT", user_id=user.id, email=email_clean,
+                        ip_address=ip_address, status="BLOCKED", details=f"Account locked. Try again in {remaining_seconds}s.", user_agent=user_agent
+                    ))
+                    raise ValueError(f"Account is temporarily locked due to too many failed login attempts. Please try again in {remaining_seconds} seconds.")
+            except ValueError:
+                raise
+            except Exception:
+                pass
+
         if not user or not PasswordHasher.verify_password(password, user.password_hash):
+            if user:
+                user.failed_login_attempts += 1
+                if user.failed_login_attempts >= 5:
+                    lock_time = (datetime.datetime.utcnow() + datetime.timedelta(minutes=15)).isoformat() + "Z"
+                    user.lockout_until = lock_time
+                    self.user_repo.update_user(user)
+                    self.user_repo.log_security_event(SecurityAuditLog(
+                        id=None, timestamp=now, event_type="ACCOUNT_LOCKED", user_id=user.id,
+                        email=email_clean, ip_address=ip_address, status="LOCKED", details="Account locked due to 5 consecutive login failures", user_agent=user_agent
+                    ))
+                    raise ValueError("Account is temporarily locked due to too many failed login attempts. Please try again in 15 minutes.")
+                else:
+                    self.user_repo.update_user(user)
+            
             self.user_repo.log_security_event(SecurityAuditLog(
                 id=None, timestamp=now, event_type="LOGIN_ATTEMPT", user_id=user.id if user else None,
-                email=email_clean, ip_address=ip_address, status="FAILURE", details="Invalid credentials"
+                email=email_clean, ip_address=ip_address, status="FAILURE", details=f"Invalid credentials. Attempt {user.failed_login_attempts if user else 1}/5", user_agent=user_agent
             ))
+            if user:
+                raise ValueError(f"Invalid email or password. Attempt {user.failed_login_attempts}/5.")
             raise ValueError("Invalid email or password.")
 
         if not user.is_active:
             raise ValueError("Your account has been deactivated. Please contact system administrator.")
 
-        # If 2FA OTP is required for account
-        if user.two_factor_enabled:
-            otp_record, otp_code = OTPService.create_otp_record(user.id, OtpPurpose.LOGIN_2FA, validity_minutes=10)
-            self.user_repo.save_otp(otp_record)
-
-            self.user_repo.log_security_event(SecurityAuditLog(
-                id=None, timestamp=now, event_type="LOGIN_2FA_REQUIRED", user_id=user.id, email=email_clean,
-                ip_address=ip_address, status="PENDING_2FA", details="2FA OTP generated for login"
-            ))
-
-            return {
-                "requires_2fa": True,
-                "message": "Two-factor authentication required. Please verify the OTP code sent to your device/email.",
-                "user_id": user.id,
-                "email": user.email,
-                "otp_code": otp_code,  # Returned for mock/dev notification support
-            }
-
-        # Successful Login
+        # Successful Login - Reset Lockout parameters
         user.last_login_at = now
+        user.failed_login_attempts = 0
+        user.lockout_until = None
         self.user_repo.update_user(user)
         global_rate_limiter.reset_key(f"login:{ip_address}")
 
+        refresh_expires_days = 30 if remember_me else REFRESH_TOKEN_EXPIRE_DAYS
         access_token = self.jwt_service.create_access_token(user.uuid, user.id, user.email, user.role)
-        refresh_token = self.jwt_service.create_refresh_token(user.uuid, user.id, user.email, user.role)
+        refresh_token = self.jwt_service.create_refresh_token(user.uuid, user.id, user.email, user.role, expires_days=refresh_expires_days)
 
         self.user_repo.log_security_event(SecurityAuditLog(
             id=None, timestamp=now, event_type="LOGIN_SUCCESS", user_id=user.id, email=user.email,
-            ip_address=ip_address, status="SUCCESS", details=f"User logged in successfully with role {user.role.value}"
+            ip_address=ip_address, status="SUCCESS", details=f"User logged in successfully with role {user.role.value}", user_agent=user_agent
         ))
 
         return {
@@ -198,149 +164,125 @@ class AuthUseCases:
             "user": user.to_dict(),
         }
 
-    def verify_login_otp(self, user_id: int, otp_code: str, ip_address: str = "127.0.0.1") -> Dict[str, Any]:
-        """Verifies 2FA OTP code and completes login."""
+    def refresh_token(self, refresh_token: str, ip_address: str = "127.0.0.1") -> Dict[str, Any]:
+        """Validates a refresh token, revokes it (rotation), and issues a new access/refresh token pair."""
         now = datetime.datetime.utcnow().isoformat()
-        user = self.user_repo.get_by_id(user_id)
-        if not user:
-            raise ValueError("User not found.")
+        try:
+            payload = self.jwt_service.decode_token(refresh_token, expected_type=TokenType.REFRESH)
+        except Exception as e:
+            raise ValueError(f"Invalid refresh token: {str(e)}")
 
-        otp_rec = self.user_repo.get_latest_otp(user.id, OtpPurpose.LOGIN_2FA)
-        if not otp_rec or otp_rec.otp_code != otp_code.strip():
+        # Check JTI revocation (Token Replay Attack check)
+        if self.user_repo.is_token_revoked(payload.jti):
             self.user_repo.log_security_event(SecurityAuditLog(
-                id=None, timestamp=now, event_type="LOGIN_2FA_VERIFICATION", user_id=user.id, email=user.email,
-                ip_address=ip_address, status="FAILURE", details="Invalid 2FA OTP code"
+                id=None, timestamp=now, event_type="TOKEN_REPLAY_ATTACK_SUSPECTED", user_id=payload.user_id,
+                email=payload.email, ip_address=ip_address, status="REVOKED",
+                details=f"Revoked refresh token reuse attempt for JTI: {payload.jti}"
             ))
-            raise ValueError("Invalid 2FA verification OTP code.")
+            raise ValueError("Refresh token has been revoked or already used.")
 
-        if otp_rec.expires_at < now:
-            raise ValueError("2FA OTP code has expired.")
+        # Get user
+        user = self.user_repo.get_by_id(payload.user_id)
+        if not user or not user.is_active:
+            raise ValueError("User is inactive or does not exist.")
 
-        self.user_repo.mark_otp_used(otp_rec.id)
-        user.last_login_at = now
-        self.user_repo.update_user(user)
+        # Check session invalidation timestamp
+        if user.sessions_revoked_at:
+            try:
+                rev_str = user.sessions_revoked_at
+                if not rev_str.endswith("Z") and "+00:00" not in rev_str:
+                    rev_str += "Z"
+                rev_str = rev_str.replace("Z", "+00:00")
+                rev_dt = datetime.datetime.fromisoformat(rev_str)
+                if payload.iat < rev_dt.timestamp():
+                    raise ValueError("Refresh token has been revoked due to session invalidation.")
+            except Exception:
+                pass
 
-        access_token = self.jwt_service.create_access_token(user.uuid, user.id, user.email, user.role)
-        refresh_token = self.jwt_service.create_refresh_token(user.uuid, user.id, user.email, user.role)
+        # Revoke the old refresh token JTI immediately (rotation)
+        self.user_repo.revoke_token(payload.jti, user.id, payload.exp)
+
+        # Calculate time remaining on the refresh token, or check if we should keep it long-lived
+        duration_days = (payload.exp - payload.iat) / 86400.0
+        remember_me = duration_days > 8.0
+        refresh_expires_days = 30 if remember_me else REFRESH_TOKEN_EXPIRE_DAYS
+
+        # Generate new access and refresh tokens
+        new_access_token = self.jwt_service.create_access_token(user.uuid, user.id, user.email, user.role)
+        new_refresh_token = self.jwt_service.create_refresh_token(
+            user.uuid, user.id, user.email, user.role, expires_days=refresh_expires_days
+        )
 
         self.user_repo.log_security_event(SecurityAuditLog(
-            id=None, timestamp=now, event_type="LOGIN_2FA_SUCCESS", user_id=user.id, email=user.email,
-            ip_address=ip_address, status="SUCCESS", details="2FA OTP verified, login complete"
+            id=None, timestamp=now, event_type="TOKEN_REFRESH", user_id=user.id, email=user.email,
+            ip_address=ip_address, status="SUCCESS", details="Access and refresh tokens rotated successfully"
         ))
 
         return {
-            "message": "2FA OTP verified successfully.",
-            "access_token": access_token,
-            "refresh_token": refresh_token,
+            "access_token": new_access_token,
+            "refresh_token": new_refresh_token,
             "token_type": "bearer",
             "user": user.to_dict(),
         }
 
-    def logout(self, token: str, ip_address: str = "127.0.0.1") -> Dict[str, Any]:
-        """Revokes JWT access/refresh token JTI upon logout."""
-        payload = self.jwt_service.decode_token(token)
+    def logout(self, token: str, refresh_token: Optional[str] = None, ip_address: str = "127.0.0.1") -> Dict[str, Any]:
+        """Revokes JWT access and refresh token JTIs upon logout."""
         now = datetime.datetime.utcnow().isoformat()
+        access_payload = None
+        refresh_payload = None
 
-        if payload:
-            self.user_repo.revoke_token(payload.jti, payload.user_id, payload.exp)
-            self.user_repo.log_security_event(SecurityAuditLog(
-                id=None, timestamp=now, event_type="LOGOUT", user_id=payload.user_id, email=payload.email,
-                ip_address=ip_address, status="SUCCESS", details="Token revoked on logout"
-            ))
+        # Revoke access token
+        try:
+            access_payload = self.jwt_service.decode_token(token, verify_exp=False)
+            if access_payload:
+                self.user_repo.revoke_token(access_payload.jti, access_payload.user_id, access_payload.exp)
+        except Exception:
+            pass
+
+        # Revoke refresh token
+        if refresh_token:
+            try:
+                refresh_payload = self.jwt_service.decode_token(refresh_token, verify_exp=False)
+                if refresh_payload:
+                    self.user_repo.revoke_token(refresh_payload.jti, refresh_payload.user_id, refresh_payload.exp)
+            except Exception:
+                pass
+
+        user_id = access_payload.user_id if access_payload else (refresh_payload.user_id if refresh_payload else None)
+        email = access_payload.email if access_payload else (refresh_payload.email if refresh_payload else None)
+
+        self.user_repo.log_security_event(SecurityAuditLog(
+            id=None, timestamp=now, event_type="LOGOUT", user_id=user_id, email=email,
+            ip_address=ip_address, status="SUCCESS", details="Access/Refresh tokens revoked on logout"
+        ))
 
         return {"message": "Logout successful."}
 
-    def forgot_password(self, email: str, ip_address: str = "127.0.0.1") -> Dict[str, Any]:
-        """Initiates password reset flow with token & OTP code."""
-        email_clean = email.lower().strip()
-        now = datetime.datetime.utcnow().isoformat()
-
-        user = self.user_repo.get_by_email(email_clean)
-        if not user:
-            # OWASP recommendation: do not leak user existence
-            return {"message": "If an account exists with that email, password reset instructions have been sent."}
-
-        token_record, reset_token = OTPService.create_verification_token(user.id, TokenType.PASSWORD_RESET, validity_hours=1)
-        self.user_repo.save_verification_token(token_record)
-
-        otp_record, otp_code = OTPService.create_otp_record(user.id, OtpPurpose.PASSWORD_RESET, validity_minutes=15)
-        self.user_repo.save_otp(otp_record)
-
-        self.user_repo.log_security_event(SecurityAuditLog(
-            id=None, timestamp=now, event_type="PASSWORD_RESET_REQUEST", user_id=user.id, email=user.email,
-            ip_address=ip_address, status="SUCCESS", details="Password reset token and OTP generated"
-        ))
-
-        return {
-            "message": "If an account exists with that email, password reset instructions have been sent.",
-            "reset_token": reset_token,
-            "reset_otp": otp_code,
-        }
-
-    def reset_password(self, reset_token_or_otp: str, new_password: str, email: Optional[str] = None, ip_address: str = "127.0.0.1") -> Dict[str, Any]:
-        """Resets user password using URL token or OTP code, enforcing OWASP complexity."""
-        now = datetime.datetime.utcnow().isoformat()
-
-        valid_pass, pass_err = PasswordHasher.validate_password_strength(new_password)
-        if not valid_pass:
-            raise ValueError(pass_err)
-
-        user: Optional[User] = None
-        token_id_to_mark: Optional[int] = None
-        otp_id_to_mark: Optional[int] = None
-
-        # Check URL token
-        t_rec = self.user_repo.get_verification_token(reset_token_or_otp, TokenType.PASSWORD_RESET)
-        if t_rec:
-            if t_rec.used_at:
-                raise ValueError("Password reset token has already been used.")
-            if t_rec.expires_at < now:
-                raise ValueError("Password reset token has expired.")
-            user = self.user_repo.get_by_id(t_rec.user_id)
-            token_id_to_mark = t_rec.id
-
-        # Check OTP
-        elif email:
-            user = self.user_repo.get_by_email(email)
-            if user:
-                o_rec = self.user_repo.get_latest_otp(user.id, OtpPurpose.PASSWORD_RESET)
-                if o_rec and o_rec.otp_code == reset_token_or_otp.strip():
-                    if o_rec.expires_at < now:
-                        raise ValueError("Password reset OTP has expired.")
-                    otp_id_to_mark = o_rec.id
-
-        if not user:
-            raise ValueError("Invalid or expired password reset token / OTP code.")
-
-        # Update password
-        user.password_hash = PasswordHasher.hash_password(new_password)
-        self.user_repo.update_user(user)
-
-        if token_id_to_mark:
-            self.user_repo.mark_token_used(token_id_to_mark)
-        if otp_id_to_mark:
-            self.user_repo.mark_otp_used(otp_id_to_mark)
-
-        self.user_repo.log_security_event(SecurityAuditLog(
-            id=None, timestamp=now, event_type="PASSWORD_RESET_SUCCESS", user_id=user.id, email=user.email,
-            ip_address=ip_address, status="SUCCESS", details="Password reset completed"
-        ))
-
-        return {"message": "Password reset successfully. You can now login with your new password."}
-
-    def update_profile(self, user_id: int, full_name: Optional[str] = None, enable_2fa: Optional[bool] = None) -> Dict[str, Any]:
-        """Updates user profile preferences."""
+    def update_profile(self, user_id: int, full_name: Optional[str] = None, email: Optional[str] = None) -> Dict[str, Any]:
+        """Updates user profile preferences, enforcing email uniqueness."""
         user = self.user_repo.get_by_id(user_id)
         if not user:
             raise ValueError("User not found.")
 
         if full_name and full_name.strip():
             user.full_name = full_name.strip()
-        if enable_2fa is not None:
-            user.two_factor_enabled = enable_2fa
+
+        email_changed = False
+        if email and email.strip() and email.lower().strip() != user.email:
+            new_email = email.lower().strip()
+            # Check uniqueness
+            existing = self.user_repo.get_by_email(new_email)
+            if existing and existing.id != user.id:
+                raise ValueError("This email is already in use by another account.")
+            user.email = new_email
+            email_changed = True
 
         updated = self.user_repo.update_user(user)
-        return {"message": "Profile updated successfully.", "user": updated.to_dict()}
+        return {
+            "message": "Profile updated successfully.",
+            "email_changed": email_changed,
+            "user": updated.to_dict()
+        }
 
     def change_password(self, user_id: int, current_password: str, new_password: str, ip_address: str = "127.0.0.1") -> Dict[str, Any]:
         """Changes user password after validating current password."""

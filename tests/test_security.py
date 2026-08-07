@@ -3,10 +3,9 @@ import os
 import tempfile
 import sqlite3
 import time
-from security.domain.entities import User, Role, TokenType, OtpPurpose, SecurityAuditLog
+from security.domain.entities import User, Role, TokenType, SecurityAuditLog
 from security.infrastructure.password import PasswordHasher
 from security.infrastructure.jwt_service import JWTService
-from security.infrastructure.otp_service import OTPService
 from security.infrastructure.rate_limiter import RateLimiter
 from security.infrastructure.repository import SQLiteUserRepository
 from security.application.use_cases import AuthUseCases
@@ -50,8 +49,8 @@ class TestSecuritySystem(unittest.TestCase):
         self.assertTrue(PasswordHasher.verify_password("StrongPass@123", hashed))
         self.assertFalse(PasswordHasher.verify_password("WrongPass@123", hashed))
 
-    # 2. User Registration & Email Verification
-    def test_user_registration_and_verification(self):
+    # 2. User Registration
+    def test_user_registration(self):
         reg_res = self.auth_cases.register(
             email="doctor@hospital.org",
             password="DoctorPass@123",
@@ -61,23 +60,18 @@ class TestSecuritySystem(unittest.TestCase):
         self.assertIn("user", reg_res)
         self.assertEqual(reg_res["user"]["email"], "doctor@hospital.org")
         self.assertEqual(reg_res["user"]["role"], "doctor")
-        self.assertFalse(reg_res["user"]["is_verified"])
+        self.assertTrue(reg_res["user"]["is_verified"])
 
         # Try duplicate registration
         with self.assertRaises(ValueError):
             self.auth_cases.register("doctor@hospital.org", "DoctorPass@123", "Duplicate", "doctor")
 
-        # Verify email using OTP
-        otp_code = reg_res["verification_otp"]
-        ver_res = self.auth_cases.verify_email(token_or_otp=otp_code, email="doctor@hospital.org")
-        self.assertTrue(ver_res["user"]["is_verified"])
-
-    # 3. User Login & 2FA Flow
-    def test_login_and_2fa(self):
+    # 3. User Login (Simplified)
+    def test_login(self):
         # Register user
         reg = self.auth_cases.register("patient@test.com", "PatientPass@123", "John Patient", "patient")
-        
-        # Successful login
+
+        # Successful login immediately after registration
         login_res = self.auth_cases.login("patient@test.com", "PatientPass@123")
         self.assertFalse(login_res["requires_2fa"])
         self.assertIn("access_token", login_res)
@@ -92,19 +86,6 @@ class TestSecuritySystem(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.auth_cases.login("patient@test.com", "WrongPassword@123")
 
-        # Enable 2FA for user
-        user = self.repo.get_by_email("patient@test.com")
-        self.auth_cases.update_profile(user.id, enable_2fa=True)
-
-        # Login with 2FA enabled
-        two_fa_login = self.auth_cases.login("patient@test.com", "PatientPass@123")
-        self.assertTrue(two_fa_login["requires_2fa"])
-        self.assertIn("otp_code", two_fa_login)
-
-        # Verify 2FA OTP
-        otp_res = self.auth_cases.verify_login_otp(user.id, two_fa_login["otp_code"])
-        self.assertIn("access_token", otp_res)
-
     # 4. Token Revocation (Logout)
     def test_token_revocation(self):
         login_res = self.auth_cases.login("testadmin@aurascan.ai", "Admin@123456")
@@ -117,25 +98,7 @@ class TestSecuritySystem(unittest.TestCase):
         self.auth_cases.logout(token)
         self.assertTrue(self.repo.is_token_revoked(payload.jti))
 
-    # 5. Forgot & Reset Password
-    def test_forgot_and_reset_password(self):
-        self.auth_cases.register("user@test.com", "OldPassword@123", "User Reset", "patient")
-        forgot_res = self.auth_cases.forgot_password("user@test.com")
-        reset_otp = forgot_res["reset_otp"]
-
-        # Reset password
-        reset_res = self.auth_cases.reset_password(
-            reset_token_or_otp=reset_otp,
-            new_password="NewPassword@123",
-            email="user@test.com"
-        )
-        self.assertIn("successfully", reset_res["message"])
-
-        # Verify login with new password
-        login_res = self.auth_cases.login("user@test.com", "NewPassword@123")
-        self.assertIn("access_token", login_res)
-
-    # 6. Rate Limiting
+    # 5. Rate Limiting
     def test_rate_limiter(self):
         limiter = RateLimiter()
         key = "login:192.168.1.1"
@@ -148,7 +111,7 @@ class TestSecuritySystem(unittest.TestCase):
         self.assertTrue(limited)
         self.assertGreater(wait, 0)
 
-    # 7. Audit Logging
+    # 6. Audit Logging
     def test_audit_logs(self):
         self.repo.log_security_event(SecurityAuditLog(
             id=None,
@@ -163,6 +126,79 @@ class TestSecuritySystem(unittest.TestCase):
         logs = self.repo.get_security_audit_logs(limit=10)
         self.assertGreaterEqual(len(logs), 1)
         self.assertEqual(logs[0]["event_type"], "TEST_EVENT")
+
+    # 7. Token Refresh, Rotation & Replay Attack Protection
+    def test_token_refresh_and_rotation(self):
+        # Register user
+        reg = self.auth_cases.register("refresh_test@test.com", "RefreshPass@123", "Test Refresh", "patient")
+
+        # Login
+        login_res = self.auth_cases.login("refresh_test@test.com", "RefreshPass@123")
+        refresh_token = login_res["refresh_token"]
+
+        # Decode refresh token
+        from security.infrastructure.jwt_service import TokenType
+        payload = self.jwt_svc.decode_token(refresh_token, expected_type=TokenType.REFRESH)
+        self.assertEqual(payload.type, TokenType.REFRESH)
+
+        # Perform Refresh
+        refresh_res = self.auth_cases.refresh_token(refresh_token)
+        self.assertIn("access_token", refresh_res)
+        self.assertIn("refresh_token", refresh_res)
+
+        # Verify old refresh token JTI is now revoked in database
+        self.assertTrue(self.repo.is_token_revoked(payload.jti))
+
+        # Attempt to reuse the old refresh token (Token Replay Attack)
+        with self.assertRaises(ValueError):
+            self.auth_cases.refresh_token(refresh_token)
+
+    # 8. Remember Me Custom Lifetimes
+    def test_remember_me_lifetimes(self):
+        reg = self.auth_cases.register("remember_test@test.com", "RememberPass@123", "Test Remember", "patient")
+
+        # Login with remember_me=True
+        login_true = self.auth_cases.login("remember_test@test.com", "RememberPass@123", remember_me=True)
+        from security.infrastructure.jwt_service import TokenType
+        payload_true = self.jwt_svc.decode_token(login_true["refresh_token"], expected_type=TokenType.REFRESH)
+        duration_days_true = (payload_true.exp - payload_true.iat) / 86400.0
+        self.assertAlmostEqual(duration_days_true, 30.0, places=1)
+
+        # Login with remember_me=False
+        login_false = self.auth_cases.login("remember_test@test.com", "RememberPass@123", remember_me=False)
+        payload_false = self.jwt_svc.decode_token(login_false["refresh_token"], expected_type=TokenType.REFRESH)
+        duration_days_false = (payload_false.exp - payload_false.iat) / 86400.0
+        self.assertAlmostEqual(duration_days_false, 7.0, places=1)
+
+    # 9. Verbose Exceptions
+    def test_verbose_exceptions(self):
+        from security.infrastructure.jwt_service import TokenExpiredError, TokenInvalidError
+        
+        # Invalid Token
+        with self.assertRaises(TokenInvalidError):
+            self.jwt_svc.decode_token("this_is_an_invalid_token_signature")
+
+        # Expired Token
+        import time
+        from security.domain.entities import Role
+        now = time.time()
+        # Create a token that expired 10 seconds ago
+        payload = {
+            "sub": "user-uuid-123",
+            "user_id": 1,
+            "email": "user@test.com",
+            "role": Role.PATIENT.value,
+            "jti": "jti-123",
+            "type": TokenType.ACCESS.value,
+            "iat": int(now - 100),
+            "exp": int(now - 10),
+        }
+        import jwt
+        from security.infrastructure.jwt_service import ALGORITHM
+        expired_token = jwt.encode(payload, self.jwt_svc.secret_key, algorithm=ALGORITHM)
+
+        with self.assertRaises(TokenExpiredError):
+            self.jwt_svc.decode_token(expired_token)
 
 
 if __name__ == "__main__":

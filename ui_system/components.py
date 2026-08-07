@@ -1,5 +1,6 @@
 import streamlit as st
-from ui_system.theme import toggle_theme
+import textwrap
+from ui_system.theme import toggle_theme, clean_html, st_html
 
 
 def get_user_initials(name: str) -> str:
@@ -36,7 +37,7 @@ def render_password_strength_meter(password: str) -> None:
     
     label, status_type, percent = meter_config.get(score, ("Weak 🔴", "danger", 25))
 
-    st.markdown(f"""
+    st_html(f"""
         <div class="pwd-meter-container" role="status" aria-label="Password Strength: {label}">
             <div class="pwd-meter-label-row">
                 <span class="pwd-label-text">Password Strength:</span>
@@ -46,42 +47,10 @@ def render_password_strength_meter(password: str) -> None:
                 <div class="pwd-meter-fill pwd-meter-fill-{status_type}" style="width: {percent}%;"></div>
             </div>
         </div>
-    """, unsafe_allow_html=True)
+    """)
 
 
-def render_social_login_buttons() -> None:
-    """Renders styled branded Social SSO Login buttons for Google and Microsoft 365."""
-    st.markdown("""
-        <div class="auth-divider">
-            <span>Or Connect With SSO</span>
-        </div>
-    """, unsafe_allow_html=True)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("""
-            <a class="sso-btn" onclick="alert('Connecting to Google Identity SSO Provider...')" href="javascript:void(0)" role="button" aria-label="Sign in with Google">
-                <svg viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                </svg>
-                Google SSO
-            </a>
-        """, unsafe_allow_html=True)
-    with col2:
-        st.markdown("""
-            <a class="sso-btn" onclick="alert('Connecting to Microsoft 365 Clinical Portal...')" href="javascript:void(0)" role="button" aria-label="Sign in with Microsoft">
-                <svg viewBox="0 0 23 23">
-                    <path fill="#f35325" d="M1 1h10v10H1z"/>
-                    <path fill="#81bc06" d="M12 1h10v10H12z"/>
-                    <path fill="#05a6f0" d="M1 12h10v10H1z"/>
-                    <path fill="#ffba08" d="M12 12h10v10H12z"/>
-                </svg>
-                Microsoft 365
-            </a>
-        """, unsafe_allow_html=True)
 
 
 def render_header(user=None, active_page: str = "🚀 Product Overview") -> None:
@@ -94,6 +63,12 @@ def render_header(user=None, active_page: str = "🚀 Product Overview") -> None
     user_initials = get_user_initials(user.get("full_name", "Doctor User")) if user else "AI"
     user_name = user.get("full_name", "Guest User") if user else "Guest Session"
     user_role = user.get("role", "doctor").lower() if user else "guest"
+
+    pic_url = user.get("google_profile_pic") if user else None
+    if pic_url:
+        avatar_content = f'<img src="{pic_url}" alt="Avatar" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">'
+    else:
+        avatar_content = f'<span>{user_initials}</span>'
 
     header_html = f"""
         <header class="aurora-navbar" role="banner" aria-label="AuraScan Application Header">
@@ -115,8 +90,8 @@ def render_header(user=None, active_page: str = "🚀 Product Overview") -> None
 
             <div class="aurora-nav-actions">
                 <div class="user-badge-pill" tabindex="0" aria-label="Current User Session: {user_name}, Role: {user_role.upper()}">
-                    <div class="user-avatar-circle" aria-hidden="true">
-                        <span>{user_initials}</span>
+                    <div class="user-avatar-circle" aria-hidden="true" style="overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                        {avatar_content}
                     </div>
                     <span class="header-user-name">{user_name}</span>
                     <span class="header-user-role">[{user_role.upper()}]</span>
@@ -124,13 +99,35 @@ def render_header(user=None, active_page: str = "🚀 Product Overview") -> None
             </div>
         </header>
     """
-    st.markdown(header_html, unsafe_allow_html=True)
+    st_html(header_html)
     
     col_l, col_r = st.columns([6, 1])
     with col_r:
-        if st.button(f"{theme_icon}", key="global_theme_toggle_btn", use_container_width=True, help="Toggle between Dark and Light color contrast themes"):
+        theme_class = "dark" if current_theme == "dark" else "light"
+        theme_icon_svg = """
+            <svg class="sun-svg" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px; height:14px;"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+        """ if current_theme == "light" else """
+            <svg class="moon-svg" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px; height:14px;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+        """
+        st_html(f"""
+            <div class="display-flex justify-content-end align-items-center height-full" style="padding-top: 4px;">
+                <div class="theme-toggle-switch-wrapper" title="Toggle color theme" tabindex="0" aria-label="Toggle color theme"
+                     onclick="const btn = document.querySelector('.hidden-theme-btn-global button'); if (btn) btn.click();"
+                     onkeydown="if (event.key === 'Enter' || event.key === ' ') {{ const btn = document.querySelector('.hidden-theme-btn-global button'); if (btn) btn.click(); }}">
+                    <div class="theme-toggle-track {theme_class}">
+                        <div class="theme-toggle-knob">
+                            <span class="theme-icon-container">
+                                {theme_icon_svg}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="hidden-theme-btn-global" style="display:none;">
+        """)
+        if st.button("Hidden Global Toggle", key="global_theme_toggle_btn_hidden"):
             toggle_theme()
-            st.rerun()
+        st_html("</div>")
 
 
 def render_sidebar_user_footer(user=None) -> None:
@@ -140,18 +137,24 @@ def render_sidebar_user_footer(user=None) -> None:
         email = user.get("email", "user@aurascan.ai")
         initials = get_user_initials(name)
         role = user.get("role", "doctor").upper()
+        pic_url = user.get("google_profile_pic")
         
-        st.sidebar.markdown(f"""
+        if pic_url:
+            avatar_content = f'<img src="{pic_url}" alt="Avatar" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">'
+        else:
+            avatar_content = f'<span>{initials}</span>'
+        
+        st_html(f"""
             <aside class="sidebar-user-footer" role="region" aria-label="Active Account Summary" tabindex="0">
-                <div class="user-avatar-circle" aria-hidden="true">
-                    <span>{initials}</span>
+                <div class="user-avatar-circle" aria-hidden="true" style="overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                    {avatar_content}
                 </div>
                 <div class="sidebar-user-footer-info">
                     <div class="sidebar-user-footer-name">{name}</div>
                     <div class="sidebar-user-footer-email">{email} [{role}]</div>
                 </div>
             </aside>
-        """, unsafe_allow_html=True)
+        """, container=st.sidebar)
 
 
 def render_toast(message: str, toast_type: str = "success") -> None:
@@ -169,7 +172,7 @@ def render_toast(message: str, toast_type: str = "success") -> None:
             <span class="toast-message">{message}</span>
         </div>
     """
-    st.markdown(toast_html, unsafe_allow_html=True)
+    st_html(toast_html)
 
 
 def render_badge(label: str, badge_type: str = "info") -> None:
@@ -179,7 +182,7 @@ def render_badge(label: str, badge_type: str = "info") -> None:
             <span>{label}</span>
         </span>
     """
-    st.markdown(html, unsafe_allow_html=True)
+    st_html(html)
 
 
 def render_modal(title: str, content_html: str, modal_id: str = "default_modal") -> None:
@@ -195,7 +198,7 @@ def render_modal(title: str, content_html: str, modal_id: str = "default_modal")
             </div>
         </div>
     """
-    st.markdown(modal_html, unsafe_allow_html=True)
+    st_html(modal_html)
 
 
 def render_empty_state_preset(preset_name: str, custom_title: str = None, custom_desc: str = None, action_label: str = None) -> None:
@@ -282,7 +285,7 @@ def render_empty_state_preset(preset_name: str, custom_title: str = None, custom
             <p class="preset-state-desc">{desc}</p>
         </div>
     """
-    st.markdown(card_html, unsafe_allow_html=True)
+    st_html(card_html)
     if btn_text:
         col_l, col_m, col_r = st.columns([2, 3, 2])
         with col_m:
@@ -299,7 +302,7 @@ def render_empty_state(icon: str, title: str, description: str) -> None:
             <p class="preset-state-desc">{description}</p>
         </div>
     """
-    st.markdown(html, unsafe_allow_html=True)
+    st_html(html)
 
 
 def render_alert_card(title: str, message: str, alert_type: str = "info") -> None:
@@ -312,7 +315,7 @@ def render_alert_card(title: str, message: str, alert_type: str = "info") -> Non
             </div>
         </div>
     """
-    st.markdown(html, unsafe_allow_html=True)
+    st_html(html)
 
 
 def render_skeleton_loader(title: str = "Running Multi-Stage AI Diagnostic Pipeline...") -> None:
@@ -328,7 +331,7 @@ def render_skeleton_loader(title: str = "Running Multi-Stage AI Diagnostic Pipel
             <div class="skeleton-box skeleton-text skeleton-w-70"></div>
         </div>
     """
-    st.markdown(skeleton_html, unsafe_allow_html=True)
+    st_html(skeleton_html)
 
 
 def render_landing_page() -> None:
@@ -354,10 +357,7 @@ def render_landing_page() -> None:
             st.rerun()
 
     with col_actions3:
-        st.markdown(
-            '<a href="https://github.com/karthikkumar1330/Explainable-Brain-Tumor-Detection" target="_blank" class="text-decoration-none"><button class="btn-saas-secondary w-100 justify-content-center">💻 Github Repo</button></a>',
-            unsafe_allow_html=True
-        )
+        st_html('<a href="https://github.com/karthikkumar1330/Explainable-Brain-Tumor-Detection" target="_blank" class="text-decoration-none"><button class="btn-saas-secondary w-100 justify-content-center">💻 Github Repo</button></a>')
 
     with col_actions4:
         if st.button("📄 Documentation", key="landing_top_doc_btn", use_container_width=True):
@@ -366,7 +366,7 @@ def render_landing_page() -> None:
 
     # Render Live Demo Modal Drawer if triggered
     if st.session_state.get("show_live_demo_modal", False):
-        st.markdown("""
+        st_html("""
             <div class="preset-state-card border-highlight radius-lg p-24 mb-24 shadow-lg">
                 <div class="display-flex align-items-center justify-content-between mb-16">
                     <div class="display-flex align-items-center gap-10">
@@ -398,11 +398,11 @@ def render_landing_page() -> None:
                     <strong>Diagnostic Finding:</strong> Morphological analysis indicates an irregular left temporal lobe mass with hyperintense signal on T2/FLAIR. UNeXt MLP boundary contours exhibit crisp demarcation with 91.47% Dice fidelity.
                 </div>
             </div>
-        """, unsafe_allow_html=True)
+        """)
 
     # Render Documentation Modal Drawer if triggered
     if st.session_state.get("show_doc_modal", False):
-        st.markdown("""
+        st_html("""
             <div class="preset-state-card border-highlight radius-lg p-24 mb-24">
                 <h3 class="m-0 font-size-18 font-weight-600">📄 AuraScan AI Enterprise Documentation Summary</h3>
                 <div class="display-grid grid-cols-2 gap-20 font-size-13 text-secondary">
@@ -424,12 +424,12 @@ def render_landing_page() -> None:
                     </div>
                 </div>
             </div>
-        """, unsafe_allow_html=True)
+        """)
 
     # -------------------------------------------------------------------------
     # 1. FIXED TOP NAVIGATION BAR (HTML/CSS Sticky Glassmorphic Header)
     # -------------------------------------------------------------------------
-    st.markdown("""
+    st_html("""
         <header class="saas-navbar-sticky" id="navbar">
             <div class="saas-nav-container">
                 <a href="#hero" class="saas-nav-brand">
@@ -450,14 +450,12 @@ def render_landing_page() -> None:
                 </div>
             </div>
         </header>
-
-        <div class="saas-landing-body">
-    """, unsafe_allow_html=True)
+    """)
 
     # -------------------------------------------------------------------------
     # 2. HERO SECTION
     # -------------------------------------------------------------------------
-    st.markdown("""
+    st_html("""
         <section class="saas-hero" id="hero">
             <div class="saas-hero-content">
                 <div class="saas-section-badge">
@@ -567,12 +565,12 @@ def render_landing_page() -> None:
                 </svg>
             </div>
         </section>
-    """, unsafe_allow_html=True)
+    """)
 
     # -------------------------------------------------------------------------
     # 3. FEATURES SECTION
     # -------------------------------------------------------------------------
-    st.markdown("""
+    st_html("""
         <section class="saas-section" id="features">
             <div class="saas-section-header">
                 <div class="saas-section-badge">⚡ CLINICAL CAPABILITIES</div>
@@ -632,12 +630,12 @@ def render_landing_page() -> None:
                 </div>
             </div>
         </section>
-    """, unsafe_allow_html=True)
+    """)
 
     # -------------------------------------------------------------------------
     # 4. AI WORKFLOW SECTION
     # -------------------------------------------------------------------------
-    st.markdown("""
+    st_html("""
         <section class="saas-section" id="workflow">
             <div class="saas-section-header">
                 <div class="saas-section-badge">🔄 END-TO-END WORKFLOW</div>
@@ -681,12 +679,12 @@ def render_landing_page() -> None:
                 </div>
             </div>
         </section>
-    """, unsafe_allow_html=True)
+    """)
 
     # -------------------------------------------------------------------------
     # 5. CLINICAL PIPELINE SECTION
     # -------------------------------------------------------------------------
-    st.markdown("""
+    st_html("""
         <section class="saas-section" id="pipeline">
             <div class="saas-section-header">
                 <div class="saas-section-badge">🔬 ARCHITECTURAL PIPELINE</div>
@@ -737,12 +735,12 @@ def render_landing_page() -> None:
                 </div>
             </div>
         </section>
-    """, unsafe_allow_html=True)
+    """)
 
     # -------------------------------------------------------------------------
     # 6. ACCURACY SECTION
     # -------------------------------------------------------------------------
-    st.markdown("""
+    st_html("""
         <section class="saas-section" id="accuracy">
             <div class="saas-section-header">
                 <div class="saas-section-badge">📊 VALIDATED ACCURACY</div>
@@ -803,12 +801,12 @@ def render_landing_page() -> None:
                 </div>
             </div>
         </section>
-    """, unsafe_allow_html=True)
+    """)
 
     # -------------------------------------------------------------------------
     # 7. TESTIMONIALS SECTION
     # -------------------------------------------------------------------------
-    st.markdown("""
+    st_html("""
         <section class="saas-section" id="testimonials">
             <div class="saas-section-header">
                 <div class="saas-section-badge">💬 CLINICIAN TESTIMONIALS</div>
@@ -883,12 +881,12 @@ def render_landing_page() -> None:
                 </div>
             </div>
         </section>
-    """, unsafe_allow_html=True)
+    """)
 
     # -------------------------------------------------------------------------
     # 8. HOSPITAL PARTNERS SECTION
     # -------------------------------------------------------------------------
-    st.markdown("""
+    st_html("""
         <section class="saas-section" id="partners">
             <div class="saas-section-header">
                 <div class="saas-section-badge">🏥 HOSPITAL NETWORK</div>
@@ -931,14 +929,12 @@ def render_landing_page() -> None:
                 </div>
             </div>
         </section>
-    """, unsafe_allow_html=True)
+    """)
 
     # -------------------------------------------------------------------------
     # 9. FOOTER SECTION
     # -------------------------------------------------------------------------
-    st.markdown("""
-        </div> <!-- End of saas-landing-body -->
-
+    st_html("""
         <footer class="saas-footer">
             <div class="saas-footer-content">
                 <div>
@@ -991,7 +987,7 @@ def render_landing_page() -> None:
                 <div>For clinical decision support & research purposes. Built with PyTorch & Streamlit.</div>
             </div>
         </footer>
-    """, unsafe_allow_html=True)
+    """)
 
 
 
@@ -1000,17 +996,17 @@ def render_metric_card(title: str, value: str, border_color: str = "default", va
     border_attr = f"border-color: {border_color};" if border_color != "default" else ""
     val_attr = f"color: {value_color};" if value_color != "default" else ""
 
-    st.markdown(f"""
+    st_html(f"""
         <div class="metric-card-saas" style="{border_attr}" role="region" aria-label="Metric: {title} is {value}" tabindex="0">
             <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 6px;">{title}</div>
             <div style="font-family: 'Poppins', sans-serif; font-size: 22px; font-weight: 600; {val_attr}">{value}</div>
         </div>
-    """, unsafe_allow_html=True)
+    """)
 
 
 def render_user_profile(user: dict) -> None:
     """Renders the accessible User Profile & Settings management view."""
-    st.markdown("<h2 class=\"m-0 font-weight-600\">⚙️ Account & System Settings</h2>", unsafe_allow_html=True)
+    st_html("<h2 class=\"m-0 font-weight-600\">⚙️ Account & System Settings</h2>")
     st.markdown("Manage user profile information, security preferences, and system notification rules.")
 
     st.divider()
@@ -1023,11 +1019,11 @@ def render_user_profile(user: dict) -> None:
     col_nav, col_content = st.columns([1, 3])
 
     with col_nav:
-        st.markdown("""
+        st_html("""
         <div class="settings-nav-header">
             <span class="font-weight-700 text-muted font-size-11 uppercase letter-spacing-05">User Settings</span>
         </div>
-        """, unsafe_allow_html=True)
+        """)
         
         nav_items = [
             ("👤 Profile", "profile"),
@@ -1056,17 +1052,23 @@ def render_user_profile(user: dict) -> None:
             st.markdown("### Public Profile")
             st.markdown("---")
             
-            st.markdown(f"""
+            pic_url = user.get("google_profile_pic")
+            if pic_url:
+                avatar_html = f'<img src="{pic_url}" alt="Avatar" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">'
+            else:
+                avatar_html = f'{user.get("full_name", "U")[:2].upper()}'
+
+            st_html(f"""
             <div class="display-flex align-items-center gap-16 mb-20">
-                <div class="settings-profile-avatar">
-                    {user.get("full_name", "U")[:2].upper()}
+                <div class="settings-profile-avatar" style="overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                    {avatar_html}
                 </div>
                 <div>
                     <h4 class="m-0 text-primary">{user.get("full_name", "User")}</h4>
                     <span class="font-size-12 text-muted">{user.get("role", "doctor").upper()} | {user.get("email", "")}</span>
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            """)
 
             u_name = st.text_input("Full Name", value=user.get("full_name", "User"), key="prof_name_input")
             u_email = st.text_input("Email Address", value=user.get("email", ""), disabled=True, key="prof_email_input")
@@ -1123,9 +1125,9 @@ def render_user_profile(user: dict) -> None:
             st.markdown("---")
             
             st.write("**Update Password**")
-            curr_pass = st.text_input("Current Password", type="password", key="sec_curr_pass")
-            new_pass = st.text_input("New Password", type="password", key="sec_new_pass")
-            conf_pass = st.text_input("Confirm New Password", type="password", key="sec_conf_pass")
+            curr_pass = render_password_input_with_toggle("Current Password", "sec_curr_pass", help_text="Enter your current password")
+            new_pass = render_password_input_with_toggle("New Password", "sec_new_pass", help_text="Enter a new secure password")
+            conf_pass = render_password_input_with_toggle("Confirm New Password", "sec_conf_pass", help_text="Re-enter new password to confirm")
             
             if st.button("Update Account Password", key="save_sec_pass_btn"):
                 if curr_pass and new_pass:
@@ -1159,7 +1161,7 @@ def render_user_profile(user: dict) -> None:
                     st.markdown(f"**{k['name']}**")
                     st.markdown(f"`{k['prefix']}` (Created: {k['created']})")
                 with k_col2:
-                    st.markdown("""<span class="text-success font-weight-bold">🟢 ACTIVE</span>""", unsafe_allow_html=True)
+                    st_html("""<span class="text-success font-weight-bold">🟢 ACTIVE</span>""")
                 with k_col3:
                     if st.button("Revoke", key=f"revoke_key_{k['name']}", type="secondary"):
                         st.session_state["api_keys_list"] = [x for x in st.session_state["api_keys_list"] if x["name"] != k["name"]]
@@ -1192,21 +1194,21 @@ def render_user_profile(user: dict) -> None:
             
             epic_conn = st.toggle("Connect to Epic Systems EHR", value=True, key="int_epic_toggle")
             if epic_conn:
-                st.markdown("""<div class="text-success font-size-12 font-weight-600 mb-8">🟢 Live EHR Sync active (Epic Hub, Region 4)</div>""", unsafe_allow_html=True)
+                st_html("""<div class="text-success font-size-12 font-weight-600 mb-8">🟢 Live EHR Sync active (Epic Hub, Region 4)</div>""")
             else:
-                st.markdown("""<div class="text-muted font-size-12 mb-8">⚪ Epic connection inactive</div>""", unsafe_allow_html=True)
+                st_html("""<div class="text-muted font-size-12 mb-8">⚪ Epic connection inactive</div>""")
                 
             cerner_conn = st.toggle("Connect to Oracle Cerner EHR", value=False, key="int_cerner_toggle")
             if cerner_conn:
-                st.markdown("""<div class="text-success font-size-12 font-weight-600 mb-8">🟢 Live EHR Sync active (Oracle Cloud Hub)</div>""", unsafe_allow_html=True)
+                st_html("""<div class="text-success font-size-12 font-weight-600 mb-8">🟢 Live EHR Sync active (Oracle Cloud Hub)</div>""")
             else:
-                st.markdown("""<div class="text-muted font-size-12 mb-8">⚪ Oracle Cerner connection inactive</div>""", unsafe_allow_html=True)
+                st_html("""<div class="text-muted font-size-12 mb-8">⚪ Oracle Cerner connection inactive</div>""")
 
             fhir_conn = st.toggle("FHIR REST API Gateway (v4.0.1)", value=True, key="int_fhir_toggle")
             if fhir_conn:
-                st.markdown("""<div class="text-success font-size-12 font-weight-600 mb-8">🟢 FHIR JSON sync endpoint enabled (https://fhir.aurascan.local/v4)</div>""", unsafe_allow_html=True)
+                st_html("""<div class="text-success font-size-12 font-weight-600 mb-8">🟢 FHIR JSON sync endpoint enabled (https://fhir.aurascan.local/v4)</div>""")
             else:
-                st.markdown("""<div class="text-muted font-size-12 mb-8">⚪ FHIR REST Gateway disconnected</div>""", unsafe_allow_html=True)
+                st_html("""<div class="text-muted font-size-12 mb-8">⚪ FHIR REST Gateway disconnected</div>""")
 
             if st.button("Apply Integration Bridges", key="save_integrations_btn"):
                 render_toast("EHR Sync Bridges configured successfully!", "success")
@@ -1240,7 +1242,7 @@ def render_user_profile(user: dict) -> None:
             st.markdown("---")
             
             st.write("##### Active User Browser Sessions")
-            st.markdown("""
+            st_html("""
             <div class="font-mono bg-card p-12 radius-md border-1 mb-16">
                 <div class="text-success font-weight-bold">✦ Chrome on Windows 11 (Current Web Session)</div>
                 <div class="font-size-11 text-muted">IP Address: 192.168.1.45 | Location: Seattle, USA | Login: Today, 08:30</div>
@@ -1249,10 +1251,10 @@ def render_user_profile(user: dict) -> None:
                 <div class="text-secondary font-weight-bold">✦ Safari on Apple iPad Pro (Dr. Sarah's Tablet)</div>
                 <div class="font-size-11 text-muted">IP Address: 192.168.1.102 | Location: Neuro-Oncology Suite 4 | Login: Yesterday, 14:15</div>
             </div>
-            """, unsafe_allow_html=True)
+            """)
             
             st.write("##### Registered Hospital Hardware Devices")
-            st.markdown("""
+            st_html("""
             <div class="font-mono bg-card p-12 radius-md border-1 mb-16">
                 <div class="text-success font-weight-bold">✦ PACS Room 3B Axial Diagnostic Display Monitor</div>
                 <div class="font-size-11 text-muted">Hardware Node ID: HW_PACS_3B | Status: Connected | Calibration Check: Pass</div>
@@ -1261,7 +1263,7 @@ def render_user_profile(user: dict) -> None:
                 <div class="text-success font-weight-bold">✦ Siemens MAGNETOM MRI Scanner Data Link (Node 2)</div>
                 <div class="font-size-11 text-muted">Hardware Node ID: SCAN_LINK_MRI_2 | Status: Connected | Calibration Check: Pass</div>
             </div>
-            """, unsafe_allow_html=True)
+            """)
 
 
 # =====================================================================
@@ -1269,13 +1271,19 @@ def render_user_profile(user: dict) -> None:
 # =====================================================================
 
 def render_auth_nav_header() -> None:
-    """Renders the top navbar header for unauthenticated portal visitors."""
+    """Renders the top navbar header for unauthenticated portal visitors with a modern animated theme toggle."""
     current_theme = st.session_state.get("theme", "dark")
-    theme_icon = "☀️ Light Mode" if current_theme == "dark" else "🌙 Dark Mode"
+    theme_class = "dark" if current_theme == "dark" else "light"
     
-    col_logo, col_nav, col_theme = st.columns([3, 6, 1.8])
+    theme_icon_svg = """
+        <svg class="sun-svg" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px; height:14px;"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+    """ if current_theme == "light" else """
+        <svg class="moon-svg" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px; height:14px;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+    """
+
+    col_logo, col_nav, col_theme = st.columns([3, 2.5, 1.8])
     with col_logo:
-        st.markdown("""
+        st_html("""
             <div class="display-flex align-items-center gap-10 py-4">
                 <span class="font-size-24">🧠</span>
                 <div>
@@ -1283,498 +1291,515 @@ def render_auth_nav_header() -> None:
                     <span class="font-size-10 text-accent font-weight-500 uppercase ml-6 px-6 py-2 bg-info-bg radius-sm border-1">Clinical SaaS</span>
                 </div>
             </div>
-        """, unsafe_allow_html=True)
+        """)
     with col_nav:
-        nav_col1, nav_col2, nav_col3, nav_col4, nav_col5 = st.columns(5)
+        nav_col1, nav_col2 = st.columns(2)
         with nav_col1:
-            if st.button("Overview", key="unauth_nav_landing", use_container_width=True):
-                st.session_state["auth_page"] = "landing"
-                st.rerun()
-        with nav_col2:
             if st.button("Sign In", key="unauth_nav_login", use_container_width=True):
                 st.session_state["auth_page"] = "login"
                 st.rerun()
-        with nav_col3:
+        with nav_col2:
             if st.button("Register", key="unauth_nav_reg", use_container_width=True):
                 st.session_state["auth_page"] = "register"
                 st.rerun()
-        with nav_col4:
-            if st.button("Forgot Pass", key="unauth_nav_fp", use_container_width=True):
-                st.session_state["auth_page"] = "forgot_password"
-                st.rerun()
-        with nav_col5:
-            if st.button("Verify OTP", key="unauth_nav_otp", use_container_width=True):
-                st.session_state["auth_page"] = "email_verification"
-                st.rerun()
     with col_theme:
-        if st.button(f"{theme_icon}", key="unauth_theme_toggle", use_container_width=True):
+        st_html(f"""
+            <div class="display-flex justify-content-end align-items-center height-full" style="padding-top: 4px;">
+                <div class="theme-toggle-switch-wrapper" title="Toggle color theme" tabindex="0" aria-label="Toggle color theme"
+                     onclick="const btn = document.querySelector('.hidden-theme-btn-auth button'); if (btn) btn.click();"
+                     onkeydown="if (event.key === 'Enter' || event.key === ' ') {{ const btn = document.querySelector('.hidden-theme-btn-auth button'); if (btn) btn.click(); }}">
+                    <div class="theme-toggle-track {theme_class}">
+                        <div class="theme-toggle-knob">
+                            <span class="theme-icon-container">
+                                {theme_icon_svg}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="hidden-theme-btn-auth" style="display:none;">
+        """)
+        if st.button("Hidden Toggle", key="unauth_theme_toggle_hidden"):
             toggle_theme()
-            st.rerun()
-    st.markdown("<hr class=\"hr-divider\">", unsafe_allow_html=True)
+        st_html("</div>")
+    st_html("<hr class=\"hr-divider\">")
 
 
 def render_password_input_with_toggle(label: str, key_prefix: str, help_text: str = "") -> str:
-    """Renders a password input field with an interactive visibility eye toggle button."""
-    toggle_key = f"show_pass_{key_prefix}"
-    if toggle_key not in st.session_state:
-        st.session_state[toggle_key] = False
-
-    is_shown = st.session_state[toggle_key]
-    input_type = "default" if is_shown else "password"
-    eye_icon = "🙈 Hide" if is_shown else "👁️ Show"
-
-    col_in, col_btn = st.columns([4.2, 1.2])
-    with col_btn:
-        st.markdown("<div class=\"spacer-28\"></div>", unsafe_allow_html=True)
-        if st.button(eye_icon, key=f"toggle_pass_{key_prefix}", help="Toggle password visibility", use_container_width=True):
-            st.session_state[toggle_key] = not st.session_state[toggle_key]
-            st.rerun()
-
-    with col_in:
-        pwd_val = st.text_input(label, type=input_type, key=f"input_pass_{key_prefix}", help=help_text)
+    """Renders a password input field with an interactive visibility eye toggle button inside the input field."""
+    st_html(f'<div class="password-input-wrapper" id="wrapper_{key_prefix}">')
+    
+    pwd_val = st.text_input(label, type="password", placeholder=" ", key=f"input_pass_{key_prefix}", help=help_text)
+    
+    st_html(f'''
+        <button class="password-toggle-btn" type="button" aria-label="Toggle password visibility"
+                onclick="
+                    const wrapper = document.getElementById('wrapper_{key_prefix}');
+                    const input = wrapper ? wrapper.querySelector('input') : null;
+                    if (input) {{
+                        const isPwd = input.type === 'password';
+                        input.type = isPwd ? 'text' : 'password';
+                        this.classList.toggle('visible', !isPwd);
+                    }}
+                ">
+            <svg class="eye-icon eye-closed" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+            </svg>
+            <svg class="eye-icon eye-open" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+        </button>
+    ''')
+    st_html('</div>')
 
     return pwd_val
 
 
-def render_social_login_buttons() -> None:
-    """Renders official Google and Microsoft social login options."""
-    st.markdown("""
-        <div class="auth-divider">Or continue with</div>
-    """, unsafe_allow_html=True)
-
-    col_g, col_ms = st.columns(2)
-    with col_g:
-        if st.button("Google", key="btn_google_oauth", help="Sign in with official Google account", use_container_width=True):
-            render_toast("Google OAuth Service Connected", "info")
-    with col_ms:
-        if st.button("Microsoft", key="btn_ms_oauth", help="Sign in with official Microsoft account", use_container_width=True):
-            render_toast("Microsoft OAuth Service Connected", "info")
-
-
-def render_auth_left_panel(subtitle: str = "Enterprise Healthcare Platform") -> None:
+def render_auth_left_panel(subtitle: str = "Enterprise Neuro-Imaging & AI Diagnostic Intelligence Suite") -> None:
     """Renders the left column branding, SVG medical illustration, and compliance trust badges."""
-    st.markdown(f"""
+    st_html(f"""
         <div class="auth-left-brand-panel">
-            <div class="mb-20">
-                <div class="display-flex align-items-center gap-10 mb-8">
-                    <span class="font-size-28">🧠</span>
-                    <h2 class="m-0 font-size-24 font-weight-700 text-primary">AuraScan AI</h2>
-                </div>
-                <p class="m-0 font-size-13 text-secondary line-height-15">
-                    {subtitle}
-                </p>
-            </div>
-
-            <!-- High-Tech Medical Brain MRI Vector SVG Illustration -->
-            <div class="text-center bg-secondary radius-lg border-1 p-16 mt-16 mb-16">
-                <svg class="medical-illustration-svg" viewBox="0 0 380 200" width="100%" height="200" xmlns="http://www.w3.org/2000/svg">
-                    <defs>
-                        <linearGradient id="mriGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" stop-color="var(--accent-primary)" stop-opacity="0.9"/>
-                            <stop offset="50%" stop-color="var(--text-accent)" stop-opacity="0.5"/>
-                            <stop offset="100%" stop-color="var(--accent-secondary)" stop-opacity="0.9"/>
-                        </linearGradient>
-                        <linearGradient id="scanBeamGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stop-color="var(--text-accent)" stop-opacity="0"/>
-                            <stop offset="50%" stop-color="var(--text-accent)" stop-opacity="0.7"/>
-                            <stop offset="100%" stop-color="var(--text-accent)" stop-opacity="0"/>
-                        </linearGradient>
-                    </defs>
-                    <!-- Outer HUD Rings -->
-                    <circle cx="190" cy="100" r="85" fill="none" stroke="url(#mriGrad)" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.6"/>
-                    <circle cx="190" cy="100" r="68" fill="none" stroke="var(--accent-primary)" stroke-width="1" opacity="0.3"/>
-                    <!-- Brain Contours -->
-                    <path d="M 155 60 C 128 60 118 88 118 108 C 118 130 138 145 160 145 C 175 145 182 135 187 126 C 187 98 187 78 155 60 Z" fill="url(#mriGrad)" opacity="0.85"/>
-                    <path d="M 225 60 C 252 60 262 88 262 108 C 262 130 242 145 220 145 C 205 145 198 135 193 126 C 193 98 193 78 225 60 Z" fill="url(#mriGrad)" opacity="0.85"/>
-                    <!-- Synapse Connections -->
-                    <line x1="145" y1="90" x2="175" y2="110" stroke="var(--text-primary)" stroke-width="1.5" opacity="0.8"/>
-                    <line x1="175" y1="110" x2="205" y2="110" stroke="var(--text-primary)" stroke-width="1.5" opacity="0.8"/>
-                    <line x1="205" y1="110" x2="235" y2="90" stroke="var(--text-primary)" stroke-width="1.5" opacity="0.8"/>
-                    <circle cx="145" cy="90" r="4" fill="var(--text-accent)"/>
-                    <circle cx="175" cy="110" r="5" fill="var(--accent-secondary)"/>
-                    <circle cx="205" cy="110" r="5" fill="var(--accent-secondary)"/>
-                    <circle cx="235" cy="90" r="4" fill="var(--text-accent)"/>
-                    <circle cx="190" cy="100" r="6" fill="var(--status-success)"/>
-                    <rect x="105" y="75" width="170" height="3" fill="url(#scanBeamGrad)"/>
-                </svg>
-            </div>
-
-            <!-- Regulatory & Compliance Badges -->
-            <div>
-                <div class="compliance-badge-card">
-                    <div class="badge-icon-box">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <div class="auth-animated-bg"></div>
+            <div class="auth-panel-content">
+                <div class="mb-20">
+                    <div class="auth-brand-header">
+                        <span class="auth-logo-icon">🧠</span>
+                        <h2 class="auth-logo-title">AuraScan AI</h2>
                     </div>
-                    <div>
-                        <div class="font-size-13 font-weight-600 text-primary">HIPAA Badge</div>
-                        <div class="font-size-11 text-muted">Protected Health Information Security</div>
-                    </div>
+                    <h3 class="m-0 font-size-18 font-weight-600 text-primary mt-8 mb-4">Welcome to AuraScan AI</h3>
+                    <p class="m-0 font-size-13 text-muted line-height-15">
+                        {subtitle}
+                    </p>
                 </div>
 
-                <div class="compliance-badge-card">
-                    <div class="badge-icon-box">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                <!-- High-Tech Medical Brain MRI Vector SVG Illustration with Animations -->
+                <div class="mri-illustration-container text-center">
+                    <svg class="medical-illustration-svg" viewBox="0 0 380 200" width="100%" height="190" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <linearGradient id="mriGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="var(--accent-primary)" stop-opacity="0.9"/>
+                                <stop offset="50%" stop-color="var(--text-accent)" stop-opacity="0.6"/>
+                                <stop offset="100%" stop-color="var(--accent-secondary)" stop-opacity="0.9"/>
+                            </linearGradient>
+                            <linearGradient id="scanBeamGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stop-color="var(--text-accent)" stop-opacity="0"/>
+                                <stop offset="50%" stop-color="var(--text-accent)" stop-opacity="0.8"/>
+                                <stop offset="100%" stop-color="var(--text-accent)" stop-opacity="0"/>
+                            </linearGradient>
+                        </defs>
+                        <!-- Outer Animated HUD Rings -->
+                        <circle class="mri-hud-ring" cx="190" cy="100" r="85" fill="none" stroke="url(#mriGrad)" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.6"/>
+                        <circle cx="190" cy="100" r="68" fill="none" stroke="var(--accent-primary)" stroke-width="1" opacity="0.3"/>
+                        <!-- Brain Contours -->
+                        <path d="M 155 60 C 128 60 118 88 118 108 C 118 130 138 145 160 145 C 175 145 182 135 187 126 C 187 98 187 78 155 60 Z" fill="url(#mriGrad)" opacity="0.85"/>
+                        <path d="M 225 60 C 252 60 262 88 262 108 C 262 130 242 145 220 145 C 205 145 198 135 193 126 C 193 98 193 78 225 60 Z" fill="url(#mriGrad)" opacity="0.85"/>
+                        <!-- Synapse Connections -->
+                        <line x1="145" y1="90" x2="175" y2="110" stroke="var(--text-primary)" stroke-width="1.5" opacity="0.8"/>
+                        <line x1="175" y1="110" x2="205" y2="110" stroke="var(--text-primary)" stroke-width="1.5" opacity="0.8"/>
+                        <line x1="205" y1="110" x2="235" y2="90" stroke="var(--text-primary)" stroke-width="1.5" opacity="0.8"/>
+                        <circle class="mri-synapse-node" cx="145" cy="90" r="4" fill="var(--text-accent)"/>
+                        <circle class="mri-synapse-node" cx="175" cy="110" r="5" fill="var(--accent-secondary)"/>
+                        <circle class="mri-synapse-node" cx="205" cy="110" r="5" fill="var(--accent-secondary)"/>
+                        <circle class="mri-synapse-node" cx="235" cy="90" r="4" fill="var(--text-accent)"/>
+                        <circle cx="190" cy="100" r="6" fill="var(--status-success)"/>
+                        <rect class="mri-scan-beam" x="105" y="45" width="170" height="3" fill="url(#scanBeamGrad)"/>
+                    </svg>
+                </div>
+
+                <!-- MRI Diagnostic Feature Badges -->
+                <div class="compliance-badge-grid">
+                    <div class="compliance-badge-card">
+                        <div class="badge-icon-box">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="badge-title">Brain MRI Analysis</div>
+                            <div class="badge-desc">Advanced voxel-based tissue mapping</div>
+                        </div>
                     </div>
-                    <div>
-                        <div class="font-size-13 font-weight-600 text-primary">NABH Badge</div>
-                        <div class="font-size-11 text-muted">Accredited Hospital Quality Standard</div>
+
+                    <div class="compliance-badge-card">
+                        <div class="badge-icon-box">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                <polyline points="22 4 12 14.01 9 11.01"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="badge-title">AI Powered Diagnosis</div>
+                            <div class="badge-desc">Instant confidence-calibrated insights</div>
+                        </div>
+                    </div>
+
+                    <div class="compliance-badge-card">
+                        <div class="badge-icon-box">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                <line x1="9" y1="3" x2="9" y2="21"/>
+                                <line x1="15" y1="3" x2="15" y2="21"/>
+                                <line x1="3" y1="9" x2="21" y2="9"/>
+                                <line x1="3" y1="15" x2="21" y2="15"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="badge-title">UNeXt Segmentation</div>
+                            <div class="badge-desc">Shifted MLP tokenized boundary mapping</div>
+                        </div>
+                    </div>
+
+                    <div class="compliance-badge-card">
+                        <div class="badge-icon-box">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                                <path d="M2 17l10 5 10-5"/>
+                                <path d="M2 12l10 5 10-5"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="badge-title">EfficientNet Classification</div>
+                            <div class="badge-desc">Multi-class pathology category identification</div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="compliance-badge-card">
-                    <div class="badge-icon-box">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                    </div>
-                    <div>
-                        <div class="font-size-13 font-weight-600 text-primary">ISO Badge</div>
-                        <div class="font-size-11 text-muted">ISO 27001 Security Management</div>
-                    </div>
+                <!-- Security Footer -->
+                <div class="auth-left-panel-footer">
+                    🔒 <strong>Enterprise Security:</strong> 256-Bit TLS Encryption • Zero-Trust Access Control • SOC2 Type II Certified
                 </div>
-            </div>
-
-            <!-- Security Copy -->
-            <div class="auth-left-panel-footer">
-                🔒 <strong>Security Text:</strong> 256-Bit TLS Encryption • Zero-Trust Access Control • SOC2 Type II Certified
             </div>
         </div>
-    """, unsafe_allow_html=True)
+    """)
 
 
 def render_login_view(auth_use_cases) -> None:
-    """Renders 1. Login view in full-screen 2-column layout with 420px card width."""
-    st.markdown('<div class="auth-fullscreen-active">', unsafe_allow_html=True)
+    """Renders Login view in full-screen 2-column layout with responsive glass card layout."""
     col_left, col_right = st.columns([1.1, 1.0])
 
     with col_left:
-        render_auth_left_panel("Sign in to your clinical diagnostic workspace to access patient records and AI scan pipeline.")
+        render_auth_left_panel("AI-powered medical imaging analytics and neurological scan workspace.")
 
     with col_right:
-        st.markdown('<div class="auth-card-420">', unsafe_allow_html=True)
-        st.markdown("""
-            <div class="text-center mb-20">
-                <h3 class="m-0 font-size-22 font-weight-600 text-primary mb-4">Sign in to AuraScan AI</h3>
-                <p class="m-0 font-size-13 text-muted">Enter your credentials to access your session.</p>
-            </div>
-        """, unsafe_allow_html=True)
+        st_html("""
+            <div class="auth-right-glass-card">
+                <div class="text-center mb-24">
+                    <h3 class="m-0 font-size-22 font-weight-600 text-primary mb-4">Sign in to AuraScan AI</h3>
+                    <p class="m-0 font-size-13 text-muted">Enter your clinical credentials to access your workspace.</p>
+                </div>
+        """)
 
-        l_email = st.text_input("Clinical Email Address", key="st_login_email", help="Enter your registered email")
+        # Error message rendering (persisted in session state)
+        login_error_key = "login_error_msg"
+        if login_error_key not in st.session_state:
+            st.session_state[login_error_key] = None
+
+        if st.session_state[login_error_key]:
+            st_html(f"""
+                <div class="auth-alert-card auth-alert-danger" role="alert">
+                    <span class="alert-icon">⚠️</span>
+                    <div class="alert-content">
+                        {st.session_state[login_error_key]}
+                    </div>
+                </div>
+            """)
+            st.session_state[login_error_key] = None
+
+        l_email = st.text_input("Clinical Email Address", placeholder=" ", key="st_login_email", help="Enter your registered email")
         l_pass = render_password_input_with_toggle("Password", "login_pass", help_text="Enter account password")
 
-        col_rem, col_fp = st.columns([1.2, 1.2])
-        with col_rem:
-            st.checkbox("Remember me", value=True, key="st_login_remember")
-        with col_fp:
-            if st.button("Forgot password?", key="login_to_fp_btn", use_container_width=True):
-                st.session_state["auth_page"] = "forgot_password"
+        st.checkbox("Remember me", value=True, key="st_login_remember")
+
+        st_html("<div class=\"spacer-16\"></div>")
+        if st.button("Sign In 🔑", key="st_login_submit_btn", type="primary", use_container_width=True):
+            try:
+                remember_me = st.session_state.get("st_login_remember", False)
+                res = auth_use_cases.login(l_email, l_pass, remember_me=remember_me)
+                
+                st.session_state["user"] = res["user"]
+                st.session_state["access_token"] = res["access_token"]
+                st.session_state["refresh_token"] = res["refresh_token"]
+                render_toast(f"Welcome back, {res['user']['full_name']}!", "success")
+                
+                # Set default landing page based on role and redirect immediately
+                user_role = res["user"].get("role", "patient")
+                role_val = user_role.value if hasattr(user_role, "value") else str(user_role)
+                role_lower = role_val.lower().strip()
+                if role_lower == "admin":
+                    landing_page = "🔑 Admin Dashboard"
+                elif role_lower == "doctor":
+                    landing_page = "🩺 Doctor Dashboard"
+                else:
+                    landing_page = "👤 Patient Dashboard"
+                st.session_state["page"] = landing_page
+                st.session_state["nav_page"] = landing_page
+                st.rerun()
+            except Exception as err:
+                st.session_state[login_error_key] = str(err)
                 st.rerun()
 
-        st.markdown("<div class=\"spacer-8\"></div>", unsafe_allow_html=True)
-        if st.button("Continue", key="st_login_submit_btn", type="primary", use_container_width=True):
-            try:
-                res = auth_use_cases.login(l_email, l_pass)
-                if res.get("requires_2fa"):
-                    st.info(f"2FA Required. Verification OTP: {res.get('otp_code')}")
-                    st.session_state["auth_page"] = "email_otp"
-                    st.rerun()
-                else:
-                    st.session_state["user"] = res["user"]
-                    render_toast(f"Welcome back, {res['user']['full_name']}!", "success")
-                    st.rerun()
-            except Exception as err:
-                st.error(str(err))
+        st_html("""
+                <div class="auth-legal-footer mt-24">
+                    Trouble signing in or new to the platform?
+                </div>
+        """)
+        col_forgot, col_reg_btn = st.columns(2)
+        with col_forgot:
+            if st.button("Forgot Password? 🔍", key="login_to_forgot_btn", use_container_width=True):
+                st.session_state["auth_page"] = "forgot"
+                st.rerun()
+        with col_reg_btn:
+            if st.button("Create Account ✨", key="login_to_reg_btn", use_container_width=True):
+                st.session_state["auth_page"] = "register"
+                st.rerun()
 
-        render_social_login_buttons()
-
-        if st.button("✉️ Continue with Email OTP", key="login_to_otp_direct_btn", use_container_width=True):
-            st.session_state["auth_page"] = "email_otp"
-            st.rerun()
-
-        st.markdown("""
-            <div class="auth-legal-footer mt-16">
-                Don't have an account?
+        st_html("""
+                <div class="auth-legal-footer mt-16">
+                    Protected under HIPAA and SaMD regulations.
+                </div>
             </div>
-        """, unsafe_allow_html=True)
-        if st.button("Create an account →", key="login_to_reg_btn", use_container_width=True):
-            st.session_state["auth_page"] = "register"
-            st.rerun()
-
-        st.markdown("""
-            <div class="auth-legal-footer mt-12">
-                By continuing, you agree to AuraScan's <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.
-            </div>
-        """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+        """)
 
 
 def render_register_view(auth_use_cases) -> None:
-    """Renders 2. Register view in full-screen 2-column layout with 420px card width."""
-    st.markdown('<div class="auth-fullscreen-active">', unsafe_allow_html=True)
+    """Renders Register view in full-screen 2-column layout with responsive glass card layout."""
     col_left, col_right = st.columns([1.1, 1.0])
 
     with col_left:
-        render_auth_left_panel("Create a new clinician or administrator account to start generating diagnostic reports.")
+        render_auth_left_panel("Create a new clinician or patient account to access AI diagnostic tools and neurological reports.")
 
     with col_right:
-        st.markdown('<div class="auth-card-420">', unsafe_allow_html=True)
-        st.markdown("""
-            <div class="text-center mb-16">
-                <h3 class="m-0 font-size-22 font-weight-600 text-primary mb-4">Create your account</h3>
-                <p class="m-0 font-size-13 text-muted">Register your professional credentials.</p>
-            </div>
-        """, unsafe_allow_html=True)
+        st_html("""
+            <div class="auth-right-glass-card">
+                <div class="text-center mb-24">
+                    <h3 class="m-0 font-size-22 font-weight-600 text-primary mb-4">Create your account</h3>
+                    <p class="m-0 font-size-13 text-muted">Register your professional or patient credentials.</p>
+                </div>
+        """)
 
-        r_name = st.text_input("Full Legal Name", key="st_reg_fullname", help="Enter full legal display name")
-        r_email = st.text_input("Clinical Email Address", key="st_reg_email", help="Enter hospital email")
-        r_role = st.selectbox("Clinical System Role", ["doctor", "patient", "admin"], key="st_reg_role")
-        r_pass = render_password_input_with_toggle("Password", "reg_pass", help_text="Create a secure password")
+        # Error message rendering (persisted in session state)
+        reg_error_key = "reg_error_msg"
+        if reg_error_key not in st.session_state:
+            st.session_state[reg_error_key] = None
+
+        if st.session_state[reg_error_key]:
+            st_html(f"""
+                <div class="auth-alert-card auth-alert-danger" role="alert">
+                    <span class="alert-icon">⚠️</span>
+                    <div class="alert-content">
+                        {st.session_state[reg_error_key]}
+                    </div>
+                </div>
+            """)
+            st.session_state[reg_error_key] = None
+
+        # Role Selection (Patient vs Doctor vs Admin)
+        r_role = st.radio(
+            "Account Type",
+            ["patient", "doctor", "admin"],
+            format_func=lambda x: "🏥 Doctor / Clinician" if x == "doctor" else ("🔑 System Administrator" if x == "admin" else "👤 Patient / User"),
+            key="st_reg_role",
+            horizontal=True
+        )
+
+        r_name = st.text_input("Full Name", placeholder=" ", key="st_reg_fullname", help="Enter full legal display name")
+        r_email = st.text_input("Clinical / Personal Email Address", placeholder=" ", key="st_reg_email", help="Enter registered email address")
+
+        r_pass = render_password_input_with_toggle("Password", "reg_pass", help_text="Create a secure account password")
         render_password_strength_meter(r_pass)
 
-        agree_terms = st.checkbox("I agree to Terms & Privacy Policy", value=True, key="st_reg_terms")
+        r_confirm = render_password_input_with_toggle("Confirm Password", "reg_confirm", help_text="Re-enter password to confirm")
 
-        st.markdown("<div class=\"spacer-8\"></div>", unsafe_allow_html=True)
-        if st.button("Continue", key="st_reg_submit_btn", type="primary", use_container_width=True):
-            if not agree_terms:
-                st.error("Please accept the Terms of Service to continue.")
+        # Live Password Match Validation
+        if r_pass and r_confirm:
+            if r_pass == r_confirm:
+                st_html('<div class="pwd-match-badge pwd-match-success">✓ Passwords match</div>')
+            else:
+                st_html('<div class="pwd-match-badge pwd-match-error">❌ Passwords do not match</div>')
+
+        st_html("<div class=\"spacer-16\"></div>")
+        if st.button("Register Account", key="st_reg_submit_btn", type="primary", use_container_width=True):
+            if not r_name:
+                st.session_state[reg_error_key] = "Please enter your full name."
+                st.rerun()
+            elif not r_email:
+                st.session_state[reg_error_key] = "Please enter a valid email address."
+                st.rerun()
+            elif r_pass != r_confirm:
+                st.session_state[reg_error_key] = "Passwords do not match. Please re-enter your password."
+                st.rerun()
             else:
                 try:
                     res = auth_use_cases.register(r_email, r_pass, r_name, r_role)
-                    render_toast(f"Account Registered! OTP: {res['verification_otp']}", "info")
-                    st.session_state["pending_verification_email"] = r_email
-                    st.session_state["auth_page"] = "email_otp"
+                    
+                    # Auto-login immediately after successful registration
+                    st.session_state["user"] = res["user"]
+                    st.session_state["access_token"] = res["access_token"]
+                    st.session_state["refresh_token"] = res["refresh_token"]
+                    render_toast(f"Account Registered! Welcome, {res['user']['full_name']}!", "success")
+                    
+                    # Redirect directly to Dashboard
+                    role_lower = r_role.lower().strip()
+                    if role_lower == "admin":
+                        landing_page = "🔑 Admin Dashboard"
+                    elif role_lower == "doctor":
+                        landing_page = "🩺 Doctor Dashboard"
+                    else:
+                        landing_page = "👤 Patient Dashboard"
+                    st.session_state["page"] = landing_page
+                    st.session_state["nav_page"] = landing_page
                     st.rerun()
                 except Exception as err:
-                    st.error(str(err))
+                    st.session_state[reg_error_key] = str(err)
+                    st.rerun()
 
-        render_social_login_buttons()
-
-        st.markdown("""
-            <div class="auth-legal-footer mt-12">
-                Already have an account?
-            </div>
-        """, unsafe_allow_html=True)
-        if st.button("← Sign in to account", key="reg_to_login_btn", use_container_width=True):
+        st_html("""
+                <div class="auth-legal-footer mt-24">
+                    Already have an account?
+                </div>
+        """)
+        if st.button("Sign In to Account", key="reg_to_login_btn", use_container_width=True):
+            st.session_state[reg_error_key] = None
             st.session_state["auth_page"] = "login"
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+
+        st_html("""
+            </div>
+        """)
 
 
 def render_forgot_password_view(auth_use_cases) -> None:
-    """Renders 3. Forgot Password view in full-screen 2-column layout with 420px card width."""
-    st.markdown('<div class="auth-fullscreen-active">', unsafe_allow_html=True)
+    """Renders Forgot Password view in full-screen 2-column layout with simulated recovery instructions."""
     col_left, col_right = st.columns([1.1, 1.0])
 
     with col_left:
-        render_auth_left_panel("Reset your password securely via one-time email OTP verification.")
+        render_auth_left_panel("Securely request password recovery or credentials reset simulation.")
 
     with col_right:
-        st.markdown('<div class="auth-card-420">', unsafe_allow_html=True)
-        st.markdown("""
-            <div class="text-center mb-20">
-                <h3 class="m-0 font-size-22 font-weight-600 text-primary mb-4">Forgot Password</h3>
-                <p class="m-0 font-size-13 text-muted line-height-15">
-                    Enter your registered email and we will send a 6-digit OTP code to reset your password.
-                </p>
-            </div>
-        """, unsafe_allow_html=True)
+        st_html("""
+            <div class="auth-right-glass-card">
+                <div class="text-center mb-24">
+                    <h3 class="m-0 font-size-22 font-weight-600 text-primary mb-4">Reset Password</h3>
+                    <p class="m-0 font-size-13 text-muted">Enter your clinical email address to receive password recovery instructions.</p>
+                </div>
+        """)
 
-        fp_email = st.text_input("Registered Email Address", key="st_fp_email_input", help="Enter registered account email")
+        # Error message rendering (persisted in session state)
+        forgot_error_key = "forgot_error_msg"
+        if forgot_error_key not in st.session_state:
+            st.session_state[forgot_error_key] = None
 
-        st.markdown("<div class=\"spacer-12\"></div>", unsafe_allow_html=True)
-        if st.button("Continue", key="st_fp_submit_btn", type="primary", use_container_width=True):
-            if fp_email:
-                try:
-                    res = auth_use_cases.forgot_password(fp_email)
-                    otp = res.get("reset_otp", "849201")
-                    render_toast(f"Reset code sent to {fp_email}. Demo OTP: {otp}", "info")
-                    st.session_state["reset_email"] = fp_email
-                    st.session_state["auth_page"] = "email_otp"
-                    st.rerun()
-                except Exception as err:
-                    st.error(str(err))
-            else:
-                st.error("Please enter a valid account email address.")
+        if st.session_state[forgot_error_key]:
+            st_html(f"""
+                <div class="auth-alert-card auth-alert-danger" role="alert">
+                    <span class="alert-icon">⚠️</span>
+                    <div class="alert-content">
+                        {st.session_state[forgot_error_key]}
+                    </div>
+                </div>
+            """)
+            st.session_state[forgot_error_key] = None
 
-        st.markdown("<div class=\"spacer-12\"></div>", unsafe_allow_html=True)
-        if st.button("← Return to Sign In", key="fp_to_login_btn", use_container_width=True):
-            st.session_state["auth_page"] = "login"
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+        # Email input field
+        fp_email = st.text_input("Clinical Email Address", placeholder="name@hospital.org", key="st_forgot_email", help="Enter registered email address")
 
+        # Simulated state flag
+        submitted_key = "forgot_pwd_submitted"
+        if submitted_key not in st.session_state:
+            st.session_state[submitted_key] = False
 
-def render_email_otp_view(auth_use_cases) -> None:
-    """Renders 4. Email OTP view in full-screen 2-column layout with 420px card width."""
-    st.markdown('<div class="auth-fullscreen-active">', unsafe_allow_html=True)
-    col_left, col_right = st.columns([1.1, 1.0])
-
-    with col_left:
-        render_auth_left_panel("Enter the 6-digit numeric security code sent to your registered email.")
-
-    with col_right:
-        st.markdown('<div class="auth-card-420">', unsafe_allow_html=True)
-        st.markdown("""
-            <div class="text-center mb-20">
-                <h3 class="m-0 font-size-22 font-weight-600 text-primary mb-4">Email OTP</h3>
-                <p class="m-0 font-size-13 text-muted line-height-15">
-                    Enter the 6-digit security code sent to your email.
-                </p>
-            </div>
-        """, unsafe_allow_html=True)
-
-        otp_code = st.text_input("6-Digit Verification Code", max_chars=6, key="st_otp_code_input", help="Enter 6-digit numeric OTP code")
-
-        st.markdown("<div class=\"spacer-12\"></div>", unsafe_allow_html=True)
-        if st.button("Continue", key="st_otp_submit_btn", type="primary", use_container_width=True):
-            if len(otp_code) == 6:
-                target_email = st.session_state.get("pending_verification_email") or st.session_state.get("reset_email")
-                if st.session_state.get("reset_email"):
-                    st.session_state["verified_otp"] = otp_code
-                    st.session_state["auth_page"] = "reset_password"
+        st_html("<div class=\"spacer-16\"></div>")
+        
+        # We only render the email input and send button if the request has not been submitted yet
+        if not st.session_state[submitted_key]:
+            if st.button("Send Reset Instructions ✉️", key="st_forgot_submit_btn", type="primary", use_container_width=True):
+                if not fp_email or "@" not in fp_email or "." not in fp_email:
+                    st.session_state[forgot_error_key] = "Please enter a valid clinical email address."
                     st.rerun()
                 else:
-                    try:
-                        auth_use_cases.verify_email(otp_code, email=target_email)
-                        render_toast("Email verified successfully!", "success")
-                        st.session_state["auth_page"] = "success"
+                    import datetime
+                    from security.domain.entities import SecurityAuditLog
+                    
+                    email_clean = fp_email.lower().strip()
+                    user = auth_use_cases.user_repo.get_by_email(email_clean)
+                    if not user:
+                        st.session_state[forgot_error_key] = "No account found with this email address."
                         st.rerun()
-                    except Exception:
-                        render_toast("OTP Code Verified!", "success")
-                        st.session_state["auth_page"] = "success"
+                    else:
+                        now = datetime.datetime.utcnow().isoformat()
+                        audit_log = SecurityAuditLog(
+                            id=None,
+                            timestamp=now,
+                            event_type="PASSWORD_RESET_REQUEST",
+                            user_id=user.id,
+                            email=user.email,
+                            ip_address="127.0.0.1",
+                            status="SUCCESS",
+                            details=f"Simulated password reset request logged for {user.email}.",
+                            user_agent="Streamlit UI"
+                        )
+                        auth_use_cases.user_repo.log_security_event(audit_log)
+                        
+                        # Log simulation output to console
+                        print(f"\n[SIMULATION] Password reset request registered for user: {user.email} (ID: {user.id})\n", flush=True)
+                        
+                        st.session_state[submitted_key] = True
                         st.rerun()
-            else:
-                st.error("Please enter a valid 6-digit numeric OTP code.")
 
-        col_resend, col_back = st.columns(2)
-        with col_resend:
-            if st.button("Resend Code", key="otp_resend_btn", use_container_width=True):
-                render_toast("A new 6-digit OTP code has been dispatched to your email.", "info")
-        with col_back:
-            if st.button("← Sign In", key="otp_to_login_btn", use_container_width=True):
-                st.session_state["auth_page"] = "login"
-                st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
-def render_reset_password_view(auth_use_cases) -> None:
-    """Renders 5. Reset Password view in full-screen 2-column layout with 420px card width."""
-    st.markdown('<div class="auth-fullscreen-active">', unsafe_allow_html=True)
-    col_left, col_right = st.columns([1.1, 1.0])
-
-    with col_left:
-        render_auth_left_panel("Set a new secure password for your clinical diagnostic account.")
-
-    with col_right:
-        st.markdown('<div class="auth-card-420">', unsafe_allow_html=True)
-        st.markdown("""
-            <div class="text-center mb-20">
-                <h3 class="m-0 font-size-22 font-weight-600 text-primary mb-4">Reset Password</h3>
-                <p class="m-0 font-size-13 text-muted">Identity verified. Enter your new password below.</p>
-            </div>
-        """, unsafe_allow_html=True)
-
-        new_pass = render_password_input_with_toggle("New Password", "new_pass", help_text="Create a strong password")
-        render_password_strength_meter(new_pass)
-        confirm_pass = render_password_input_with_toggle("Confirm Password", "confirm_pass", help_text="Re-enter new password")
-
-        st.markdown("<div class=\"spacer-12\"></div>", unsafe_allow_html=True)
-        if st.button("Continue", key="st_reset_pass_submit_btn", type="primary", use_container_width=True):
-            if not new_pass:
-                st.error("Please enter a new password.")
-            elif new_pass != confirm_pass:
-                st.error("Passwords do not match. Please try again.")
-            else:
-                try:
-                    reset_token_or_otp = st.session_state.get("verified_otp", "849201")
-                    reset_email = st.session_state.get("reset_email")
-                    auth_use_cases.reset_password(reset_token_or_otp, new_pass, email=reset_email)
-                    render_toast("Password reset successfully!", "success")
-                    st.session_state["auth_page"] = "success"
-                    st.rerun()
-                except Exception:
-                    render_toast("Password reset successfully!", "success")
-                    st.session_state["auth_page"] = "success"
-                    st.rerun()
-
-        st.markdown("<div class=\"spacer-12\"></div>", unsafe_allow_html=True)
-        if st.button("← Return to Sign In", key="reset_pass_to_login_btn", use_container_width=True):
-            st.session_state["auth_page"] = "login"
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
-def render_success_view() -> None:
-    """Renders 6. Success view in full-screen 2-column layout with 420px card width."""
-    st.markdown('<div class="auth-fullscreen-active">', unsafe_allow_html=True)
-    col_left, col_right = st.columns([1.1, 1.0])
-
-    with col_left:
-        render_auth_left_panel("Your security credentials have been verified and updated successfully.")
-
-    with col_right:
-        st.markdown('<div class="auth-card-420">', unsafe_allow_html=True)
-        st.markdown("""
-            <div class="text-center mb-24">
-                <div class="success-checkmark-circle">
-                    ✓
+        if st.session_state[submitted_key]:
+            st_html(f"""
+                <div class="auth-alert-card auth-alert-success" role="alert" style="margin-top: 16px;">
+                    <span class="alert-icon">✓</span>
+                    <div class="alert-content">
+                        <strong class="font-size-14">Request Logged (Simulation Mode)</strong>
+                        <p class="m-0 mt-4 text-secondary line-height-14">
+                            A simulated password reset token has been registered for <code>{fp_email}</code>.
+                        </p>
+                        <p class="m-0 mt-8 font-size-11 text-muted">
+                            Since SMTP email services are offline, please check your console or contact your system administrator to manually reset your password.
+                        </p>
+                    </div>
                 </div>
-                <h3 class="m-0 font-size-22 font-weight-600 text-primary mb-8">Success</h3>
-                <p class="m-0 font-size-13 text-muted line-height-15">
-                    Your account authentication state has been updated. You can now sign in to your workspace.
-                </p>
-            </div>
-        """, unsafe_allow_html=True)
+            """)
+            st_html("<div class=\"spacer-16\"></div>")
+            if st.button("Clear Status", key="forgot_clear_btn", use_container_width=True):
+                st.session_state[submitted_key] = False
+                st.rerun()
 
-        st.markdown("<div class=\"spacer-16\"></div>", unsafe_allow_html=True)
-        if st.button("Continue to Sign In 🔑", key="success_to_login_btn", type="primary", use_container_width=True):
+        st_html("""
+                <div class="auth-legal-footer mt-24">
+                    Remember your credentials?
+                </div>
+        """)
+        if st.button("Sign In to Account", key="forgot_to_login_btn", use_container_width=True):
+            st.session_state[submitted_key] = False
+            st.session_state[forgot_error_key] = None
             st.session_state["auth_page"] = "login"
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+
+        st_html("""
+            </div>
+        """)
 
 
 def render_unauthenticated_app(auth_use_cases) -> None:
     """Renders the complete SaaS unauthenticated experience with full-screen pages."""
-    if "auth_page" not in st.session_state:
+    if "auth_page" not in st.session_state or st.session_state["auth_page"] not in ["login", "register", "forgot"]:
         st.session_state["auth_page"] = "login"
 
     render_auth_nav_header()
 
     active_page = st.session_state["auth_page"]
 
-    if active_page == "landing":
-        render_landing_page()
-        st.markdown("<br>", unsafe_allow_html=True)
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Create Account ✨", key="landing_get_started_btn", use_container_width=True):
-                st.session_state["auth_page"] = "register"
-                st.rerun()
-        with col2:
-            if st.button("Sign In to Workspace 🔑", key="landing_sign_in_btn", use_container_width=True):
-                st.session_state["auth_page"] = "login"
-                st.rerun()
-
-    elif active_page == "login":
+    if active_page == "login":
         render_login_view(auth_use_cases)
-
     elif active_page == "register":
         render_register_view(auth_use_cases)
-
-    elif active_page == "forgot_password":
+    elif active_page == "forgot":
         render_forgot_password_view(auth_use_cases)
-
-    elif active_page in ["email_otp", "email_verification"]:
-        render_email_otp_view(auth_use_cases)
-
-    elif active_page == "reset_password":
-        render_reset_password_view(auth_use_cases)
-
-    elif active_page == "success":
-        render_success_view()
 
 
 
@@ -1788,19 +1813,19 @@ def render_primary_button(label: str, key: str = None) -> bool:
 
 def render_secondary_button(label: str, key: str = None) -> None:
     """Renders a Secondary Button element."""
-    st.markdown(f'<button class="btn-secondary">{label}</button>', unsafe_allow_html=True)
+    st_html(f'<button class="btn-secondary">{label}</button>')
 
 def render_outlined_button(label: str, key: str = None) -> None:
     """Renders an Outlined Button element."""
-    st.markdown(f'<button class="btn-outlined">{label}</button>', unsafe_allow_html=True)
+    st_html(f'<button class="btn-outlined">{label}</button>')
 
 def render_danger_button(label: str, key: str = None) -> None:
     """Renders a Danger Button element."""
-    st.markdown(f'<button class="btn-danger">{label}</button>', unsafe_allow_html=True)
+    st_html(f'<button class="btn-danger">{label}</button>')
 
 def render_success_badge(label: str, badge_type: str = "success") -> None:
     """Renders a Success/Status Badge element."""
-    st.markdown(f'<span class="badge-{badge_type}"><span>{label}</span></span>', unsafe_allow_html=True)
+    st_html(f'<span class="badge-{badge_type}"><span>{label}</span></span>')
 
 def render_input(label: str, placeholder: str = "", value: str = "", key: str = None) -> str:
     """Renders an accessible Input field."""
@@ -1821,7 +1846,7 @@ def render_radio(label: str, options: list, key: str = None) -> str:
 def render_toggle(label: str, checked: bool = False) -> None:
     """Renders a Toggle Switch primitive."""
     checked_attr = "checked" if checked else ""
-    st.markdown(f'''
+    st_html(f'''
         <div class="toggle-container">
             <label class="toggle-switch">
                 <input type="checkbox" {checked_attr}>
@@ -1829,7 +1854,7 @@ def render_toggle(label: str, checked: bool = False) -> None:
             </label>
             <span class="toggle-label">{label}</span>
         </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
 def render_tabs(tabs_list: list, active_index: int = 0) -> None:
     """Renders a Tabs segmented control primitive."""
@@ -1838,7 +1863,7 @@ def render_tabs(tabs_list: list, active_index: int = 0) -> None:
         active_cls = " active" if idx == active_index else ""
         tabs_html += f'<button class="tab-item{active_cls}">{tab_name}</button>'
     tabs_html += '</div>'
-    st.markdown(tabs_html, unsafe_allow_html=True)
+    st_html(tabs_html)
 
 def render_card(title: str, content_html: str, footer_html: str = None) -> None:
     """Renders a Simple White (Light) / Dark Slate (Dark) Card container primitive."""
@@ -1854,24 +1879,24 @@ def render_card(title: str, content_html: str, footer_html: str = None) -> None:
             {footer_part}
         </div>
     '''
-    st.markdown(card_html, unsafe_allow_html=True)
+    st_html(card_html)
 
 def render_alert(message: str, alert_type: str = "info", title: str = None) -> None:
     """Renders an Alert banner primitive."""
     title_html = f'<strong>{title}</strong> - ' if title else ''
-    st.markdown(f'''
+    st_html(f'''
         <div class="alert-banner alert-{alert_type}" role="alert">
             <div>{title_html}{message}</div>
         </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
 def render_progress(percent: int = 50) -> None:
     """Renders a Progress Bar primitive."""
-    st.markdown(f'''
+    st_html(f'''
         <div class="progress-bar">
             <div class="progress-fill" style="width: {min(max(percent, 0), 100)}%;"></div>
         </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
 def render_drawer(title: str, content_html: str) -> None:
     """Renders a Drawer slide-out container primitive."""
@@ -1881,28 +1906,28 @@ def render_drawer(title: str, content_html: str) -> None:
             <div>{content_html}</div>
         </div>
     '''
-    st.markdown(drawer_html, unsafe_allow_html=True)
+    st_html(drawer_html)
 
 def render_popover(content_html: str) -> None:
     """Renders a Popover menu overlay primitive."""
-    st.markdown(f'<div class="popover-container">{content_html}</div>', unsafe_allow_html=True)
+    st_html(f'<div class="popover-container">{content_html}</div>')
 
 def render_tooltip(text: str, tooltip_text: str) -> None:
     """Renders a Tooltip hover primitive."""
-    st.markdown(f'''
+    st_html(f'''
         <div class="tooltip-box">
             <span>{text}</span>
             <span class="tooltip-text">{tooltip_text}</span>
         </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
 def render_avatar(initials: str = "AI", name: str = "Clinician") -> None:
     """Renders an Avatar circle primitive."""
-    st.markdown(f'''
+    st_html(f'''
         <div class="avatar-circle" title="{name}">
             <span>{initials}</span>
         </div>
-    ''', unsafe_allow_html=True)
+    ''')
 
 def render_breadcrumb(items: list) -> None:
     """Renders a Breadcrumb navigation primitive."""
@@ -1913,11 +1938,11 @@ def render_breadcrumb(items: list) -> None:
         if idx < len(items) - 1:
             crumbs_html += '<span class="breadcrumb-separator">/</span>'
     crumbs_html += '</nav>'
-    st.markdown(crumbs_html, unsafe_allow_html=True)
+    st_html(crumbs_html)
 
 def render_responsive_grid(cards_html_list: list, columns: int = 3) -> None:
     """Renders a Responsive Grid layout primitive."""
     grid_cls = f"grid-{columns}col"
     inner_html = "".join(cards_html_list)
-    st.markdown(f'<div class="grid-container {grid_cls}">{inner_html}</div>', unsafe_allow_html=True)
+    st_html(f'<div class="grid-container {grid_cls}">{inner_html}</div>')
 

@@ -1,0 +1,1586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script>
+        // Apply theme before parsing body
+        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AuraScan AI - Admin Portal & Security Controls</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            400: '#38bdf8',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            900: '#0c4a6e',
+                        },
+                        dark: {
+                            bg: '#090d16',
+                            card: '#0f172a',
+                            panel: 'rgba(15, 23, 42, 0.75)',
+                            border: '#1e293b'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* Theme Config - Light Theme */
+            --bg-color: #F8FAFC;
+            --text-color: #0f172a;
+            --text-muted: #64748B;
+            --border-color: #E5E7EB;
+            --border-focus: #2563EB;
+            --panel-bg: rgba(255, 255, 255, 0.85);
+            --card-bg: #FFFFFF;
+            
+            --sidebar-bg: #FFFFFF;
+            --sidebar-text: #64748B;
+            --sidebar-active-bg: rgba(37, 99, 235, 0.08);
+            --sidebar-active-text: #2563EB;
+            
+            --header-bg: rgba(255, 255, 255, 0.8);
+            --hover-bg: #f1f5f9;
+            --input-bg: #FFFFFF;
+            --table-header-bg: #f1f5f9;
+            
+            --primary-color: #2563EB;
+            --primary-hover: #1d4ed8;
+            --accent-color: #3b82f6;
+            --success-color: #10b981;
+            --error-color: #ef4444;
+            --warning-color: #f59e0b;
+            
+            --focus-ring: rgba(37, 99, 235, 0.15);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+        }
+
+        .dark {
+            /* Theme Config - Dark Theme */
+            --bg-color: #0B1220;
+            --text-color: #F8FAFC;
+            --text-muted: #94a3b8;
+            --border-color: rgba(38, 52, 78, 0.4);
+            --border-focus: #22D3EE;
+            --panel-bg: rgba(23, 32, 51, 0.75);
+            --card-bg: #172033;
+            
+            --sidebar-bg: #090e1a;
+            --sidebar-text: #94a3b8;
+            --sidebar-active-bg: rgba(34, 211, 238, 0.08);
+            --sidebar-active-text: #22D3EE;
+            
+            --header-bg: rgba(11, 18, 32, 0.8);
+            --hover-bg: rgba(38, 52, 78, 0.45);
+            --input-bg: #0c1322;
+            --table-header-bg: #0c1322;
+            
+            --primary-color: #2563EB;
+            --primary-hover: #3b82f6;
+            --accent-color: #22D3EE;
+            --success-color: #14b8a6;
+            --error-color: #f43f5e;
+            --warning-color: #f59e0b;
+            
+            --focus-ring: rgba(34, 211, 238, 0.25);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color) !important;
+            color: var(--text-color) !important;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        /* Sidebar Styling Overrides */
+        aside {
+            background-color: var(--sidebar-bg) !important;
+            border-right: 1px solid var(--border-color) !important;
+            transition: all 0.3s ease;
+        }
+
+        #sidebar-container button {
+            color: var(--sidebar-text) !important;
+            background: transparent !important;
+            border: 1.5px solid transparent !important;
+            box-shadow: none !important;
+            transition: all 0.2s ease-in-out;
+        }
+
+        #sidebar-container button:hover {
+            color: var(--sidebar-active-text) !important;
+            background-color: var(--hover-bg) !important;
+        }
+
+        /* Active Navigation tab buttons classes matching JS theme values */
+        #sidebar-container button.bg-gradient-to-r,
+        #sidebar-container button[class*="text-sky-400"],
+        #sidebar-container button[class*="text-indigo-400"],
+        #sidebar-container button[class*="text-emerald-400"] {
+            color: var(--sidebar-active-text) !important;
+            background-color: var(--sidebar-active-bg) !important;
+            border-color: var(--border-hover) !important;
+            font-weight: 600 !important;
+            box-shadow: var(--shadow-sm) !important;
+        }
+
+        #sidebar-container button i {
+            color: var(--text-muted);
+            transition: color 0.2s ease;
+        }
+
+        #sidebar-container button:hover i,
+        #sidebar-container button[class*="text-"] i {
+            color: var(--primary-color) !important;
+        }
+
+        /* Header Navigation Styling */
+        header {
+            background-color: var(--header-bg) !important;
+            border-bottom: 1px solid var(--border-color) !important;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        /* Responsive, Unified Cards (Glassmorphism & Soft Shadows) */
+        .glass-panel {
+            background: var(--panel-bg) !important;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1.5px solid var(--border-color) !important;
+            border-radius: 16px !important;
+            box-shadow: var(--shadow-lg) !important;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Hover elevation effect for analytics grids */
+        .glass-card-hover {
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-card-hover:hover {
+            transform: translateY(-2px);
+            border-color: var(--border-hover) !important;
+            box-shadow: 0 12px 20px -8px rgba(0, 163, 224, 0.12), var(--shadow-lg) !important;
+        }
+
+        /* Table Aesthetics */
+        table {
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        thead {
+            background-color: var(--table-header-bg) !important;
+            border-bottom: 1.5px solid var(--border-color) !important;
+            transition: background-color 0.3s ease;
+        }
+
+        thead th {
+            color: var(--text-muted) !important;
+            font-weight: 700 !important;
+            font-size: 11px !important;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 14px 16px !important;
+        }
+
+        tbody tr {
+            border-bottom: 1px solid var(--border-color) !important;
+            transition: background-color 0.15s ease;
+        }
+
+        tr.table-row-hover:hover {
+            background-color: var(--hover-bg) !important;
+        }
+
+        tbody td {
+            padding: 14px 16px !important;
+            color: var(--text-color) !important;
+        }
+
+        /* Form Inputs & Select Overrides */
+        input[type="text"], input[type="email"], input[type="password"], input[type="number"], select {
+            height: 44px;
+            padding: 10px 14px !important;
+            background-color: var(--input-bg) !important;
+            color: var(--text-color) !important;
+            border: 1.5px solid var(--border-color) !important;
+            border-radius: 12px !important;
+            outline: none !important;
+            font-size: 13px !important;
+            font-weight: 500 !important;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.3s ease !important;
+        }
+
+        input:focus, select:focus {
+            border-color: var(--primary-color) !important;
+            box-shadow: 0 0 0 3.5px var(--focus-ring) !important;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-color);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        /* Medical highlights & telemetry */
+        .glow-accent {
+            color: var(--primary-color) !important;
+            text-shadow: 0 0 8px var(--focus-ring);
+        }
+
+        /* Buttons Redesign */
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            height: 40px;
+            padding: 0 16px;
+            background-color: var(--primary-color) !important;
+            color: #FFFFFF !important;
+            border-radius: 12px !important;
+            font-size: 13px !important;
+            font-weight: 700 !important;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            border: none !important;
+            cursor: pointer;
+            box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.15), var(--shadow-md);
+        }
+        .btn-primary:hover {
+            opacity: 0.95 !important;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 12px var(--focus-ring), var(--shadow-md);
+        }
+        .btn-primary:active {
+            transform: translateY(0) scale(0.98);
+        }
+
+        .btn-secondary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            height: 40px;
+            padding: 0 16px;
+            background-color: var(--hover-bg) !important;
+            color: var(--text-color) !important;
+            border: 1.5px solid var(--border-color) !important;
+            border-radius: 12px !important;
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            cursor: pointer;
+        }
+        .btn-secondary:hover {
+            background-color: var(--border-color) !important;
+            transform: translateY(-1px);
+        }
+        .btn-secondary:active {
+            transform: translateY(0) scale(0.98);
+        }
+
+        .btn-danger {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            height: 40px;
+            padding: 0 16px;
+            background-color: rgba(239, 68, 68, 0.1) !important;
+            color: var(--error-color) !important;
+            border: 1.5px solid rgba(239, 68, 68, 0.2) !important;
+            border-radius: 12px !important;
+            font-size: 13px !important;
+            font-weight: 700 !important;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            cursor: pointer;
+        }
+        .btn-danger:hover {
+            background-color: rgba(239, 68, 68, 0.2) !important;
+            transform: translateY(-1px);
+        }
+        .btn-danger:active {
+            transform: translateY(0) scale(0.98);
+        }
+
+        /* Badges Redesign */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border: 1px solid transparent;
+            line-height: 1;
+        }
+        .badge-success {
+            background-color: rgba(16, 185, 129, 0.1) !important;
+            color: var(--success-color) !important;
+            border-color: rgba(16, 185, 129, 0.2) !important;
+        }
+        .badge-error {
+            background-color: rgba(239, 68, 68, 0.1) !important;
+            color: var(--error-color) !important;
+            border-color: rgba(239, 68, 68, 0.2) !important;
+        }
+        .badge-warning {
+            background-color: rgba(245, 158, 11, 0.1) !important;
+            color: var(--warning-color) !important;
+            border-color: rgba(245, 158, 11, 0.2) !important;
+        }
+        .badge-primary {
+            background-color: var(--sidebar-active-bg) !important;
+            color: var(--primary-color) !important;
+            border-color: var(--border-hover) !important;
+        }
+
+        /* Progress Bar Redesign */
+        .progress-track {
+            height: 8px;
+            background-color: var(--hover-bg);
+            border-radius: 9999px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+        .progress-fill {
+            height: 100%;
+            border-radius: 9999px;
+            background-color: var(--primary-color);
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Telemetry Indicators */
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot-active {
+            background-color: var(--success-color);
+            box-shadow: 0 0 8px var(--success-color);
+        }
+    </style>
+</head>
+<body class="text-slate-100 min-h-screen flex flex-col md:flex-row overflow-x-hidden">
+
+    <!-- MOBILE SIDEBAR OVERLAY -->
+    <div id="mobile-sidebar-overlay" onclick="toggleMobileSidebar()" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-40 md:hidden"></div>
+
+    <!-- SIDEBAR NAVIGATION -->
+    <aside id="sidebar-container" class="fixed md:static inset-y-0 left-0 z-50 w-64 bg-slate-900/95 md:bg-slate-900 border-r border-slate-800/80 p-5 flex flex-col justify-between shrink-0 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out">
+        <div>
+            <!-- Logo Header -->
+            <div class="flex items-center justify-between mb-8">
+                <div class="flex items-center space-x-3">
+                    <div class="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-slate-950 font-bold flex items-center justify-center shadow-lg">
+                        <i class="fa-solid fa-shield-halved text-xl text-white"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-extrabold text-lg leading-tight tracking-wide text-white">AuraScan <span class="text-indigo-400 glow-accent">Admin</span></h1>
+                        <span class="text-[10px] text-slate-400 font-semibold uppercase tracking-widest block">System Security Portal</span>
+                    </div>
+                </div>
+                <button onclick="toggleMobileSidebar()" class="md:hidden text-slate-400 hover:text-white p-1">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Security Badge -->
+            <div class="flex items-center space-x-2.5 bg-slate-950/80 p-3 rounded-xl border border-slate-800/60 mb-6">
+                <span class="relative flex h-3 w-3">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                </span>
+                <div>
+                    <div class="text-xs font-bold text-slate-200">Root Access Mode</div>
+                    <div class="text-[10px] text-red-400 font-bold uppercase tracking-wider">Auditing System Active</div>
+                </div>
+            </div>
+
+            <!-- Navigation Links -->
+            <nav class="space-y-1.5" aria-label="Admin Navigation">
+                <button onclick="switchTab('overview')" id="nav-overview" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-indigo-500/20 to-purple-500/10 text-indigo-400 border border-indigo-500/30 shadow-sm">
+                    <i class="fa-solid fa-chart-pie text-lg w-5 text-indigo-400"></i>
+                    <span>Admin Overview</span>
+                </button>
+                <button onclick="switchTab('users')" id="nav-users" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50">
+                    <i class="fa-solid fa-users-gear text-lg w-5"></i>
+                    <span>User Management</span>
+                </button>
+                <button onclick="switchTab('audit')" id="nav-audit" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50">
+                    <i class="fa-solid fa-shield-halved text-lg w-5 text-slate-400"></i>
+                    <span>Security Audit Logs</span>
+                </button>
+                <button onclick="switchTab('settings')" id="nav-settings" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50">
+                    <i class="fa-solid fa-gear text-lg w-5 text-slate-400"></i>
+                    <span>Account Settings</span>
+                </button>
+            </nav>
+        </div>
+
+        <!-- Telemetry System Health Box -->
+        <div class="mt-8 pt-4 border-t border-slate-800/60">
+            <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800/50 space-y-1">
+                <div class="flex justify-between items-center text-[10px]">
+                    <span class="text-slate-400">Security Database</span>
+                    <span class="text-emerald-400 font-bold">Encrypted Connection</span>
+                </div>
+                <div class="flex justify-between items-center text-[10px]">
+                    <span class="text-slate-400">Role Check Middleware</span>
+                    <span class="text-sky-400 font-bold">Enforced (OWASP)</span>
+                </div>
+            </div>
+            <div class="mt-3 text-[10px] text-slate-500 text-center font-medium">
+                Admin Console v2.5.0
+            </div>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT AREA -->
+    <main class="flex-1 flex flex-col min-w-0 overflow-y-auto max-h-screen">
+        <!-- TOP NAVBAR -->
+        <header class="h-16 border-b border-slate-800/80 px-4 md:px-6 flex items-center justify-between bg-slate-900/60 backdrop-blur-xl sticky top-0 z-30 shrink-0">
+            <div class="flex items-center space-x-3">
+                <button onclick="toggleMobileSidebar()" class="md:hidden text-slate-300 hover:text-white p-2 rounded-lg bg-slate-800/50">
+                    <i class="fa-solid fa-bars text-lg"></i>
+                </button>
+                <h2 id="page-title" class="font-extrabold text-base md:text-lg text-slate-100 tracking-wide flex items-center gap-2">
+                    <span>System Administrator Panel</span>
+                </h2>
+            </div>
+
+            <!-- Auth Profile Info -->
+            <div class="flex items-center space-x-3">
+                <div class="flex items-center space-x-3 pl-3">
+                    <div class="text-right hidden sm:block">
+                        <div id="header-user-name" class="text-xs font-extrabold text-slate-200">System Admin</div>
+                        <span class="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/30">Root Admin</span>
+                    </div>
+                    <!-- Premium Sliding Toggle Switch -->
+                    <button id="theme-toggle" class="relative w-14 h-8 bg-slate-200 dark:bg-slate-800/80 rounded-full p-1 cursor-pointer transition-all duration-300 border border-slate-300/65 dark:border-slate-700/65 shadow-inner flex items-center focus:outline-none mr-2" aria-label="Toggle layout theme">
+                        <!-- Sun Icon (left) -->
+                        <span class="absolute left-2 text-slate-400 dark:text-amber-400 text-xs transition-opacity duration-300 opacity-0 dark:opacity-100 pointer-events-none">
+                            <i class="fa-solid fa-sun"></i>
+                        </span>
+                        <!-- Moon Icon (right) -->
+                        <span class="absolute right-2 text-slate-500 dark:text-slate-400 text-xs transition-opacity duration-300 opacity-100 dark:opacity-0 pointer-events-none">
+                            <i class="fa-solid fa-moon"></i>
+                        </span>
+                        <!-- Knob (moves on dark class) -->
+                        <span class="w-6 h-6 bg-white dark:bg-slate-950 rounded-full shadow-md transform transition-all duration-300 flex items-center justify-center translate-x-0 dark:translate-x-6 border border-slate-200 dark:border-slate-800 pointer-events-none">
+                            <i class="fa-solid fa-circle text-[6px] text-blue-600 dark:text-cyan-400"></i>
+                        </span>
+                    </button>
+                    <button id="profile-avatar-btn" onclick="switchTab('settings')" class="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center border border-indigo-400/30 shadow-sm transition hover:scale-105">
+                        <i class="fa-solid fa-user-shield text-white text-sm"></i>
+                    </button>
+                    <button onclick="handleLogout()" class="btn-danger text-xs h-9 px-3">
+                        <i class="fa-solid fa-right-from-bracket"></i> <span>Logout</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- DASHBOARD BODY -->
+        <div class="p-4 md:p-6 space-y-6 flex-1">
+
+            <!-- TAB 1: ADMIN OVERVIEW -->
+            <div id="tab-overview" class="space-y-6">
+                <!-- Stats Metric Cards -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="glass-panel p-5 rounded-2xl flex items-center justify-between border-t-2 border-t-indigo-500">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Total Users</span>
+                            <h3 id="stat-total-users" class="text-3xl font-extrabold mt-1 text-slate-100 glow-accent">-</h3>
+                        </div>
+                        <div class="h-12 w-12 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-xl border border-indigo-500/20">
+                            <i class="fa-solid fa-users"></i>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-5 rounded-2xl flex items-center justify-between border-t-2 border-t-emerald-500">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Active Staff</span>
+                            <h3 id="stat-active-users" class="text-3xl font-extrabold mt-1 text-emerald-400">-</h3>
+                        </div>
+                        <div class="h-12 w-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-xl border border-emerald-500/20">
+                            <i class="fa-solid fa-user-check"></i>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-5 rounded-2xl flex items-center justify-between border-t-2 border-t-amber-500">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Audit Security Log Size</span>
+                            <h3 id="stat-audit-count" class="text-3xl font-extrabold mt-1 text-amber-400">-</h3>
+                        </div>
+                        <div class="h-12 w-12 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center text-xl border border-amber-500/20">
+                            <i class="fa-solid fa-shield-virus"></i>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-5 rounded-2xl flex items-center justify-between border-t-2 border-t-red-500">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Compliance Status</span>
+                            <h3 class="text-xl font-extrabold mt-2 text-red-400">HIPAA PASS</h3>
+                        </div>
+                        <div class="h-12 w-12 rounded-2xl bg-red-500/10 text-red-400 flex items-center justify-center text-xl border border-red-500/20">
+                            <i class="fa-solid fa-file-shield"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="glass-panel p-5 rounded-2xl lg:col-span-2 space-y-4">
+                        <h4 class="font-extrabold text-sm text-indigo-400 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-circle-info"></i> Security Control Checklist
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                            <div class="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
+                                <span class="font-bold text-slate-200">OWASP Controls Enforced</span>
+                                <p class="text-slate-400 text-[11px]">Strict length validations, custom JWT authentication tokens with JTI ID blacklists, password complexity requirement (uppercase, lowercase, number, special char).</p>
+                            </div>
+                            <div class="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
+                                <span class="font-bold text-slate-200">Two-Factor Authentication (2FA)</span>
+                                <p class="text-slate-400 text-[11px]">Enables multi-factor session authentication to clinical database using randomly-generated OTP codes on login. Configurable per account.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-5 rounded-2xl flex flex-col justify-between">
+                        <h4 class="font-extrabold text-sm text-slate-300 uppercase tracking-wider flex items-center gap-2 mb-4">
+                            <i class="fa-solid fa-network-wired text-sky-400"></i> Server Connection
+                        </h4>
+                        <div class="space-y-3 text-xs">
+                            <div class="flex justify-between border-b border-slate-800 pb-1.5">
+                                <span class="text-slate-400">Inference Core API</span>
+                                <span class="text-emerald-400 font-bold">Online (127.0.0.1:8000)</span>
+                            </div>
+                            <div class="flex justify-between border-b border-slate-800 pb-1.5">
+                                <span class="text-slate-400">Encryption Layer</span>
+                                <span class="text-sky-400 font-bold">TLS Active</span>
+                            </div>
+                            <div class="flex justify-between pb-1">
+                                <span class="text-slate-400">Session Timeout</span>
+                                <span class="text-slate-200 font-bold">30 Minutes</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: USER MANAGEMENT -->
+            <div id="tab-users" class="hidden space-y-6">
+                <!-- Search, Filter & Actions Grid -->
+                <div class="glass-panel p-5 rounded-2xl border border-slate-800 space-y-4 shadow-xl">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-users-gear text-indigo-400"></i> Registered User Directory
+                        </h4>
+                        <div class="flex items-center gap-3 self-end md:self-auto">
+                            <button onclick="exportUsersToCSV()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl transition flex items-center gap-1.5 shadow-md shadow-indigo-600/10">
+                                <i class="fa-solid fa-file-csv text-sm"></i> Export CSV
+                            </button>
+                            <button onclick="loadAdminUsers()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-3 py-2 rounded-xl border border-slate-750 transition flex items-center gap-1">
+                                <i class="fa-solid fa-rotate-right mr-0.5"></i> Refresh Directory
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div class="relative">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
+                            <input type="text" id="users-search-input" oninput="onUsersSearchFilter()" placeholder="Search name, email, or UUID..." class="w-full pl-9 pr-4 py-2.5 rounded-xl border bg-slate-950 border-slate-850 focus:ring-0 focus:border-indigo-500 text-xs text-slate-200 transition">
+                        </div>
+                        <div>
+                            <select id="users-role-filter" onchange="onUsersSearchFilter()" class="w-full px-3.5 py-2.5 rounded-xl border bg-slate-950 border-slate-850 focus:ring-0 focus:border-indigo-500 text-xs text-slate-300 transition">
+                                <option value="all">Filter by Role: All Roles</option>
+                                <option value="patient">Patients</option>
+                                <option value="doctor">Doctors</option>
+                                <option value="admin">Administrators</option>
+                            </select>
+                        </div>
+                        <div>
+                            <select id="users-status-filter" onchange="onUsersSearchFilter()" class="w-full px-3.5 py-2.5 rounded-xl border bg-slate-950 border-slate-850 focus:ring-0 focus:border-indigo-500 text-xs text-slate-300 transition">
+                                <option value="all">Filter by Status: All Statuses</option>
+                                <option value="active">Active Accounts</option>
+                                <option value="suspended">Suspended Accounts</option>
+                                <option value="verified">Verified Accounts</option>
+                                <option value="unverified">Unverified Accounts</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Table Grid -->
+                <div class="glass-panel rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-950 text-slate-400 text-xs uppercase font-bold tracking-wider border-b border-slate-800">
+                                <tr>
+                                    <th class="p-4 cursor-pointer select-none hover:text-slate-200 transition" onclick="sortUsersTable('id')">
+                                        User ID <i id="sort-icon-id" class="fa-solid fa-sort ml-1 text-[10px] text-slate-600"></i>
+                                    </th>
+                                    <th class="p-4 cursor-pointer select-none hover:text-slate-200 transition" onclick="sortUsersTable('full_name')">
+                                        Full Name <i id="sort-icon-full_name" class="fa-solid fa-sort ml-1 text-[10px] text-slate-600"></i>
+                                    </th>
+                                    <th class="p-4 cursor-pointer select-none hover:text-slate-200 transition" onclick="sortUsersTable('email')">
+                                        Email Address <i id="sort-icon-email" class="fa-solid fa-sort ml-1 text-[10px] text-slate-600"></i>
+                                    </th>
+                                    <th class="p-4 cursor-pointer select-none hover:text-slate-200 transition" onclick="sortUsersTable('role')">
+                                        Role <i id="sort-icon-role" class="fa-solid fa-sort ml-1 text-[10px] text-slate-600"></i>
+                                    </th>
+                                    <th class="p-4">Verified</th>
+                                    <th class="p-4">Status</th>
+                                    <th class="p-4 text-center">Change Role</th>
+                                    <th class="p-4 text-center">Set Password</th>
+                                    <th class="p-4 text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-users-table-body" class="divide-y divide-slate-800/60 text-xs">
+                                <tr><td colspan="9" class="p-8 text-center text-slate-500 font-medium">Loading registered users...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination Controls Footer -->
+                    <div class="p-4 bg-slate-950/80 border-t border-slate-850 flex items-center justify-between text-xs text-slate-400">
+                        <div id="users-page-info">Showing 0-0 of 0 users</div>
+                        <div class="flex items-center gap-2">
+                            <button id="users-btn-prev" onclick="prevUsersPage()" class="px-3 py-1.5 rounded-lg bg-slate-850 border border-slate-800 hover:bg-slate-800 transition disabled:opacity-40 disabled:cursor-not-allowed">
+                                Previous
+                            </button>
+                            <span id="users-page-indicator" class="font-bold text-slate-200 px-1 font-mono">Page 1</span>
+                            <button id="users-btn-next" onclick="nextUsersPage()" class="px-3 py-1.5 rounded-lg bg-slate-850 border border-slate-800 hover:bg-slate-800 transition disabled:opacity-40 disabled:cursor-not-allowed">
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+             <!-- TAB 3: AUDIT LOGS -->
+             <div id="tab-audit" class="hidden space-y-6">
+                 <div class="glass-panel rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+                     <div class="p-5 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between">
+                         <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2">
+                             <i class="fa-solid fa-shield-halved text-emerald-400"></i> OWASP Security Audit Logs Stream
+                         </h4>
+                         <button onclick="loadAdminAuditLogs()" class="text-xs bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition">
+                             <i class="fa-solid fa-rotate mr-1"></i> Refresh Logs
+                         </button>
+                     </div>
+                     <div class="overflow-x-auto max-h-[500px]">
+                         <table class="w-full text-left text-xs">
+                             <thead class="bg-slate-950 text-slate-400 uppercase font-bold tracking-wider sticky top-0 border-b border-slate-800">
+                                 <tr>
+                                     <th class="p-3">Time</th>
+                                     <th class="p-3">Event Type</th>
+                                     <th class="p-3">User Email</th>
+                                     <th class="p-3">IP Address</th>
+                                     <th class="p-3">Status</th>
+                                     <th class="p-3">Audit Details</th>
+                                     <th class="p-3">Device / Agent</th>
+                                 </tr>
+                             </thead>
+                             <tbody id="admin-logs-table-body" class="divide-y divide-slate-800/60">
+                                 <tr><td colspan="7" class="p-8 text-center text-slate-500 font-medium">Loading audit log stream...</td></tr>
+                             </tbody>
+                         </table>
+                     </div>
+                 </div>
+             </div>
+
+        </div>
+    </main>
+
+            <!-- TAB 4: SETTINGS VIEW -->
+            <div id="tab-settings" class="hidden space-y-6">
+                <div class="glass-panel p-6 rounded-3xl border border-slate-800 flex items-center justify-between">
+                    <div>
+                        <h3 class="font-extrabold text-xl text-slate-100">Account Settings</h3>
+                        <p class="text-xs text-slate-400 mt-1">Configure profile details, manage security, and inspect active sessions.</p>
+                    </div>
+                    <div class="hidden md:block text-slate-500 text-3xl">
+                        <i class="fa-solid fa-user-gear text-slate-400/20"></i>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 space-y-6">
+                        <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-6">
+                            <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2 border-b border-slate-800/60 pb-3">
+                                <i class="fa-solid fa-circle-user text-indigo-400"></i>
+                                Public Profile Details
+                            </h4>
+                            <div class="flex flex-col sm:flex-row items-center gap-6 bg-slate-900/40 p-4 rounded-2xl border border-slate-800/40">
+                                <div class="relative group">
+                                    <div class="h-24 w-24 rounded-2xl overflow-hidden bg-slate-800 border border-slate-700/60 flex items-center justify-center shadow-lg relative">
+                                        <img id="settings-avatar-img" class="h-full w-full object-cover" src="https://lh3.googleusercontent.com/avatar" alt="Profile Picture">
+                                    </div>
+                                    <label class="absolute -bottom-2 -right-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl h-8 w-8 flex items-center justify-center cursor-pointer shadow-md transition hover:scale-105 border border-indigo-400/30">
+                                        <i class="fa-solid fa-camera text-xs"></i>
+                                        <input type="file" id="settings-avatar-input" onchange="uploadSettingsAvatar(event)" class="hidden" accept="image/*">
+                                    </label>
+                                </div>
+                                <div class="text-center sm:text-left space-y-1">
+                                    <span class="text-xs text-slate-400 font-bold block uppercase tracking-wider">Profile Photo</span>
+                                    <p class="text-xs text-slate-500">Supports PNG, JPG, JPEG, GIF, or WEBP up to 5MB.</p>
+                                    <div id="avatar-upload-status" class="text-xs font-bold hidden text-indigo-400">Uploading...</div>
+                                </div>
+                            </div>
+
+                            <form onsubmit="handleSettingsUpdate(event)" class="space-y-4">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div class="space-y-1.5">
+                                        <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Full Name</label>
+                                        <input type="text" id="settings-name" required class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 focus:ring-0 focus:border-indigo-500 text-xs text-slate-100 transition duration-200">
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block flex items-center justify-between">
+                                            <span>Email Address</span>
+                                            <span id="settings-verification-badge" class="text-[9px] px-1.5 py-0.5 rounded font-extrabold uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Verified</span>
+                                        </label>
+                                        <input type="email" id="settings-email" required class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 focus:ring-0 focus:border-indigo-500 text-xs text-slate-100 transition duration-200">
+                                    </div>
+                                </div>
+
+                                <div id="verification-action-container" class="hidden flex items-center justify-between bg-amber-500/10 p-3.5 rounded-xl border border-amber-500/20">
+                                    <div class="flex items-center gap-2 text-xs text-amber-400 font-medium">
+                                        <i class="fa-solid fa-circle-exclamation"></i>
+                                        <span>Your email is unverified. Verify now to secure your account.</span>
+                                    </div>
+                                    <button type="button" onclick="sendVerificationCode()" class="text-xs bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-3 py-1.5 rounded-lg transition">
+                                        Verify Email
+                                    </button>
+                                </div>
+
+                                <div class="flex justify-end pt-2">
+                                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition shadow-md">
+                                        Save Profile Changes
+                                    </button>
+                                </div>
+                                <div id="settings-profile-success" class="text-xs text-emerald-400 font-bold hidden">Profile changes saved successfully!</div>
+                                <div id="settings-profile-error" class="text-xs text-red-400 font-bold hidden">Failed to save profile.</div>
+                            </form>
+                        </div>
+
+                        <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
+                            <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2 border-b border-slate-800/60 pb-3">
+                                <i class="fa-solid fa-key text-amber-400"></i>
+                                Change Account Password
+                            </h4>
+                            <form onsubmit="handleSettingsPasswordUpdate(event)" class="space-y-4">
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <div class="space-y-1.5">
+                                        <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Current Password</label>
+                                        <input type="password" id="settings-pass-current" required class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 focus:ring-0 focus:border-indigo-500 text-xs text-slate-100 transition duration-200">
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">New Password</label>
+                                        <input type="password" id="settings-pass-new" required class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 focus:ring-0 focus:border-indigo-500 text-xs text-slate-100 transition duration-200">
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Confirm New Password</label>
+                                        <input type="password" id="settings-pass-confirm" required class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 focus:ring-0 focus:border-indigo-500 text-xs text-slate-100 transition duration-200">
+                                    </div>
+                                </div>
+                                <div class="flex justify-end pt-2">
+                                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition shadow-md">
+                                        Update Password
+                                    </button>
+                                </div>
+                                <div id="settings-pass-success" class="text-xs text-emerald-400 font-bold hidden">Password updated successfully!</div>
+                                <div id="settings-pass-error" class="text-xs text-red-400 font-bold hidden">Failed to update password.</div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div class="space-y-6">
+                        <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
+                            <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2 border-b border-slate-800/60 pb-3">
+                                <i class="fa-solid fa-shield-halved text-emerald-400"></i>
+                                Two-Factor Security
+                            </h4>
+                            <div class="space-y-3">
+                                <label class="flex items-start space-x-3 cursor-pointer p-3 rounded-xl bg-slate-900/30 border border-slate-800/40 hover:border-indigo-500/40 transition">
+                                    <input id="settings-2fa-toggle" type="checkbox" onchange="toggle2FAFromSettings(this.checked)" class="rounded border-slate-700 text-indigo-500 focus:ring-0 h-4 w-4 mt-0.5">
+                                    <div>
+                                        <span class="font-bold text-xs text-slate-200 block">Enable Two-Factor Authentication</span>
+                                        <span class="text-[10px] text-slate-400 block mt-0.5">Require an OTP code sent to your email during account login.</span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
+                            <div class="flex justify-between items-center border-b border-slate-800/60 pb-3">
+                                <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2">
+                                    <i class="fa-solid fa-display text-sky-400"></i>
+                                    Session Logs
+                                </h4>
+                                <button onclick="logoutOtherDevices()" class="text-[10px] bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold px-2 py-1 rounded-lg border border-red-500/20 transition">
+                                    Logout Others
+                                </button>
+                            </div>
+                            <div id="settings-sessions-list" class="space-y-3 max-h-60 overflow-y-auto pr-1">
+                                <div class="text-xs text-slate-500 text-center py-4">Loading sessions logs...</div>
+                            </div>
+                        </div>
+
+                        <div class="glass-panel p-6 rounded-2xl border border-red-500/20 bg-red-500/5 space-y-4">
+                            <h4 class="font-extrabold text-red-400 text-sm flex items-center gap-2 border-b border-red-500/20 pb-3">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                                Danger Zone
+                            </h4>
+                            <p class="text-[11px] text-slate-400">Permanently delete your account and all associated brain scans and diagnostic logs. This action is irreversible.</p>
+                            <button onclick="confirmDeleteAccount()" class="w-full text-xs bg-red-600 hover:bg-red-700 text-white font-extrabold py-2.5 rounded-xl transition shadow-md shadow-red-600/10">
+                                Delete My Account
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ADMIN RESET PASSWORD MODAL -->
+    <div id="admin-reset-password-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
+        <div class="glass-panel w-full max-w-sm rounded-3xl p-6 shadow-2xl relative border border-slate-700">
+            <button onclick="closeModal('admin-reset-password-modal')" class="absolute top-5 right-5 text-slate-400 hover:text-white h-8 w-8 rounded-full bg-slate-800/80 flex items-center justify-center transition">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            <h3 class="font-extrabold text-lg text-slate-100 mb-2">Reset User Password</h3>
+            <p class="text-xs text-slate-400 mb-4">Set a new password for <span id="reset-target-email" class="font-bold text-indigo-400">user@email.com</span>.</p>
+            <form onsubmit="handleAdminPasswordReset(event)" class="space-y-4">
+                <input type="hidden" id="reset-target-id">
+                <div class="space-y-1.5">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">New Secure Password</label>
+                    <input type="password" id="reset-new-password" required placeholder="••••••••" class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 text-xs text-slate-100 transition duration-200">
+                </div>
+                <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 rounded-xl transition shadow-md">
+                    Apply New Password
+                </button>
+                <div id="reset-password-error" class="text-xs text-red-400 font-bold hidden text-center mt-2"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        let currentUser = null;
+        let authToken = localStorage.getItem("auth_token") || null;
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            initializeTheme();
+            await checkAuthStatus();
+            loadAdminUsers();
+            loadAdminAuditLogs();
+        });
+
+        function initializeTheme() {
+            const themeToggleBtn = document.getElementById('theme-toggle');
+
+            themeToggleBtn.addEventListener('click', function() {
+                if (localStorage.getItem('color-theme')) {
+                    if (localStorage.getItem('color-theme') === 'light') {
+                        document.documentElement.classList.add('dark');
+                        localStorage.setItem('color-theme', 'dark');
+                    } else {
+                        document.documentElement.classList.remove('dark');
+                        localStorage.setItem('color-theme', 'light');
+                    }
+                } else {
+                    if (document.documentElement.classList.contains('dark')) {
+                        document.documentElement.classList.remove('dark');
+                        localStorage.setItem('color-theme', 'light');
+                    } else {
+                        document.documentElement.classList.add('dark');
+                        localStorage.setItem('color-theme', 'dark');
+                    }
+                }
+            });
+        }
+
+        function toggleMobileSidebar() {
+            const sidebar = document.getElementById('sidebar-container');
+            const overlay = document.getElementById('mobile-sidebar-overlay');
+            sidebar.classList.toggle('-translate-x-full');
+            overlay.classList.toggle('hidden');
+        }
+
+        function switchTab(tabName) {
+            ['overview', 'users', 'audit', 'settings'].forEach(t => {
+                const el = document.getElementById(`tab-${t}`);
+                const btn = document.getElementById(`nav-${t}`);
+                if (el) el.classList.add('hidden');
+                if (btn) {
+                    btn.className = "w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50";
+                }
+            });
+            const activeEl = document.getElementById(`tab-${tabName}`);
+            if (activeEl) activeEl.classList.remove('hidden');
+            const activeBtn = document.getElementById(`nav-${tabName}`);
+            if (activeBtn) {
+                activeBtn.className = "w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-indigo-500/20 to-purple-500/10 text-indigo-400 border border-indigo-500/30 shadow-sm";
+            }
+            if (tabName === 'users') loadAdminUsers();
+            if (tabName === 'audit') loadAdminAuditLogs();
+            if (tabName === 'settings') loadSettingsData();
+        }
+
+        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return "";
+        }
+
+        async function fetchWithAuth(url, options = {}) {
+            options.headers = options.headers || {};
+            options.credentials = options.credentials || 'same-origin';
+            if (authToken) {
+                options.headers['Authorization'] = `Bearer ${authToken}`;
+            }
+            const csrfToken = getCookie("csrf_token");
+            if (csrfToken) {
+                options.headers['X-CSRF-Token'] = csrfToken;
+            }
+            let response = await fetch(url, options);
+            if (response.status === 401) {
+                handleLogoutRedirect();
+            }
+            return response;
+        }
+
+        function handleLogoutRedirect() {
+            authToken = null;
+            currentUser = null;
+            localStorage.removeItem("auth_token");
+            window.location.href = '/';
+        }
+
+        async function checkAuthStatus() {
+            try {
+                const res = await fetchWithAuth('/api/auth/me');
+                const data = await res.json();
+                if (data.authenticated && data.user && data.user.role === 'admin') {
+                    currentUser = data.user;
+                    document.getElementById('header-user-name').innerText = currentUser.full_name;
+                    document.getElementById('prof-email').innerText = currentUser.email;
+                    document.getElementById('prof-2fa').checked = currentUser.two_factor_enabled;
+                    if (currentUser.google_profile_pic) {
+                        const avatarBtn = document.getElementById('profile-avatar-btn');
+                        if (avatarBtn) {
+                            avatarBtn.innerHTML = `<img src="${currentUser.google_profile_pic}" class="h-full w-full rounded-xl object-cover">`;
+                        }
+                    }
+                } else {
+                    handleLogoutRedirect();
+                }
+            } catch (err) {
+                console.error("Auth check failed:", err);
+                handleLogoutRedirect();
+            }
+        }
+
+        async function handleLogout() {
+            try {
+                await fetchWithAuth('/api/auth/logout', { method: 'POST' });
+            } catch (e) {}
+            handleLogoutRedirect();
+        }
+
+        function openProfileModal() {
+            openModal('profile-modal');
+        }
+
+        async function toggle2FA(enabled) {
+            try {
+                await fetchWithAuth('/api/auth/profile', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enable_2fa: enabled })
+                });
+            } catch (e) { console.error("Failed to update 2FA:", e); }
+        }
+
+        let allUsers = [];
+        let filteredUsers = [];
+        let currentUsersPage = 1;
+        const usersPerPage = 10;
+        let usersSortColumn = 'id';
+        let usersSortAscending = true;
+
+        async function loadAdminUsers() {
+            const tbody = document.getElementById('admin-users-table-body');
+            try {
+                const res = await fetchWithAuth('/api/admin/users?limit=1000');
+                const data = await res.json();
+                if (data.error) { tbody.innerHTML = `<tr><td colspan="9" class="p-4 text-red-400 font-bold">${data.error}</td></tr>`; return; }
+                
+                allUsers = data.users;
+                
+                document.getElementById('stat-total-users').innerText = allUsers.length;
+                let activeCount = allUsers.filter(u => u.is_active).length;
+                document.getElementById('stat-active-users').innerText = activeCount;
+
+                onUsersSearchFilter();
+            } catch (err) { tbody.innerHTML = `<tr><td colspan="9" class="p-4 text-red-500">Failed to load admin users.</td></tr>`; }
+        }
+
+        function onUsersSearchFilter() {
+            const query = document.getElementById("users-search-input").value.toLowerCase().trim();
+            const roleFilter = document.getElementById("users-role-filter").value;
+            const statusFilter = document.getElementById("users-status-filter").value;
+
+            filteredUsers = allUsers.filter(u => {
+                const searchMatch = !query || 
+                                    (u.full_name && u.full_name.toLowerCase().includes(query)) ||
+                                    (u.email && u.email.toLowerCase().includes(query)) ||
+                                    (u.uuid && u.uuid.toLowerCase().includes(query)) ||
+                                    u.id.toString().includes(query);
+
+                const roleMatch = roleFilter === 'all' || u.role === roleFilter;
+
+                let statusMatch = true;
+                if (statusFilter === 'active') statusMatch = u.is_active;
+                else if (statusFilter === 'suspended') statusMatch = !u.is_active;
+                else if (statusFilter === 'verified') statusMatch = u.is_verified;
+                else if (statusFilter === 'unverified') statusMatch = !u.is_verified;
+
+                return searchMatch && roleMatch && statusMatch;
+            });
+
+            sortUsersList();
+
+            currentUsersPage = 1;
+            renderUsersTable();
+        }
+
+        function sortUsersTable(column) {
+            if (usersSortColumn === column) {
+                usersSortAscending = !usersSortAscending;
+            } else {
+                usersSortColumn = column;
+                usersSortAscending = true;
+            }
+            
+            ['id', 'full_name', 'email', 'role'].forEach(col => {
+                const icon = document.getElementById(`sort-icon-${col}`);
+                if (icon) {
+                    if (col === usersSortColumn) {
+                        icon.className = `fa-solid ${usersSortAscending ? 'fa-sort-up text-indigo-400' : 'fa-sort-down text-indigo-400'} ml-1 text-[10px]`;
+                    } else {
+                        icon.className = "fa-solid fa-sort ml-1 text-[10px] text-slate-600";
+                    }
+                }
+            });
+
+            sortUsersList();
+            renderUsersTable();
+        }
+
+        function sortUsersList() {
+            filteredUsers.sort((a, b) => {
+                let valA = a[usersSortColumn];
+                let valB = b[usersSortColumn];
+
+                if (typeof valA === 'string') valA = valA.toLowerCase();
+                if (typeof valB === 'string') valB = valB.toLowerCase();
+
+                if (valA < valB) return usersSortAscending ? -1 : 1;
+                if (valA > valB) return usersSortAscending ? 1 : -1;
+                return 0;
+            });
+        }
+
+        function renderUsersTable() {
+            const tbody = document.getElementById('admin-users-table-body');
+            tbody.innerHTML = '';
+
+            const total = filteredUsers.length;
+            const totalPages = Math.max(1, Math.ceil(total / usersPerPage));
+
+            if (total === 0) {
+                tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-500 font-medium">No users match your criteria.</td></tr>`;
+                document.getElementById('users-page-info').innerText = `Showing 0-0 of 0 users`;
+                document.getElementById('users-btn-prev').disabled = true;
+                document.getElementById('users-btn-next').disabled = true;
+                return;
+            }
+
+            if (currentUsersPage > totalPages) currentUsersPage = totalPages;
+
+            const startIndex = (currentUsersPage - 1) * usersPerPage;
+            const endIndex = Math.min(startIndex + usersPerPage, total);
+            const pageUsers = filteredUsers.slice(startIndex, endIndex);
+
+            pageUsers.forEach(u => {
+                const roleStyle = u.role === 'admin' ? 'badge badge-error' :
+                                  u.role === 'doctor' ? 'badge badge-primary' :
+                                  'badge badge-success';
+                const verifiedStyle = u.is_verified ? 'badge badge-success' : 'badge badge-warning';
+                const activeStyle = u.is_active ? 'badge badge-success' : 'badge badge-error';
+                const activeText = u.is_active ? '<i class="fa-solid fa-circle text-[6px] mr-1 animate-pulse"></i> Active' : 'Suspended';
+                const actionBtnStyle = u.is_active ? 'btn-danger text-[10px] h-7 px-2.5' : 'btn-primary text-[10px] h-7 px-2.5 bg-emerald-600 dark:bg-emerald-500';
+
+                tbody.innerHTML += `
+                <tr class="table-row-hover">
+                    <td class="p-4 font-bold text-slate-300">#${u.id}</td>
+                    <td class="p-4 font-semibold text-slate-200">${u.full_name}</td>
+                    <td class="p-4 text-slate-400">${u.email}</td>
+                    <td class="p-4"><span class="${roleStyle}">${u.role}</span></td>
+                    <td class="p-4"><span class="${verifiedStyle}">${u.is_verified ? '<i class="fa-solid fa-circle-check"></i> Verified' : 'Unverified'}</span></td>
+                    <td class="p-4"><span class="${activeStyle}">${activeText}</span></td>
+                    <td class="p-4 text-center">
+                        <select onchange="updateUserRole(${u.id}, this.value)" class="bg-slate-950 text-[11px] border border-slate-800 rounded-lg px-2 py-1 text-slate-200">
+                            <option value="patient" ${u.role==='patient'?'selected':''}>Patient</option>
+                            <option value="doctor" ${u.role==='doctor'?'selected':''}>Doctor</option>
+                            <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
+                        </select>
+                    </td>
+                    <td class="p-4 text-center">
+                        <button onclick="openPasswordResetModal(${u.id}, '${u.email}')" class="btn-secondary text-[10px] h-7 px-2.5 mx-auto">
+                            <i class="fa-solid fa-key"></i> Reset
+                        </button>
+                    </td>
+                    <td class="p-4 text-center">
+                        <button onclick="updateUserStatus(${u.id}, ${!u.is_active})" class="${actionBtnStyle}">
+                            ${u.is_active ? 'Suspend' : 'Activate'}
+                        </button>
+                    </td>
+                </tr>
+                `;
+            });
+
+            document.getElementById('users-page-info').innerText = `Showing ${startIndex + 1}-${endIndex} of ${total} users`;
+            document.getElementById('users-page-indicator').innerText = `Page ${currentUsersPage} of ${totalPages}`;
+            document.getElementById('users-btn-prev').disabled = currentUsersPage === 1;
+            document.getElementById('users-btn-next').disabled = currentUsersPage === totalPages;
+        }
+
+        function prevUsersPage() {
+            if (currentUsersPage > 1) {
+                currentUsersPage--;
+                renderUsersTable();
+            }
+        }
+
+        function nextUsersPage() {
+            const totalPages = Math.ceil(filteredUsers.length / usersPerPage);
+            if (currentUsersPage < totalPages) {
+                currentUsersPage++;
+                renderUsersTable();
+            }
+        }
+
+        function openPasswordResetModal(userId, email) {
+            document.getElementById("reset-target-id").value = userId;
+            document.getElementById("reset-target-email").innerText = email;
+            document.getElementById("reset-new-password").value = "";
+            document.getElementById("reset-password-error").classList.add("hidden");
+            openModal("admin-reset-password-modal");
+        }
+
+        async function handleAdminPasswordReset(e) {
+            e.preventDefault();
+            const userId = document.getElementById("reset-target-id").value;
+            const newPass = document.getElementById("reset-new-password").value;
+            const errorDiv = document.getElementById("reset-password-error");
+            errorDiv.classList.add("hidden");
+
+            try {
+                const res = await fetchWithAuth(`/api/admin/users/${userId}/password`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: newPass })
+                });
+                const data = await res.json();
+                if (data.error) {
+                    errorDiv.innerText = data.error;
+                    errorDiv.classList.remove("hidden");
+                    return;
+                }
+                closeModal("admin-reset-password-modal");
+                alert("Password reset successfully!");
+            } catch (err) {
+                errorDiv.innerText = "Request failed.";
+                errorDiv.classList.remove("hidden");
+            }
+        }
+
+        async function exportUsersToCSV() {
+            try {
+                const res = await fetchWithAuth("/api/admin/users/export");
+                if (res.status !== 200) {
+                    alert("Failed to export CSV.");
+                    return;
+                }
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "users_export.csv";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            } catch (err) {
+                alert("Failed to export users CSV: " + err);
+            }
+        }
+
+        async function updateUserRole(userId, newRole) {
+            try {
+                const res = await fetchWithAuth(`/api/admin/users/${userId}/role`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ role: newRole })
+                });
+                const data = await res.json();
+                if (data.error) { alert("Failed: " + data.error); }
+                loadAdminUsers();
+            } catch (err) { alert("Failed to update role: " + err); }
+        }
+
+        async function updateUserStatus(userId, isActive) {
+            try {
+                const res = await fetchWithAuth(`/api/admin/users/${userId}/status`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_active: isActive })
+                });
+                const data = await res.json();
+                if (data.error) { alert("Failed: " + data.error); }
+                loadAdminUsers();
+            } catch (err) { alert("Failed to update user status: " + err); }
+        }
+
+        async function loadAdminAuditLogs() {
+            const tbody = document.getElementById('admin-logs-table-body');
+            try {
+                const res = await fetchWithAuth('/api/admin/audit-logs');
+                const data = await res.json();
+                if (data.error) { tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-red-400">${data.error}</td></tr>`; return; }
+                tbody.innerHTML = '';
+                
+                document.getElementById('stat-audit-count').innerText = data.audit_logs.length;
+ 
+                data.audit_logs.forEach(l => {
+                    tbody.innerHTML += `
+                    <tr class="table-row-hover">
+                        <td class="p-3 text-slate-400 font-mono text-[11px]">${l.timestamp}</td>
+                        <td class="p-3 font-bold text-slate-200">${l.event_type}</td>
+                        <td class="p-3 text-slate-350">${l.email || l.user_id || 'Anonymous'}</td>
+                        <td class="p-3 text-slate-400 font-mono text-[11px]">${l.ip_address}</td>
+                        <td class="p-3"><span class="${l.status==='SUCCESS'?'text-emerald-400':'text-red-400'} font-bold">${l.status}</span></td>
+                        <td class="p-3 text-slate-400">${l.details}</td>
+                        <td class="p-3 text-slate-500 font-mono text-[10px] truncate max-w-xs" title="${l.user_agent || 'Unknown'}">${l.user_agent || 'Unknown'}</td>
+                    </tr>
+                    `;
+                });
+            } catch (err) { tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-red-500">Failed to load security audit logs.</td></tr>`; }
+        }
+        // Settings tab functions
+        async function loadSettingsData() {
+            document.getElementById("settings-name").value = currentUser.full_name;
+            document.getElementById("settings-email").value = currentUser.email;
+            document.getElementById("settings-2fa-toggle").checked = currentUser.two_factor_enabled;
+
+            const avatarImg = document.getElementById("settings-avatar-img");
+            if (currentUser.google_profile_pic) {
+                avatarImg.src = currentUser.google_profile_pic;
+            } else {
+                avatarImg.src = "https://lh3.googleusercontent.com/avatar";
+            }
+
+            const badge = document.getElementById("settings-verification-badge");
+            const actionContainer = document.getElementById("verification-action-container");
+            if (currentUser.is_verified) {
+                badge.innerText = "Verified";
+                badge.className = "text-[9px] px-1.5 py-0.5 rounded font-extrabold uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+                actionContainer.classList.add("hidden");
+            } else {
+                badge.innerText = "Unverified";
+                badge.className = "text-[9px] px-1.5 py-0.5 rounded font-extrabold uppercase tracking-widest bg-amber-500/10 text-amber-400 border border-amber-500/20";
+                actionContainer.classList.remove("hidden");
+            }
+
+            await loadSessionsList();
+        }
+
+        async function loadSessionsList() {
+            const listContainer = document.getElementById("settings-sessions-list");
+            listContainer.innerHTML = `<div class="text-xs text-slate-500 text-center py-4">Loading sessions logs...</div>`;
+            try {
+                const res = await fetchWithAuth("/api/auth/profile/sessions");
+                const data = await res.json();
+                if (data.sessions && Array.isArray(data.sessions)) {
+                    listContainer.innerHTML = "";
+                    if (data.sessions.length === 0) {
+                        listContainer.innerHTML = `<div class="text-xs text-slate-500 text-center py-4">No recent session activity.</div>`;
+                        return;
+                    }
+                    data.sessions.forEach(s => {
+                        const dateStr = new Date(s.timestamp).toLocaleString();
+                        const typeIcon = s.event_type.includes("GOOGLE") ? "fa-brands fa-google text-amber-400" : "fa-solid fa-shield-halved text-indigo-400";
+                        
+                        listContainer.innerHTML += `
+                            <div class="flex items-center justify-between p-2.5 bg-slate-900/40 rounded-xl border border-slate-800/40 text-[11px]">
+                                <div class="flex items-center gap-2.5">
+                                    <div class="h-7 w-7 rounded-lg bg-slate-950 flex items-center justify-center">
+                                        <i class="${typeIcon}"></i>
+                                    </div>
+                                    <div>
+                                        <div class="font-bold text-slate-200">${s.ip_address}</div>
+                                        <div class="text-[9px] text-slate-400 mt-0.5">${dateStr}</div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-[9px] px-1.5 py-0.5 rounded font-bold bg-slate-800 text-slate-400">${s.event_type.replace("LOGIN_", "")}</span>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+            } catch (err) {
+                listContainer.innerHTML = `<div class="text-xs text-red-400 text-center py-4">Failed to load sessions.</div>`;
+            }
+        }
+
+        async function uploadSettingsAvatar(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const statusDiv = document.getElementById("avatar-upload-status");
+            statusDiv.classList.remove("hidden");
+            statusDiv.innerText = "Uploading...";
+
+            const formData = new FormData();
+            formData.append("avatar", file);
+
+            try {
+                const res = await fetchWithAuth("/api/auth/profile/avatar", {
+                    method: "POST",
+                    body: formData
+                });
+                const data = await res.json();
+                statusDiv.classList.add("hidden");
+                if (data.error) { alert(data.error); return; }
+                
+                document.getElementById("settings-avatar-img").src = data.avatar_url;
+                currentUser.google_profile_pic = data.avatar_url;
+                
+                const avatarBtn = document.getElementById("profile-avatar-btn");
+                if (avatarBtn) {
+                    avatarBtn.innerHTML = `<img src="${data.avatar_url}" class="h-full w-full rounded-xl object-cover">`;
+                }
+            } catch (err) {
+                statusDiv.innerText = "Upload failed.";
+            }
+        }
+
+        async function handleSettingsUpdate(e) {
+            e.preventDefault();
+            const name = document.getElementById("settings-name").value;
+            const email = document.getElementById("settings-email").value;
+            const successDiv = document.getElementById("settings-profile-success");
+            const errorDiv = document.getElementById("settings-profile-error");
+            
+            successDiv.classList.add("hidden");
+            errorDiv.classList.add("hidden");
+
+            try {
+                const res = await fetchWithAuth("/api/auth/profile", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ full_name: name, email: email })
+                });
+                const data = await res.json();
+                if (data.error) {
+                    errorDiv.innerText = data.error;
+                    errorDiv.classList.remove("hidden");
+                    return;
+                }
+                successDiv.classList.remove("hidden");
+                currentUser.full_name = name;
+                currentUser.email = email;
+                if (data.email_changed) {
+                    currentUser.is_verified = false;
+                }
+                const headerName = document.getElementById("header-user-name");
+                if (headerName) headerName.innerText = name;
+                
+                await loadSettingsData();
+            } catch (err) {
+                errorDiv.innerText = "Request failed.";
+                errorDiv.classList.remove("hidden");
+            }
+        }
+
+        async function sendVerificationCode() {
+            try {
+                const res = await fetchWithAuth("/api/auth/resend-verification", { method: "POST" });
+                const data = await res.json();
+                if (data.error) { alert(data.error); return; }
+                alert(data.message + " Dev notification code: " + (data.otp_code || ""));
+                openModal("settings-verify-modal");
+            } catch (err) {
+                alert("Failed to send verification code.");
+            }
+        }
+
+        async function handleSettingsEmailVerification(e) {
+            e.preventDefault();
+            const code = document.getElementById("settings-verify-code").value;
+            const errorDiv = document.getElementById("settings-verify-error");
+            errorDiv.classList.add("hidden");
+
+            try {
+                const res = await fetch("/api/auth/verify-email", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email: currentUser.email, token_or_otp: code })
+                });
+                const data = await res.json();
+                if (data.error) {
+                    errorDiv.innerText = data.error;
+                    errorDiv.classList.remove("hidden");
+                    return;
+                }
+                closeModal("settings-verify-modal");
+                currentUser.is_verified = true;
+                alert("Email verified successfully!");
+                await loadSettingsData();
+            } catch (err) {
+                errorDiv.innerText = "Verification failed.";
+                errorDiv.classList.remove("hidden");
+            }
+        }
+
+        async function toggle2FAFromSettings(enabled) {
+            try {
+                await fetchWithAuth("/api/auth/profile", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ enable_2fa: enabled })
+                });
+                currentUser.two_factor_enabled = enabled;
+            } catch (err) {
+                console.error("Failed to toggle 2FA:", err);
+            }
+        }
+
+        async function handleSettingsPasswordUpdate(e) {
+            e.preventDefault();
+            const currentPass = document.getElementById("settings-pass-current").value;
+            const newPass = document.getElementById("settings-pass-new").value;
+            const confirmPass = document.getElementById("settings-pass-confirm").value;
+            const successDiv = document.getElementById("settings-pass-success");
+            const errorDiv = document.getElementById("settings-pass-error");
+
+            successDiv.classList.add("hidden");
+            errorDiv.classList.add("hidden");
+
+            if (newPass !== confirmPass) {
+                errorDiv.innerText = "New passwords do not match.";
+                errorDiv.classList.remove("hidden");
+                return;
+            }
+
+            try {
+                const res = await fetchWithAuth("/api/auth/change-password", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ current_password: currentPass, new_password: newPass })
+                });
+                const data = await res.json();
+                if (data.error) {
+                    errorDiv.innerText = data.error;
+                    errorDiv.classList.remove("hidden");
+                    return;
+                }
+                successDiv.classList.remove("hidden");
+                document.getElementById("settings-pass-current").value = "";
+                document.getElementById("settings-pass-new").value = "";
+                document.getElementById("settings-pass-confirm").value = "";
+            } catch (err) {
+                errorDiv.innerText = "Password update failed.";
+                errorDiv.classList.remove("hidden");
+            }
+        }
+
+        async function logoutOtherDevices() {
+            if (!confirm("Are you sure you want to log out of all other devices?")) return;
+            try {
+                const res = await fetchWithAuth("/api/auth/profile/logout-other-devices", { method: "POST" });
+                const data = await res.json();
+                if (data.error) { alert(data.error); return; }
+                
+                authToken = data.access_token;
+                localStorage.setItem("auth_token", authToken);
+                
+                alert("Successfully logged out of all other devices.");
+                await loadSettingsData();
+            } catch (err) {
+                alert("Failed to logout other devices.");
+            }
+        }
+
+        async function confirmDeleteAccount() {
+            const promptVal = prompt("Type 'DELETE MY ACCOUNT' to confirm account deletion:");
+            if (promptVal !== "DELETE MY ACCOUNT") {
+                alert("Confirmation phrase did not match. Account deletion cancelled.");
+                return;
+            }
+            try {
+                const res = await fetchWithAuth("/api/auth/profile", { method: "DELETE" });
+                const data = await res.json();
+                alert(data.message || "Your account has been deleted permanently.");
+                handleLogoutRedirect();
+            } catch (err) {
+                alert("Failed to delete account.");
+            }
+        }
+    </script>
+</body>
+</html>

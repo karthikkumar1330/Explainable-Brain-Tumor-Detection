@@ -20,14 +20,6 @@ class Role(str, Enum):
 class TokenType(str, Enum):
     ACCESS = "access"
     REFRESH = "refresh"
-    EMAIL_VERIFICATION = "email_verification"
-    PASSWORD_RESET = "password_reset"
-
-
-class OtpPurpose(str, Enum):
-    LOGIN_2FA = "login_2fa"
-    PASSWORD_RESET = "password_reset"
-    EMAIL_VERIFICATION = "email_verification"
 
 
 @dataclass
@@ -38,13 +30,23 @@ class User:
     password_hash: str
     full_name: str
     role: Role
-    is_verified: bool = False
+    is_verified: bool = True
     is_active: bool = True
-    two_factor_enabled: bool = False
-    two_factor_secret: Optional[str] = None
+    profile_pic: Optional[str] = None
+    sessions_revoked_at: Optional[str] = None
+    failed_login_attempts: int = 0
+    lockout_until: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.datetime.utcnow().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.datetime.utcnow().isoformat())
     last_login_at: Optional[str] = None
+
+    @property
+    def email_verified(self) -> bool:
+        return self.is_verified
+
+    @email_verified.setter
+    def email_verified(self, value: bool) -> None:
+        self.is_verified = value
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -54,8 +56,12 @@ class User:
             "full_name": self.full_name,
             "role": self.role.value if isinstance(self.role, Role) else self.role,
             "is_verified": self.is_verified,
+            "email_verified": self.is_verified,
             "is_active": self.is_active,
-            "two_factor_enabled": self.two_factor_enabled,
+            "google_profile_pic": self.profile_pic,
+            "sessions_revoked_at": self.sessions_revoked_at,
+            "failed_login_attempts": self.failed_login_attempts,
+            "lockout_until": self.lockout_until,
             "created_at": self.created_at,
             "last_login_at": self.last_login_at,
         }
@@ -74,28 +80,6 @@ class TokenPayload:
 
 
 @dataclass
-class VerificationToken:
-    id: Optional[int]
-    user_id: int
-    token: str
-    token_type: TokenType
-    expires_at: str
-    used_at: Optional[str] = None
-    created_at: str = field(default_factory=lambda: datetime.datetime.utcnow().isoformat())
-
-
-@dataclass
-class OTPRecord:
-    id: Optional[int]
-    user_id: int
-    otp_code: str
-    purpose: OtpPurpose
-    expires_at: str
-    used_at: Optional[str] = None
-    created_at: str = field(default_factory=lambda: datetime.datetime.utcnow().isoformat())
-
-
-@dataclass
 class SecurityAuditLog:
     id: Optional[int]
     timestamp: str
@@ -105,3 +89,4 @@ class SecurityAuditLog:
     ip_address: str
     status: str
     details: str
+    user_agent: Optional[str] = None
