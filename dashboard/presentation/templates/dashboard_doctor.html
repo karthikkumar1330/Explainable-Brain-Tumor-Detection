@@ -52,8 +52,9 @@
             --bg-color: #F8FAFC;
             --text-color: #0f172a;
             --text-muted: #64748B;
-            --border-color: #E5E7EB;
+            --border-color: #E2E8F0;
             --border-focus: #2563EB;
+            --border-hover: #CBD5E1;
             --panel-bg: rgba(255, 255, 255, 0.85);
             --card-bg: #FFFFFF;
             
@@ -65,7 +66,7 @@
             --header-bg: rgba(255, 255, 255, 0.8);
             --hover-bg: #f1f5f9;
             --input-bg: #FFFFFF;
-            --table-header-bg: #f1f5f9;
+            --table-header-bg: #f8fafc;
             
             --primary-color: #2563EB;
             --primary-hover: #1d4ed8;
@@ -81,32 +82,33 @@
 
         .dark {
             /* Theme Config - Dark Theme */
-            --bg-color: #0B1220;
-            --text-color: #F8FAFC;
-            --text-muted: #94a3b8;
-            --border-color: rgba(38, 52, 78, 0.4);
-            --border-focus: #22D3EE;
-            --panel-bg: rgba(23, 32, 51, 0.75);
-            --card-bg: #172033;
+            --bg-color: #030712;
+            --text-color: #F9FAFB;
+            --text-muted: #9CA3AF;
+            --border-color: #1F2937;
+            --border-focus: #38BDF8;
+            --border-hover: #374151;
+            --panel-bg: rgba(17, 24, 39, 0.8);
+            --card-bg: #111827;
             
-            --sidebar-bg: #090e1a;
-            --sidebar-text: #94a3b8;
-            --sidebar-active-bg: rgba(34, 211, 238, 0.08);
-            --sidebar-active-text: #22D3EE;
+            --sidebar-bg: #0B0F19;
+            --sidebar-text: #9CA3AF;
+            --sidebar-active-bg: rgba(56, 189, 248, 0.1);
+            --sidebar-active-text: #38BDF8;
             
-            --header-bg: rgba(11, 18, 32, 0.8);
-            --hover-bg: rgba(38, 52, 78, 0.45);
-            --input-bg: #0c1322;
-            --table-header-bg: #0c1322;
+            --header-bg: rgba(3, 7, 18, 0.8);
+            --hover-bg: #1F2937;
+            --input-bg: #0F172A;
+            --table-header-bg: #1F2937;
             
-            --primary-color: #2563EB;
-            --primary-hover: #3b82f6;
-            --accent-color: #22D3EE;
-            --success-color: #14b8a6;
-            --error-color: #f43f5e;
-            --warning-color: #f59e0b;
+            --primary-color: #38BDF8;
+            --primary-hover: #0EA5E9;
+            --accent-color: #0EA5E9;
+            --success-color: #34D399;
+            --error-color: #F87171;
+            --warning-color: #FBBF24;
             
-            --focus-ring: rgba(34, 211, 238, 0.25);
+            --focus-ring: rgba(56, 189, 248, 0.2);
             --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
             --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
         }
@@ -138,16 +140,12 @@
             background-color: var(--hover-bg) !important;
         }
 
-        /* Active Navigation tab buttons classes matching JS theme values */
-        #sidebar-container button.bg-gradient-to-r,
-        #sidebar-container button[class*="text-sky-400"],
-        #sidebar-container button[class*="text-indigo-400"],
-        #sidebar-container button[class*="text-emerald-400"] {
+        #sidebar-container button.nav-active {
             color: var(--sidebar-active-text) !important;
             background-color: var(--sidebar-active-bg) !important;
             border-color: var(--border-hover) !important;
             font-weight: 600 !important;
-            box-shadow: var(--shadow-sm) !important;
+            box-shadow: var(--shadow-md) !important;
         }
 
         #sidebar-container button i {
@@ -156,7 +154,7 @@
         }
 
         #sidebar-container button:hover i,
-        #sidebar-container button[class*="text-"] i {
+        #sidebar-container button.nav-active i {
             color: var(--primary-color) !important;
         }
 
@@ -186,8 +184,8 @@
         }
         .glass-card-hover:hover {
             transform: translateY(-2px);
-            border-color: var(--border-hover) !important;
-            box-shadow: 0 12px 20px -8px rgba(0, 163, 224, 0.12), var(--shadow-lg) !important;
+            border-color: var(--primary-color) !important;
+            box-shadow: 0 12px 20px -8px var(--focus-ring), var(--shadow-lg) !important;
         }
 
         /* Table Aesthetics */
@@ -226,13 +224,13 @@
         }
 
         /* Form Inputs & Select Overrides */
-        input[type="text"], input[type="email"], input[type="password"], input[type="number"], select {
-            height: 44px;
-            padding: 10px 14px !important;
+        input[type="text"], input[type="email"], input[type="password"], input[type="number"], input[type="date"], select {
+            height: 40px;
+            padding: 8px 12px !important;
             background-color: var(--input-bg) !important;
             color: var(--text-color) !important;
             border: 1.5px solid var(--border-color) !important;
-            border-radius: 12px !important;
+            border-radius: 10px !important;
             outline: none !important;
             font-size: 13px !important;
             font-weight: 500 !important;
@@ -241,7 +239,31 @@
 
         input:focus, select:focus {
             border-color: var(--primary-color) !important;
-            box-shadow: 0 0 0 3.5px var(--focus-ring) !important;
+            box-shadow: 0 0 0 3px var(--focus-ring) !important;
+        }
+
+        /* Range Slider Styling */
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            background: var(--border-color);
+            border-radius: 3px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: transform 0.1s ease;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
         }
 
         /* Custom Scrollbar */
@@ -272,11 +294,11 @@
             align-items: center;
             justify-content: center;
             gap: 8px;
-            height: 40px;
-            padding: 0 16px;
+            height: 38px;
+            padding: 0 14px;
             background-color: var(--primary-color) !important;
             color: #FFFFFF !important;
-            border-radius: 12px !important;
+            border-radius: 10px !important;
             font-size: 13px !important;
             font-weight: 700 !important;
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
@@ -298,12 +320,12 @@
             align-items: center;
             justify-content: center;
             gap: 8px;
-            height: 40px;
-            padding: 0 16px;
+            height: 38px;
+            padding: 0 14px;
             background-color: var(--hover-bg) !important;
             color: var(--text-color) !important;
             border: 1.5px solid var(--border-color) !important;
-            border-radius: 12px !important;
+            border-radius: 10px !important;
             font-size: 13px !important;
             font-weight: 600 !important;
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
@@ -322,12 +344,12 @@
             align-items: center;
             justify-content: center;
             gap: 8px;
-            height: 40px;
-            padding: 0 16px;
+            height: 38px;
+            padding: 0 14px;
             background-color: rgba(239, 68, 68, 0.1) !important;
             color: var(--error-color) !important;
             border: 1.5px solid rgba(239, 68, 68, 0.2) !important;
-            border-radius: 12px !important;
+            border-radius: 10px !important;
             font-size: 13px !important;
             font-weight: 700 !important;
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
@@ -401,6 +423,40 @@
         .status-dot-active {
             background-color: var(--success-color);
             box-shadow: 0 0 8px var(--success-color);
+        }
+
+        /* Print Media Stylesheet */
+        @media print {
+            body {
+                background: #FFFFFF !important;
+                color: #000000 !important;
+                font-size: 12px !important;
+            }
+            aside, header, button, .btn-primary, .btn-secondary, form, #mobile-sidebar-overlay, .pagination-controls, .print-hidden {
+                display: none !important;
+            }
+            main {
+                margin: 0 !important;
+                padding: 0 !important;
+                max-height: none !important;
+                overflow: visible !important;
+            }
+            .glass-panel {
+                background: #FFFFFF !important;
+                border: 1px solid #94A3B8 !important;
+                box-shadow: none !important;
+                color: #000000 !important;
+                border-radius: 0 !important;
+                page-break-inside: avoid;
+            }
+            table {
+                width: 100% !important;
+                border: 1px solid #E2E8F0 !important;
+            }
+            thead th, tbody td {
+                color: #000000 !important;
+                border-bottom: 1px solid #E2E8F0 !important;
+            }
         }
     </style>
 </head>
@@ -529,47 +585,91 @@
 
             <!-- TAB 1: CLINICAL OVERVIEW -->
             <div id="tab-analytics" class="space-y-6">
-                <!-- Stats Metric Cards -->
+                <!-- Executive Dashboard: Premium KPI Cards -->
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div class="glass-panel p-5 rounded-2xl flex items-center justify-between glass-card-hover border-t-2 border-t-sky-500">
                         <div>
                             <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Patients Screened</span>
-                            <h3 id="stat-patients" class="text-3xl font-extrabold mt-1 text-slate-100 glow-accent">-</h3>
+                            <h3 id="stat-patients" class="text-2xl font-extrabold mt-1 text-slate-100 glow-accent">-</h3>
+                            <div class="text-[10px] text-emerald-400 mt-1 font-semibold"><i class="fa-solid fa-arrow-trend-up"></i> Active Registry</div>
                         </div>
-                        <div class="h-12 w-12 rounded-2xl bg-sky-500/10 text-sky-400 flex items-center justify-center text-xl border border-sky-500/20">
+                        <div class="h-12 w-12 rounded-2xl bg-sky-500/10 text-sky-400 flex items-center justify-center text-xl border border-sky-500/20 shadow-inner">
                             <i class="fa-solid fa-hospital-user"></i>
                         </div>
                     </div>
                     <div class="glass-panel p-5 rounded-2xl flex items-center justify-between glass-card-hover border-t-2 border-t-indigo-500">
                         <div>
-                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Scans Analyzed</span>
-                            <h3 id="stat-scans" class="text-3xl font-extrabold mt-1 text-slate-100">-</h3>
+                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Scans Ingested</span>
+                            <h3 id="stat-scans" class="text-2xl font-extrabold mt-1 text-slate-100">-</h3>
+                            <div class="text-[10px] text-slate-400 mt-1 font-semibold">Total MRI Slices</div>
                         </div>
-                        <div class="h-12 w-12 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-xl border border-indigo-500/20">
+                        <div class="h-12 w-12 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-xl border border-indigo-500/20 shadow-inner">
                             <i class="fa-solid fa-x-ray"></i>
                         </div>
                     </div>
                     <div class="glass-panel p-5 rounded-2xl flex items-center justify-between glass-card-hover border-t-2 border-t-amber-500">
                         <div>
                             <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Tumors Identified</span>
-                            <h3 id="stat-tumors" class="text-3xl font-extrabold mt-1 text-amber-400">-</h3>
+                            <h3 id="stat-tumors" class="text-2xl font-extrabold mt-1 text-amber-400">-</h3>
+                            <div class="text-[10px] text-slate-450 mt-1 font-semibold" id="stat-tumor-rate">Detection Rate: -</div>
                         </div>
-                        <div class="h-12 w-12 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center text-xl border border-amber-500/20">
+                        <div class="h-12 w-12 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center text-xl border border-amber-500/20 shadow-inner">
                             <i class="fa-solid fa-file-waveform"></i>
                         </div>
                     </div>
                     <div class="glass-panel p-5 rounded-2xl flex items-center justify-between glass-card-hover border-t-2 border-t-red-500">
                         <div>
                             <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Critical Priority</span>
-                            <h3 id="stat-critical" class="text-3xl font-extrabold mt-1 text-red-400">-</h3>
+                            <h3 id="stat-critical" class="text-2xl font-extrabold mt-1 text-red-400 animate-pulse">-</h3>
+                            <div class="text-[10px] text-red-400 mt-1 font-bold"><i class="fa-solid fa-triangle-exclamation"></i> Action Required</div>
                         </div>
-                        <div class="h-12 w-12 rounded-2xl bg-red-500/10 text-red-400 flex items-center justify-center text-xl border border-red-500/20">
-                            <i class="fa-solid fa-triangle-exclamation"></i>
+                        <div class="h-12 w-12 rounded-2xl bg-red-500/10 text-red-400 flex items-center justify-center text-xl border border-red-500/20 shadow-inner">
+                            <i class="fa-solid fa-bell"></i>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-5 rounded-2xl flex items-center justify-between glass-card-hover border-t-2 border-t-emerald-500">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Avg Confidence</span>
+                            <h3 id="stat-avg-confidence" class="text-2xl font-extrabold mt-1 text-emerald-400">-</h3>
+                            <div class="text-[10px] text-slate-400 mt-1 font-semibold">Model Probability</div>
+                        </div>
+                        <div class="h-12 w-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-xl border border-emerald-500/20 shadow-inner">
+                            <i class="fa-solid fa-circle-check"></i>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-5 rounded-2xl flex items-center justify-between glass-card-hover border-t-2 border-t-pink-500">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Avg Latency</span>
+                            <h3 id="stat-latency" class="text-2xl font-extrabold mt-1 text-pink-400">-</h3>
+                            <div class="text-[10px] text-slate-450 mt-1 font-semibold">Inference Speed</div>
+                        </div>
+                        <div class="h-12 w-12 rounded-2xl bg-pink-500/10 text-pink-400 flex items-center justify-center text-xl border border-pink-500/20 shadow-inner">
+                            <i class="fa-solid fa-stopwatch"></i>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-5 rounded-2xl flex items-center justify-between glass-card-hover border-t-2 border-t-teal-500">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Duplicates Blocked</span>
+                            <h3 id="stat-duplicates" class="text-2xl font-extrabold mt-1 text-teal-400">-</h3>
+                            <div class="text-[10px] text-slate-400 mt-1 font-semibold">Perceptual Hashing</div>
+                        </div>
+                        <div class="h-12 w-12 rounded-2xl bg-teal-500/10 text-teal-400 flex items-center justify-center text-xl border border-teal-500/20 shadow-inner">
+                            <i class="fa-solid fa-shield-halved"></i>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-5 rounded-2xl flex items-center justify-between glass-card-hover border-t-2 border-t-cyan-500">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Database Status</span>
+                            <h3 id="stat-db-health" class="text-sm font-extrabold mt-2.5 text-cyan-400 flex items-center gap-1.5"><span class="status-dot status-dot-active"></span> SQLite Engine</h3>
+                            <div class="text-[9px] text-slate-500 font-bold tracking-widest uppercase mt-1">WAL Journaling</div>
+                        </div>
+                        <div class="h-12 w-12 rounded-2xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-xl border border-cyan-500/20 shadow-inner">
+                            <i class="fa-solid fa-database"></i>
                         </div>
                     </div>
                 </div>
 
-                <!-- Charts Grid -->
+                <!-- Interactive Charts Panel Grid -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div class="glass-panel p-5 rounded-2xl h-[300px] flex flex-col justify-between">
                         <div class="flex justify-between items-center">
@@ -611,6 +711,17 @@
                             <canvas id="chart-severity"></canvas>
                         </div>
                     </div>
+                    <!-- New Morphological Correlation Chart -->
+                    <div class="glass-panel p-5 rounded-2xl h-[300px] flex flex-col justify-between lg:col-span-2">
+                        <div class="flex justify-between items-center">
+                            <h4 class="font-extrabold text-xs text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                                <i class="fa-solid fa-chart-scatter text-teal-400"></i> Model Confidence vs. Segmented Tumor Area Correlation
+                            </h4>
+                        </div>
+                        <div class="relative flex-1 w-full max-h-[220px]">
+                            <canvas id="chart-scatter-correlation"></canvas>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Recent Scan Reports Table -->
@@ -648,35 +759,147 @@
                 </div>
             </div>
 
-            <!-- TAB 2: PATIENT SEARCH DATABASE -->
+            <!-- TAB 2: PATIENT SEARCH DATABASE REGISTRY -->
             <div id="tab-database" class="hidden space-y-6">
-                <div class="glass-panel p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div class="relative w-full sm:w-96">
-                        <i class="fa-solid fa-magnifying-glass absolute left-4 top-3.5 text-slate-500"></i>
-                        <input id="search-input" type="text" placeholder="Search by Patient ID or Name..." onkeyup="if(event.key==='Enter') searchPatients()" class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-11 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500 transition">
+                <!-- Advanced Multi-Criteria Filter Workstation -->
+                <div class="glass-panel p-5 rounded-2xl border border-slate-800 space-y-4">
+                    <div class="flex justify-between items-center border-b border-slate-850 pb-3">
+                        <h4 class="font-extrabold text-slate-200 text-xs uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-filter text-sky-400"></i> Registry Query Filters & Search Workstation
+                        </h4>
+                        <div class="flex items-center gap-2.5">
+                            <button onclick="resetRegistryFilters()" class="text-xs bg-slate-900 hover:bg-slate-800 text-slate-400 font-bold px-3 py-1.5 rounded-lg border border-slate-800 transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-filter-circle-xmark"></i> Clear Filters
+                            </button>
+                            <button onclick="exportRegistryToCSV()" class="text-xs bg-indigo-650 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-file-csv"></i> Export CSV
+                            </button>
+                        </div>
                     </div>
-                    <button onclick="searchPatients()" class="btn-primary w-full sm:w-auto">
-                        <i class="fa-solid fa-magnifying-glass"></i> Search Patients
-                    </button>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <!-- Fuzzy Text Search -->
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Search Query</label>
+                            <div class="relative w-full">
+                                <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-[11px] text-slate-500"></i>
+                                <input id="registry-search" type="text" placeholder="ID, Name, or Physician..." oninput="updateRegistryView()" class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
+                            </div>
+                        </div>
+
+                        <!-- Diagnosis Class Dropdown -->
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Diagnosis Class</label>
+                            <select id="registry-class" onchange="updateRegistryView()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
+                                <option value="ALL">All Categories</option>
+                                <option value="Glioma">Glioma (Neoplasm)</option>
+                                <option value="Meningioma">Meningioma (Neoplasm)</option>
+                                <option value="Pituitary">Pituitary (Neoplasm)</option>
+                                <option value="No Tumor">No Tumor (Healthy)</option>
+                            </select>
+                        </div>
+
+                        <!-- Severity Class Dropdown -->
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Severity Priority</label>
+                            <select id="registry-severity" onchange="updateRegistryView()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
+                                <option value="ALL">All Severities</option>
+                                <option value="Low">Low Risk</option>
+                                <option value="Medium">Medium Risk</option>
+                                <option value="High">High Priority</option>
+                            </select>
+                        </div>
+
+                        <!-- Confidence Range Slider -->
+                        <div class="flex flex-col gap-1.5">
+                            <div class="flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                                <span>Min AI Confidence</span>
+                                <span id="registry-confidence-val" class="text-sky-400 font-extrabold">0%</span>
+                            </div>
+                            <div class="flex items-center h-10 px-2 bg-slate-950 border border-slate-800 rounded-xl">
+                                <input id="registry-confidence" type="range" min="0" max="100" value="0" oninput="updateRegistryConfidenceVal(this.value); updateRegistryView();" class="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-400">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Date Range Filter Row -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-850/60 pt-4">
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Scan Start Date</label>
+                            <input id="registry-start-date" type="date" onchange="updateRegistryView()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
+                        </div>
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Scan End Date</label>
+                            <input id="registry-end-date" type="date" onchange="updateRegistryView()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
+                        </div>
+                    </div>
                 </div>
+
+                <!-- Patient Scans Registry Table -->
                 <div class="glass-panel rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+                    <div class="p-5 bg-slate-900/80 border-b border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                            <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2">
+                                <i class="fa-solid fa-database text-indigo-400"></i>
+                                Integrated Patient MRI Diagnostic Registry
+                            </h4>
+                            <p class="text-xs text-slate-400">Clinical records database from ML inference pipelines</p>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs text-slate-400 font-medium">
+                            <span>Records per page:</span>
+                            <select id="registry-page-size" onchange="updateRegistryPageSize(this.value)" class="bg-slate-950 border border-slate-800 text-xs text-slate-200 rounded-lg px-2.5 py-1">
+                                <option value="5">5</option>
+                                <option value="10" selected>10</option>
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                            </select>
+                        </div>
+                    </div>
+                    
                     <div class="overflow-x-auto">
                         <table class="w-full text-left text-sm">
                             <thead class="bg-slate-950 text-slate-400 text-xs uppercase font-bold tracking-wider border-b border-slate-800">
                                 <tr>
-                                    <th class="p-4">Report ID</th>
-                                    <th class="p-4">Patient Info</th>
-                                    <th class="p-4">Scan Date</th>
-                                    <th class="p-4">Diagnosis Class</th>
-                                    <th class="p-4">Severity</th>
-                                    <th class="p-4">AI Confidence</th>
+                                    <th class="p-4 cursor-pointer hover:text-white transition" onclick="toggleRegistrySort('report_id')">
+                                        Report ID <span id="sort-icon-report_id"><i class="fa-solid fa-sort text-[9px] ml-1"></i></span>
+                                    </th>
+                                    <th class="p-4 cursor-pointer hover:text-white transition" onclick="toggleRegistrySort('patient_name')">
+                                        Patient Info <span id="sort-icon-patient_name"><i class="fa-solid fa-sort text-[9px] ml-1"></i></span>
+                                    </th>
+                                    <th class="p-4 cursor-pointer hover:text-white transition" onclick="toggleRegistrySort('scan_date')">
+                                        Scan Date <span id="sort-icon-scan_date"><i class="fa-solid fa-sort text-[9px] ml-1"></i></span>
+                                    </th>
+                                    <th class="p-4 cursor-pointer hover:text-white transition" onclick="toggleRegistrySort('predicted_class')">
+                                        Diagnosis Class <span id="sort-icon-predicted_class"><i class="fa-solid fa-sort text-[9px] ml-1"></i></span>
+                                    </th>
+                                    <th class="p-4 cursor-pointer hover:text-white transition" onclick="toggleRegistrySort('rule_based_severity')">
+                                        Severity <span id="sort-icon-rule_based_severity"><i class="fa-solid fa-sort text-[9px] ml-1"></i></span>
+                                    </th>
+                                    <th class="p-4 cursor-pointer hover:text-white transition" onclick="toggleRegistrySort('confidence_score')">
+                                        AI Confidence <span id="sort-icon-confidence_score"><i class="fa-solid fa-sort text-[9px] ml-1"></i></span>
+                                    </th>
                                     <th class="p-4 text-center">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody id="search-table-body" class="divide-y divide-slate-800/60 text-xs">
-                                <tr><td colspan="7" class="p-8 text-center text-slate-500 font-medium">Enter a query above to search MRI scans database.</td></tr>
+                            <tbody id="registry-table-body" class="divide-y divide-slate-800/60 text-xs">
+                                <tr><td colspan="7" class="p-8 text-center text-slate-500 font-medium">Loading patient clinical registry...</td></tr>
                             </tbody>
                         </table>
+                    </div>
+
+                    <!-- Pagination Controls -->
+                    <div class="p-4 bg-slate-950/70 border-t border-slate-800/80 flex items-center justify-between gap-4 text-xs font-semibold text-slate-400">
+                        <div id="registry-pagination-info">
+                            Showing 0 to 0 of 0 records
+                        </div>
+                        <div class="flex items-center space-x-2.5">
+                            <button id="registry-prev-btn" onclick="prevRegistryPage()" class="btn-secondary h-8 px-3 rounded-lg text-xs" disabled>
+                                <i class="fa-solid fa-chevron-left mr-1"></i> Previous
+                            </button>
+                            <button id="registry-next-btn" onclick="nextRegistryPage()" class="btn-secondary h-8 px-3 rounded-lg text-xs" disabled>
+                                Next <i class="fa-solid fa-chevron-right ml-1"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -981,17 +1204,38 @@
                 <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Tumor Area</span><span id="modal-area" class="font-extrabold text-slate-100 text-sm">-</span></div>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div class="bg-slate-950/70 p-3 rounded-2xl border border-slate-800">
-                    <h5 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                        <i class="fa-solid fa-fire text-amber-400"></i> Grad-CAM Overlay Visualization
-                    </h5>
-                    <img id="modal-overlay-img" class="w-full h-64 object-contain bg-slate-950 rounded-xl border border-slate-800/80" src="" alt="Grad-CAM Overlay">
+                <!-- Grad-CAM Blended View -->
+                <div class="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 flex flex-col justify-between">
+                    <div class="flex justify-between items-center mb-3">
+                        <h5 class="text-xs font-bold text-slate-350 uppercase tracking-wider flex items-center gap-1.5">
+                            <i class="fa-solid fa-fire text-amber-400"></i> Grad-CAM XAI Heatmap Blending
+                        </h5>
+                        <span id="label-overlay-opacity" class="text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-850">Opacity: 70%</span>
+                    </div>
+                    <div class="relative w-full h-72 bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-center overflow-hidden mb-3">
+                        <img id="modal-heatmap-raw" class="absolute max-w-full max-h-full object-contain" src="" alt="Raw MRI Scan">
+                        <img id="modal-overlay-img" class="absolute max-w-full max-h-full object-contain pointer-events-none" src="" alt="Grad-CAM Overlay" style="opacity: 0.70;">
+                    </div>
+                    <div>
+                        <input type="range" min="0" max="100" value="70" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-400" oninput="adjustOpacity('overlay', this.value)">
+                    </div>
                 </div>
-                <div class="bg-slate-950/70 p-3 rounded-2xl border border-slate-800">
-                    <h5 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                        <i class="fa-solid fa-draw-polygon text-sky-400"></i> UNeXt Segmentation Mask
-                    </h5>
-                    <img id="modal-mask-img" class="w-full h-64 object-contain bg-slate-950 rounded-xl border border-slate-800/80" src="" alt="Segmentation Mask">
+
+                <!-- Segmentation Blended View -->
+                <div class="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 flex flex-col justify-between">
+                    <div class="flex justify-between items-center mb-3">
+                        <h5 class="text-xs font-bold text-slate-355 uppercase tracking-wider flex items-center gap-1.5">
+                            <i class="fa-solid fa-draw-polygon text-sky-400"></i> UNeXt Segmentation Outline Blending
+                        </h5>
+                        <span id="label-mask-opacity" class="text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-850">Opacity: 70%</span>
+                    </div>
+                    <div class="relative w-full h-72 bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-center overflow-hidden mb-3">
+                        <img id="modal-mask-raw" class="absolute max-w-full max-h-full object-contain" src="" alt="Raw MRI Scan">
+                        <img id="modal-mask-img" class="absolute max-w-full max-h-full object-contain pointer-events-none" src="" alt="Segmentation Mask" style="opacity: 0.70;">
+                    </div>
+                    <div>
+                        <input type="range" min="0" max="100" value="70" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-400" oninput="adjustOpacity('mask', this.value)">
+                    </div>
                 </div>
             </div>
             <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs text-slate-300 mb-6">
@@ -1012,8 +1256,16 @@
         let severityChart = null;
         let lineChart = null;
         let areaChart = null;
+        let scatterChart = null;
         let currentUser = null;
         let authToken = localStorage.getItem("auth_token") || null;
+
+        // Registry Workstation State Globals
+        let allScans = [];
+        let registryPage = 1;
+        let registryPageSize = 10;
+        let registrySortColumn = 'scan_date';
+        let registrySortOrder = 'desc';
 
         document.addEventListener("DOMContentLoaded", async () => {
             initializeTheme();
@@ -1077,6 +1329,16 @@
                 severityChart.options.scales.x.ticks.color = textColor;
                 severityChart.options.scales.y.ticks.color = textColor;
                 severityChart.update();
+            }
+            if (scatterChart) {
+                scatterChart.options.scales.x.grid.color = gridColor;
+                scatterChart.options.scales.x.ticks.color = textColor;
+                scatterChart.options.scales.x.title.color = textColor;
+                scatterChart.options.scales.y.grid.color = gridColor;
+                scatterChart.options.scales.y.ticks.color = textColor;
+                scatterChart.options.scales.y.title.color = textColor;
+                scatterChart.options.plugins.legend.labels.color = textColor;
+                scatterChart.update();
             }
         }
 
@@ -1197,29 +1459,59 @@
 
         async function loadDashboardData() {
             try {
+                // 1. Fetch Analytics Summary
                 const resStats = await fetchWithAuth("/api/analytics");
                 const stats = await resStats.json();
 
-                if (!stats.error) {
+                // 2. Fetch Deep Health Telemetry
+                const resTelemetry = await fetchWithAuth("/api/health-telemetry");
+                const telemetry = await resTelemetry.json();
+
+                if (!stats.error && !telemetry.error) {
                     document.getElementById("stat-patients").innerText = stats.total_patients || 0;
                     document.getElementById("stat-scans").innerText = stats.total_scans || 0;
+                    
                     const classDist = stats.classification_distribution || {};
                     let activeTumors = (classDist["Glioma"] || 0) + (classDist["Meningioma"] || 0) + (classDist["Pituitary"] || 0);
                     document.getElementById("stat-tumors").innerText = activeTumors;
+                    
+                    let tumorRate = stats.total_scans > 0 ? ((activeTumors / stats.total_scans) * 100).toFixed(1) : 0;
+                    document.getElementById("stat-tumor-rate").innerText = `Detection Rate: ${tumorRate}%`;
+                    
                     const sevDist = stats.severity_distribution || {};
                     let critical = (sevDist["Medium"] || 0) + (sevDist["High"] || 0);
                     document.getElementById("stat-critical").innerText = critical;
 
+                    // Exposing Telemetry Endpoint Values
+                    document.getElementById("stat-avg-confidence").innerText = `${(telemetry.avg_confidence * 100).toFixed(1)}%`;
+                    document.getElementById("stat-latency").innerText = `${telemetry.avg_runtime.toFixed(3)}s`;
+                    document.getElementById("stat-duplicates").innerText = telemetry.duplicate_uploads || 0;
+                    
+                    const dbStatus = document.getElementById("stat-db-health");
+                    if (telemetry.db_healthy) {
+                        dbStatus.innerHTML = `<span class="status-dot status-dot-active"></span> Online`;
+                        dbStatus.className = "text-sm font-extrabold mt-2.5 text-emerald-400 flex items-center gap-1.5";
+                    } else {
+                        dbStatus.innerHTML = `<span class="status-dot bg-red-500 shadow-md"></span> Offline`;
+                        dbStatus.className = "text-sm font-extrabold mt-2.5 text-red-500 flex items-center gap-1.5";
+                    }
+
+                    // Render Charts
                     drawLineChart(stats.total_scans || 0);
                     drawAreaChart();
                     drawDiagnosisChart(stats.classification_distribution || {});
                     drawSeverityChart(stats.severity_distribution || {});
                 }
 
+                // 3. Fetch Full History
                 const resHistory = await fetchWithAuth("/api/history");
-                const history = await resHistory.json();
-                if (Array.isArray(history)) {
-                    populateTable("history-table-body", history);
+                allScans = await resHistory.json();
+                if (Array.isArray(allScans)) {
+                    // Render recent scans table (first 5 records)
+                    populateTable("history-table-body", allScans.slice(0, 5));
+                    
+                    // Render Scatter correlation chart
+                    drawScatterChart(allScans);
                 }
             } catch (err) {
                 console.error("Failed to load dashboard statistics:", err);
@@ -1227,15 +1519,13 @@
         }
 
         async function searchPatients() {
-            const query = document.getElementById("search-input").value.trim();
-            const tbody = document.getElementById("search-table-body");
-            tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-400">Searching records...</td></tr>`;
-            try {
-                const res = await fetchWithAuth(`/api/search?q=${encodeURIComponent(query)}`);
-                const data = await res.json();
-                populateTable("search-table-body", data);
-            } catch (err) {
-                tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-red-500 font-bold">Failed to search database.</td></tr>`;
+            // Maintained for backward compatibility, routes to advanced registry fuzzy query
+            const query = document.getElementById("search-input") ? document.getElementById("search-input").value.trim() : "";
+            const regSearch = document.getElementById("registry-search");
+            if (regSearch) {
+                regSearch.value = query;
+                switchTab('database');
+                updateRegistryView();
             }
         }
 
@@ -1244,22 +1534,47 @@
                 const res = await fetchWithAuth(`/api/report/${reportId}`);
                 const data = await res.json();
                 if (data.error) { alert("Report details could not be loaded: " + data.error); return; }
+                
                 document.getElementById("modal-title").innerText = `Diagnostic Report Details: #${data.report_id}`;
                 document.getElementById("modal-patient-meta").innerText = `Patient ID: ${data.patient_id} | Name: ${data.patient_name}`;
                 document.getElementById("modal-diag").innerText = data.predicted_class;
                 document.getElementById("modal-conf").innerText = `${(data.confidence_score * 100).toFixed(2)}%`;
+                
                 const elSev = document.getElementById("modal-severity");
                 elSev.innerText = data.rule_based_severity;
                 elSev.className = data.rule_based_severity.toLowerCase() === 'high' ? 'font-extrabold text-red-400 text-sm' :
                                   data.rule_based_severity.toLowerCase() === 'medium' ? 'font-extrabold text-amber-400 text-sm' :
                                   'font-extrabold text-emerald-400 text-sm';
+                                  
                 document.getElementById("modal-area").innerText = `${data.tumor_area_mm2.toFixed(2)} mm²`;
                 document.getElementById("modal-rule-desc").innerText = data.severity_rule_description;
                 document.getElementById("modal-pdf-link").href = `/api/report/${data.report_id}/pdf`;
-                document.getElementById("modal-overlay-img").src = `/api/report/${data.report_id}/visuals/overlay`;
-                document.getElementById("modal-mask-img").src = `/api/report/${data.report_id}/visuals/mask`;
+                
+                // Opacity workstations resource ingestion
+                const rawUrl = `/api/report/${data.report_id}/visuals/raw`;
+                document.getElementById("modal-heatmap-raw").src = rawUrl;
+                document.getElementById("modal-mask-raw").src = rawUrl;
+                
+                const overlayImg = document.getElementById("modal-overlay-img");
+                overlayImg.src = `/api/report/${data.report_id}/visuals/overlay`;
+                overlayImg.style.opacity = 0.70;
+                
+                const maskImg = document.getElementById("modal-mask-img");
+                maskImg.src = `/api/report/${data.report_id}/visuals/mask`;
+                maskImg.style.opacity = 0.70;
+                
+                // Reset Opacity elements
+                document.getElementById("label-overlay-opacity").innerText = "Opacity: 70%";
+                document.getElementById("label-mask-opacity").innerText = "Opacity: 70%";
+                
+                // Reset sliders inputs
+                const sliders = document.querySelectorAll("#details-modal input[type='range']");
+                sliders.forEach(s => s.value = 70);
+
                 openModal("details-modal");
-            } catch (err) { alert("Failed to load clinical report overlays."); }
+            } catch (err) { 
+                alert("Failed to load clinical report overlays."); 
+            }
         }
 
         function populateTable(tbodyId, records) {
@@ -1325,6 +1640,269 @@
                 </tr>
                 `;
             });
+        }
+
+        // PACS Visual Overlay Opacity Blending Adjustments
+        function adjustOpacity(type, value) {
+            const opacityVal = value / 100;
+            if (type === 'overlay') {
+                document.getElementById("modal-overlay-img").style.opacity = opacityVal;
+                document.getElementById("label-overlay-opacity").innerText = `Opacity: ${value}%`;
+            } else if (type === 'mask') {
+                document.getElementById("modal-mask-img").style.opacity = opacityVal;
+                document.getElementById("label-mask-opacity").innerText = `Opacity: ${value}%`;
+            }
+        }
+
+        // Advanced Patient History Registry Workstation Operations
+        function loadRegistryData() {
+            registryPage = 1;
+            updateRegistryView();
+        }
+
+        function updateRegistryConfidenceVal(val) {
+            document.getElementById("registry-confidence-val").innerText = `${val}%`;
+        }
+
+        function resetRegistryFilters() {
+            document.getElementById("registry-search").value = "";
+            document.getElementById("registry-class").value = "ALL";
+            document.getElementById("registry-severity").value = "ALL";
+            document.getElementById("registry-confidence").value = 0;
+            document.getElementById("registry-confidence-val").innerText = "0%";
+            document.getElementById("registry-start-date").value = "";
+            document.getElementById("registry-end-date").value = "";
+            registryPage = 1;
+            updateRegistryView();
+        }
+
+        function getFilteredRecords() {
+            if (!Array.isArray(allScans)) return [];
+            
+            const searchVal = document.getElementById("registry-search").value.trim().toLowerCase();
+            const classVal = document.getElementById("registry-class").value;
+            const severityVal = document.getElementById("registry-severity").value;
+            const minConf = parseFloat(document.getElementById("registry-confidence").value) / 100;
+            const startDateVal = document.getElementById("registry-start-date").value;
+            const endDateVal = document.getElementById("registry-end-date").value;
+
+            return allScans.filter(r => {
+                // 1. Fuzzy Text Matching
+                if (searchVal) {
+                    const matchName = (r.patient_name || '').toLowerCase().includes(searchVal);
+                    const matchId = (r.patient_id || '').toLowerCase().includes(searchVal);
+                    const matchReportId = String(r.report_id).includes(searchVal);
+                    if (!matchName && !matchId && !matchReportId) return false;
+                }
+
+                // 2. Class Match
+                if (classVal !== 'ALL') {
+                    if (r.predicted_class !== classVal) return false;
+                }
+
+                // 3. Severity Match
+                if (severityVal !== 'ALL') {
+                    if (r.rule_based_severity !== severityVal) return false;
+                }
+
+                // 4. Min Confidence
+                if (r.confidence_score < minConf) return false;
+
+                // 5. Date Range Match
+                if (startDateVal) {
+                    const recordDate = new Date(r.scan_date);
+                    const startFilter = new Date(startDateVal);
+                    if (recordDate < startFilter) return false;
+                }
+                if (endDateVal) {
+                    const recordDate = new Date(r.scan_date);
+                    const endFilter = new Date(endDateVal + "T23:59:59");
+                    if (recordDate > endFilter) return false;
+                }
+
+                return true;
+            });
+        }
+
+        function updateRegistryView() {
+            let filtered = getFilteredRecords();
+
+            // Apply Sorting
+            filtered.sort((a, b) => {
+                let valA = a[registrySortColumn];
+                let valB = b[registrySortColumn];
+
+                if (registrySortColumn === 'scan_date' || registrySortColumn === 'created_at') {
+                    valA = new Date(valA);
+                    valB = new Date(valB);
+                }
+
+                if (valA < valB) return registrySortOrder === 'asc' ? -1 : 1;
+                if (valA > valB) return registrySortOrder === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            // Pagination Calculations
+            const totalRecords = filtered.length;
+            const totalPages = Math.max(Math.ceil(totalRecords / registryPageSize), 1);
+            if (registryPage > totalPages) registryPage = totalPages;
+
+            const startIndex = (registryPage - 1) * registryPageSize;
+            const endIndex = Math.min(startIndex + registryPageSize, totalRecords);
+            const paginated = filtered.slice(startIndex, endIndex);
+
+            // Populate table
+            const tbody = document.getElementById("registry-table-body");
+            tbody.innerHTML = "";
+
+            if (paginated.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-500 font-medium">No registry records match your criteria.</td></tr>`;
+            } else {
+                paginated.forEach(r => {
+                    const confPct = (r.confidence_score * 100).toFixed(1);
+                    const severityStyle = r.rule_based_severity.toLowerCase() === 'high' ? 'badge badge-error' :
+                                          r.rule_based_severity.toLowerCase() === 'medium' ? 'badge badge-warning' :
+                                          'badge badge-success';
+                    
+                    const nameParts = (r.patient_name || 'Patient').split(' ');
+                    const initials = nameParts.length >= 2 ? (nameParts[0][0] + nameParts[nameParts.length-1][0]).toUpperCase() : (r.patient_name || 'PT').substring(0,2).toUpperCase();
+
+                    tbody.innerHTML += `
+                    <tr class="table-row-hover">
+                        <td class="p-4 font-bold text-slate-300 font-mono">#${r.report_id}</td>
+                        <td class="p-4">
+                            <div class="flex items-center space-x-2.5">
+                                <div class="h-8 w-8 rounded-full bg-slate-800 text-sky-400 font-extrabold flex items-center justify-center text-[10px] border border-slate-700">
+                                    ${initials}
+                                </div>
+                                <div>
+                                    <div class="font-bold text-slate-200 text-xs">${r.patient_name}</div>
+                                    <div class="text-[10px] text-slate-400 font-mono">${r.patient_id}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="p-4 text-slate-400 font-medium text-xs">${r.scan_date}</td>
+                        <td class="p-4 font-extrabold text-slate-100 text-xs">
+                            <i class="fa-solid fa-brain text-sky-400 mr-1.5"></i> ${r.predicted_class}
+                        </td>
+                        <td class="p-4">
+                            <span class="${severityStyle}">
+                                ${r.rule_based_severity}
+                            </span>
+                        </td>
+                        <td class="p-4">
+                            <div class="w-24">
+                                <div class="flex justify-between text-[10px] font-bold mb-1 text-slate-300">
+                                    <span>Conf</span>
+                                    <span>${confPct}%</span>
+                                </div>
+                                <div class="progress-track w-full">
+                                    <div class="progress-fill" style="width: ${confPct}%"></div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="p-4 text-center">
+                            <div class="flex items-center justify-center space-x-2">
+                                <button onclick="viewDetails(${r.report_id})" class="btn-secondary text-[11px] h-8 px-2.5">
+                                    <i class="fa-solid fa-eye text-sky-400"></i> Visuals
+                                </button>
+                                <a href="/api/report/${r.report_id}/pdf" target="_blank" class="btn-primary text-[11px] h-8 px-2.5">
+                                    <i class="fa-solid fa-file-pdf"></i> PDF
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    `;
+                });
+            }
+
+            // Update Pagination display
+            document.getElementById("registry-pagination-info").innerText = 
+                totalRecords > 0 ? `Showing ${startIndex + 1} to ${endIndex} of ${totalRecords} records` : "Showing 0 to 0 of 0 records";
+
+            document.getElementById("registry-prev-btn").disabled = (registryPage === 1);
+            document.getElementById("registry-next-btn").disabled = (registryPage === totalPages);
+
+            // Render Sort arrow icons
+            ['report_id', 'patient_name', 'scan_date', 'predicted_class', 'rule_based_severity', 'confidence_score'].forEach(col => {
+                const el = document.getElementById(`sort-icon-${col}`);
+                if (!el) return;
+                if (registrySortColumn === col) {
+                    el.innerHTML = registrySortOrder === 'asc' ? '<i class="fa-solid fa-caret-up text-[10px] ml-1 text-sky-400"></i>' : '<i class="fa-solid fa-caret-down text-[10px] ml-1 text-sky-400"></i>';
+                } else {
+                    el.innerHTML = '<i class="fa-solid fa-sort text-[9px] ml-1 text-slate-500"></i>';
+                }
+            });
+        }
+
+        function toggleRegistrySort(column) {
+            if (registrySortColumn === column) {
+                registrySortOrder = registrySortOrder === 'asc' ? 'desc' : 'asc';
+            } else {
+                registrySortColumn = column;
+                registrySortOrder = 'desc';
+            }
+            updateRegistryView();
+        }
+
+        function updateRegistryPageSize(size) {
+            registryPageSize = parseInt(size);
+            registryPage = 1;
+            updateRegistryView();
+        }
+
+        function prevRegistryPage() {
+            if (registryPage > 1) {
+                registryPage--;
+                updateRegistryView();
+            }
+        }
+
+        function nextRegistryPage() {
+            const filtered = getFilteredRecords();
+            const totalPages = Math.ceil(filtered.length / registryPageSize);
+            if (registryPage < totalPages) {
+                registryPage++;
+                updateRegistryView();
+            }
+        }
+
+        function exportRegistryToCSV() {
+            const records = getFilteredRecords();
+            if (records.length === 0) {
+                alert("No records matches the current filters to export.");
+                return;
+            }
+
+            let csvContent = "";
+            // Header Row
+            const headers = ["Report ID", "Patient ID", "Patient Name", "Scan Date", "Diagnosis Category", "Rule Severity Priority", "Confidence Score (%)", "Tumor Size Area (mm2)"];
+            csvContent += headers.map(h => `"${h}"`).join(",") + "\r\n";
+
+            // Data Rows
+            records.forEach(r => {
+                const row = [
+                    `#${r.report_id}`,
+                    r.patient_id,
+                    r.patient_name,
+                    r.scan_date,
+                    r.predicted_class,
+                    r.rule_based_severity,
+                    (r.confidence_score * 100).toFixed(1),
+                    r.tumor_area_mm2.toFixed(2)
+                ];
+                csvContent += row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",") + "\r\n";
+            });
+
+            // Trigger Browser file download link
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `AuraScan_Patient_Registry_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
 
         // Form Submission report generation
@@ -1570,6 +2148,67 @@
                     scales: {
                         x: { grid: { color: document.documentElement.classList.contains('dark') ? 'rgba(51, 65, 85, 0.3)' : 'rgba(226, 232, 240, 0.8)' }, ticks: { color: document.documentElement.classList.contains('dark') ? '#cbd5e1' : '#334155', font: { size: 10 } } },
                         y: { grid: { display: false }, ticks: { color: document.documentElement.classList.contains('dark') ? '#cbd5e1' : '#334155', font: { size: 10, weight: 'bold' } } }
+                    }
+                }
+            });
+        }
+
+        function drawScatterChart(scans) {
+            const ctx = document.getElementById("chart-scatter-correlation").getContext("2d");
+            if (scatterChart) scatterChart.destroy();
+
+            // Prepare scatter data grouping by predicted class
+            const classes = ["Glioma", "Meningioma", "Pituitary", "No Tumor"];
+            const colors = ['#38bdf8', '#818cf8', '#f59e0b', '#10b981'];
+            
+            const datasets = classes.map((cls, idx) => {
+                const points = scans
+                    .filter(s => s.predicted_class === cls)
+                    .map(s => ({
+                        x: (s.confidence_score * 100),
+                        y: s.tumor_area_mm2,
+                        label: s.patient_name
+                    }));
+
+                return {
+                    label: cls,
+                    data: points,
+                    backgroundColor: colors[idx],
+                    pointRadius: 6,
+                    pointHoverRadius: 8
+                };
+            });
+
+            scatterChart = new Chart(ctx, {
+                type: 'scatter',
+                data: { datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: document.documentElement.classList.contains('dark') ? '#cbd5e1' : '#334155', font: { size: 10, weight: 'bold' } }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const pt = context.raw;
+                                    return `${context.dataset.label}: ${pt.label} (Conf: ${pt.x.toFixed(1)}%, Area: ${pt.y.toFixed(1)} mm²)`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: 'Confidence Score (%)', color: document.documentElement.classList.contains('dark') ? '#cbd5e1' : '#334155', font: { size: 10, weight: 'bold' } },
+                            grid: { color: document.documentElement.classList.contains('dark') ? 'rgba(51, 65, 85, 0.3)' : 'rgba(226, 232, 240, 0.8)' },
+                            ticks: { color: document.documentElement.classList.contains('dark') ? '#cbd5e1' : '#334155' }
+                        },
+                        y: {
+                            title: { display: true, text: 'Tumor Area (mm²)', color: document.documentElement.classList.contains('dark') ? '#cbd5e1' : '#334155', font: { size: 10, weight: 'bold' } },
+                            grid: { color: document.documentElement.classList.contains('dark') ? 'rgba(51, 65, 85, 0.3)' : 'rgba(226, 232, 240, 0.8)' },
+                            ticks: { color: document.documentElement.classList.contains('dark') ? '#cbd5e1' : '#334155' }
+                        }
                     }
                 }
             });

@@ -2991,4 +2991,79 @@ html, body, [data-testid="stAppViewContainer"], .stApp, .main, .auth-right-glass
         padding: 20px !important;
     }
 }
+
+/* Custom Profile Popover Overrides */
+[data-testid="stPopover"] > button {
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: var(--radius-full) !important;
+    color: var(--text-primary) !important;
+    padding: var(--space-8) var(--space-16) !important;
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 500 !important;
+    font-size: 13px !important;
+    box-shadow: var(--shadow-sm) !important;
+    transition: all 0.2s ease !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+[data-testid="stPopover"] > button:hover {
+    background-color: var(--bg-card-hover) !important;
+    border-color: var(--border-highlight) !important;
+    color: var(--text-inverse) !important;
+    box-shadow: var(--shadow-md) !important;
+}
+
+[data-testid="stPopoverBody"] {
+    background-color: var(--surface) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: var(--radius-md) !important;
+    box-shadow: var(--shadow-lg) !important;
+    padding: var(--space-16) !important;
+    animation: fadeInSlideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+/* Ensure nice styling for dialog elements */
+div[data-testid="stDialog"] {
+    background-color: var(--surface) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: var(--radius-lg) !important;
+    animation: fadeInSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+@keyframes fadeInSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Pulsing secure dot animation */
+.pulse-dot {
+    display: inline-block;
+    animation: pulse 2s infinite ease-in-out;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 0.6;
+        transform: scale(0.9);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.1);
+    }
+    100% {
+        opacity: 0.6;
+        transform: scale(0.9);
+    }
+}
+
+
 

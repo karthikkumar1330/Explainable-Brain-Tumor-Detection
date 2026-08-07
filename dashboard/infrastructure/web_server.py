@@ -684,6 +684,15 @@ def create_app(db_path: str) -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/health-telemetry")
+    @login_required
+    def health_telemetry(current_user: User):
+        try:
+            telemetry = persistence_repo.get_health_telemetry()
+            return jsonify(telemetry)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/history")
     @login_required
     def history(current_user: User):
@@ -820,7 +829,13 @@ def create_app(db_path: str) -> Flask:
         try:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT overlay_path, heatmap_path, mask_path FROM clinical_reports WHERE id = ?;",
+                """
+                SELECT cr.overlay_path, cr.heatmap_path, cr.mask_path, s.image_path as raw_path
+                FROM clinical_reports cr
+                JOIN predictions pr ON cr.prediction_id = pr.id
+                JOIN mri_scans s ON pr.scan_id = s.id
+                WHERE cr.id = ?;
+                """,
                 (report_id,)
             )
             row = cursor.fetchone()
@@ -833,8 +848,10 @@ def create_app(db_path: str) -> Flask:
                 img_path = row["heatmap_path"]
             elif image_type == "mask":
                 img_path = row["mask_path"]
+            elif image_type == "raw":
+                img_path = row["raw_path"]
             else:
-                return "Invalid visual image type. Choose 'overlay', 'heatmap', or 'mask'.", 400
+                return "Invalid visual image type. Choose 'overlay', 'heatmap', 'mask', or 'raw'.", 400
 
             if not img_path or not os.path.exists(img_path):
                 return f"Image file not physically present on server: {img_path}", 404

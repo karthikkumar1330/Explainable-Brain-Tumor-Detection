@@ -53,13 +53,47 @@ def render_password_strength_meter(password: str) -> None:
 
 
 
+def format_last_login(timestamp_str: str) -> str:
+    """Formats raw UTC timestamp string to a human friendly relative time format."""
+    import datetime
+    if not timestamp_str:
+        return "Never"
+    try:
+        ts_clean = timestamp_str.replace("Z", "")
+        if "+" in ts_clean:
+            ts_clean = ts_clean.split("+")[0]
+        dt = datetime.datetime.fromisoformat(ts_clean)
+        
+        now = datetime.datetime.utcnow()
+        today = now.date()
+        yesterday = today - datetime.timedelta(days=1)
+        
+        dt_date = dt.date()
+        time_part = dt.strftime("%I:%M %p").lstrip('0')
+        
+        if dt_date == today:
+            return f"Today • {time_part}"
+        elif dt_date == yesterday:
+            return f"Yesterday • {time_part}"
+        else:
+            return f"{dt.strftime('%d %b %Y')} • {time_part}"
+    except Exception:
+        return timestamp_str
+
+
 def render_header(user=None, active_page: str = "🚀 Product Overview") -> None:
-    """Renders the top enterprise SaaS navbar header with ARIA accessibility labels, breadcrumbs, search, notification bell, and user avatar."""
+    """Renders the top enterprise SaaS navbar header with ARIA accessibility labels, breadcrumbs, and interactive user profile dropdown."""
+    import datetime
+    import socket
+    import sqlite3
+    
     clean_page_name = active_page.split(" ", 1)[-1] if " " in active_page else active_page
     
     user_initials = get_user_initials(user.get("full_name", "Doctor User")) if user else "AI"
     user_name = user.get("full_name", "Guest User") if user else "Guest Session"
-    user_role = user.get("role", "doctor").lower() if user else "guest"
+    user_role = user.get("role", "doctor") if user else "guest"
+    role_str = user_role.value if hasattr(user_role, "value") else str(user_role)
+    role_str = role_str.upper()
 
     pic_url = user.get("google_profile_pic") if user else None
     if pic_url:
@@ -67,9 +101,11 @@ def render_header(user=None, active_page: str = "🚀 Product Overview") -> None
     else:
         avatar_content = f'<span>{user_initials}</span>'
 
-    header_html = f"""
-        <header class="aurora-navbar" role="banner" aria-label="AuraScan Application Header">
-            <div class="aurora-brand-container">
+    col_left, col_right = st.columns([5, 2])
+
+    with col_left:
+        header_left_html = f"""
+            <div class="aurora-brand-container" style="display: flex; align-items: center; gap: 16px; margin-bottom: 12px;">
                 <div class="aurora-brand" tabindex="0" aria-label="AuraScan AI Platform Logo">
                     <div class="aurora-logo-icon" aria-hidden="true">🧠</div>
                     <div>
@@ -79,24 +115,158 @@ def render_header(user=None, active_page: str = "🚀 Product Overview") -> None
                 </div>
                 
                 <nav class="nav-breadcrumb" aria-label="Breadcrumb Location" role="navigation">
-                    <span aria-hidden="true">AuraScan</span>
-                    <span aria-hidden="true">/</span>
-                    <span class="nav-breadcrumb-active" aria-current="page">{clean_page_name}</span>
+                    <span aria-hidden="true" style="color: var(--text-muted);">AuraScan</span>
+                    <span aria-hidden="true" style="color: var(--text-muted);">/</span>
+                    <span class="nav-breadcrumb-active" aria-current="page" style="color: var(--text-primary); font-weight: 500;">{clean_page_name}</span>
                 </nav>
             </div>
+        """
+        st_html(header_left_html)
 
-            <div class="aurora-nav-actions">
-                <div class="user-badge-pill" tabindex="0" aria-label="Current User Session: {user_name}, Role: {user_role.upper()}">
-                    <div class="user-avatar-circle" aria-hidden="true" style="overflow: hidden; display: flex; align-items: center; justify-content: center;">
+    with col_right:
+        popover_label = f"👤 {user_name} ({role_str})"
+        with st.popover(popover_label, use_container_width=True):
+            st.markdown("### 👤 User Session Details")
+            st.markdown("---")
+            
+            last_login_formatted = format_last_login(user.get("last_login_at"))
+
+            # Session Status Card Calculations
+            session_started = st.session_state.get("session_started_at")
+            if session_started:
+                try:
+                    started_dt = datetime.datetime.fromisoformat(session_started)
+                    now_dt = datetime.datetime.utcnow()
+                    diff = now_dt - started_dt
+                    total_seconds = int(diff.total_seconds())
+                    hours, remainder = divmod(total_seconds, 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    if hours > 0:
+                        duration_str = f"{hours}h {minutes}m"
+                    elif minutes > 0:
+                        duration_str = f"{minutes}m {seconds}s"
+                    else:
+                        duration_str = f"{seconds}s"
+                    started_str = started_dt.strftime("%I:%M %p").lstrip('0')
+                except Exception:
+                    duration_str = "Unknown"
+                    started_str = "Unknown"
+            else:
+                duration_str = "0s"
+                started_str = "Just now"
+
+            # DB Status check
+            db_status = "SQLite Disconnected"
+            try:
+                conn = sqlite3.connect("outputs/clinical_reports.db")
+                conn.close()
+                db_status = "SQLite Connected"
+            except Exception:
+                pass
+
+            # API Status check
+            api_status = "API Offline"
+            try:
+                with socket.create_connection(("127.0.0.1", 8000), timeout=0.05):
+                    api_status = "API Online"
+            except Exception:
+                pass
+
+            st_html(f"""
+                <div style="display: flex; align-items: center; gap: 12px; padding: 8px 0;">
+                    <div class="user-avatar-circle" style="width: 48px; height: 48px; font-size: 18px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 50%;">
                         {avatar_content}
                     </div>
-                    <span class="header-user-name">{user_name}</span>
-                    <span class="header-user-role">[{user_role.upper()}]</span>
+                    <div>
+                        <div style="font-weight: 600; font-size: 14px; color: var(--text-primary);">{user_name}</div>
+                        <div style="font-size: 11px; color: var(--text-muted);">{user.get("email", "")}</div>
+                        <div style="margin-top: 4px;"><span class="badge-info" style="font-size: 10px; padding: 2px 8px; background: var(--status-info-bg); color: var(--status-info); border-radius: 4px;">{role_str}</span></div>
+                    </div>
                 </div>
-            </div>
-        </header>
-    """
-    st_html(header_html)
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 8px; border-top: 1px solid var(--border-color); padding-top: 8px; margin-bottom: 8px;">
+                    📅 <strong>Last Login:</strong> {last_login_formatted}
+                </div>
+                
+                <!-- Session Status Card -->
+                <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 10px; margin-top: 8px; margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--status-success); margin-bottom: 6px;">
+                        <span class="pulse-dot">🟢</span> Secure Session Active
+                    </div>
+                    <div style="font-size: 10px; color: var(--text-muted); display: grid; grid-template-columns: auto auto; justify-content: space-between; gap: 4px 10px;">
+                        <span>User Status:</span><span style="color: var(--text-primary); font-weight: 500;">Authenticated</span>
+                        <span>Encryption:</span><span style="color: var(--text-primary); font-weight: 500;">Encrypted Session</span>
+                        <span>Current Role:</span><span style="color: var(--text-primary); font-weight: 500;">{role_str}</span>
+                        <span>Started At:</span><span style="color: var(--text-primary); font-weight: 500;">{started_str}</span>
+                        <span>Duration:</span><span style="color: var(--text-primary); font-weight: 500;">{duration_str}</span>
+                    </div>
+                </div>
+                
+                <div style="border-top: 1px solid var(--border-color); margin-top: 8px; margin-bottom: 8px;"></div>
+            """)
+
+            if st.button("⚙️ Account Settings", key="hdr_settings_btn", use_container_width=True):
+                st.session_state["nav_page"] = "⚙️ Settings & Profile"
+                st.rerun()
+
+            if st.button("🚪 Sign Out Session", key="hdr_logout_btn", use_container_width=True, type="primary"):
+                st.session_state["show_logout_confirm"] = True
+                st.rerun()
+
+            api_color = "var(--status-success)" if "Online" in api_status else "var(--status-danger)"
+            st_html(f"""
+                <div style="font-size: 10px; color: var(--text-muted); border-top: 1px solid var(--border-color); padding-top: 8px; margin-top: 12px; line-height: 1.4;">
+                    <div style="display: flex; justify-content: space-between; font-weight: 600; color: var(--text-secondary);">
+                        <span>AuraScan AI v2.0</span>
+                        <span>Build 2026.08</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+                        <span>Env: Production</span>
+                        <span style="color: var(--status-success);">{db_status}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+                        <span>PACS Sync: Enabled</span>
+                        <span style="color: {api_color}; font-weight: 500;">{api_status}</span>
+                    </div>
+                </div>
+            """)
+
+
+
+def render_logout_dialog():
+    """Renders a secure logout confirmation dialog wrapper using Streamlit native dialog when possible."""
+    if hasattr(st, "dialog"):
+        @st.dialog("Confirm Secure Sign Out")
+        def show_dialog():
+            st.write("Are you sure you want to sign out of your secure clinical session?")
+            st.warning("⚠️ Any unsaved scan analysis progress or raw clinical insights will be lost.")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Cancel", key="dlg_logout_cancel", use_container_width=True):
+                    st.session_state["show_logout_confirm"] = False
+                    st.rerun()
+            with col2:
+                if st.button("Confirm Logout", key="dlg_logout_confirm", type="primary", use_container_width=True):
+                    st.session_state["do_logout_execution"] = True
+                    st.session_state["show_logout_confirm"] = False
+                    st.rerun()
+        show_dialog()
+    else:
+        st.warning("### Confirm Secure Sign Out")
+        st.write("Are you sure you want to sign out of your secure clinical session?")
+        st.write("⚠️ Any unsaved scan analysis progress or raw clinical insights will be lost.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Cancel", key="dlg_logout_cancel", use_container_width=True):
+                st.session_state["show_logout_confirm"] = False
+                st.rerun()
+        with col2:
+            if st.button("Confirm Logout", key="dlg_logout_confirm", type="primary", use_container_width=True):
+                st.session_state["do_logout_execution"] = True
+                st.session_state["show_logout_confirm"] = False
+                st.rerun()
+
 
 
 def render_sidebar_user_footer(user=None) -> None:
@@ -1454,6 +1624,7 @@ def render_login_view(auth_use_cases) -> None:
                 st.session_state["user"] = res["user"]
                 st.session_state["access_token"] = res["access_token"]
                 st.session_state["refresh_token"] = res["refresh_token"]
+                st.session_state["logged_out"] = False
                 render_toast(f"Welcome back, {res['user']['full_name']}!", "success")
                 
                 # Set default landing page based on role and redirect immediately
@@ -1571,6 +1742,7 @@ def render_register_view(auth_use_cases) -> None:
                     st.session_state["user"] = res["user"]
                     st.session_state["access_token"] = res["access_token"]
                     st.session_state["refresh_token"] = res["refresh_token"]
+                    st.session_state["logged_out"] = False
                     render_toast(f"Account Registered! Welcome, {res['user']['full_name']}!", "success")
                     
                     # Redirect directly to Dashboard

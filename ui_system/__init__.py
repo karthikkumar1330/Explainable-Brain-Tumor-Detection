@@ -26,6 +26,7 @@ from ui_system.components import (
     render_login_view,
     render_register_view,
     render_unauthenticated_app,
+    render_logout_dialog,
 )
 
 __all__ = [
@@ -48,4 +49,5 @@ __all__ = [
     "render_login_view",
     "render_register_view",
     "render_unauthenticated_app",
+    "render_logout_dialog",
 ]

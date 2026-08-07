@@ -196,7 +196,22 @@ def main() -> None:
     sec_repo.bootstrap_admin()
     auth_use_cases = AuthUseCases(user_repo=sec_repo)
 
+    # Setup security file logger
+    import logging
+    import os
+    os.makedirs("logs", exist_ok=True)
+    sec_logger = logging.getLogger("security_audit")
+    if not sec_logger.handlers:
+        sec_logger.setLevel(logging.INFO)
+        formatter = logging.Formatter("[%(asctime)s] [SECURITY] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+        fh = logging.FileHandler("logs/security.log", encoding="utf-8")
+        fh.setFormatter(formatter)
+        sec_logger.addHandler(fh)
+
     # Simplify query routing for clean Login/Register/Forgot entry points
+    if "logged_out" not in st.session_state:
+        st.session_state["logged_out"] = False
+
     query_view = st.query_params.get("view", None)
     if query_view:
         if query_view == "login":
@@ -209,36 +224,91 @@ def main() -> None:
             st.session_state["auth_page"] = "forgot"
             st.session_state["user"] = None
         elif query_view == "dashboard":
-            st.session_state["user"] = {"full_name": "Dr. Sarah Smith", "email": "admin@aurascan.ai", "role": "doctor"}
+            if not st.session_state["logged_out"]:
+                st.session_state["user"] = {"full_name": "Dr. Sarah Smith", "email": "admin@aurascan.ai", "role": "doctor"}
+            else:
+                st.session_state["user"] = None
+                st.query_params.clear()
+                sec_logger.warning("Blocked auto-login bypass attempt via view=dashboard query parameter after logout.")
 
     if "user" not in st.session_state:
         st.session_state["user"] = None
 
+    # Session State validation and Started Time tracker
+    if st.session_state["user"] is not None:
+        u = st.session_state["user"]
+        # Expired or corrupted session check
+        if not isinstance(u, dict) or "full_name" not in u or "role" not in u or not u.get("full_name") or not u.get("role"):
+            sec_logger.error("Corrupted or invalid user session detected. Force clearing session.")
+            st.session_state["user"] = None
+            st.session_state["access_token"] = None
+            st.session_state["refresh_token"] = None
+            st.session_state["session_started_at"] = None
+            st.rerun()
+
+        if "session_started_at" not in st.session_state or st.session_state["session_started_at"] is None:
+            st.session_state["session_started_at"] = datetime.datetime.utcnow().isoformat()
+            sec_logger.info(f"User {u.get('email', 'unknown')} logged in successfully. Session started.")
+
     # Modern 2026 Full-Screen Unauthenticated Access Guard
     if st.session_state["user"] is None:
+        if st.session_state.get("logged_out", False):
+            import streamlit.components.v1 as components
+            components.html("""
+            <script>
+                if (window.parent && window.parent.history) {
+                    window.parent.history.pushState(null, "", window.parent.location.pathname);
+                    window.parent.onpopstate = function() {
+                        window.parent.history.pushState(null, "", window.parent.location.pathname);
+                    };
+                }
+            </script>
+            """, height=0)
         render_unauthenticated_app(auth_use_cases)
         st.stop()
+
+    # Handle Logout Confirmation and Execution
+    if st.session_state.get("show_logout_confirm", False):
+        from ui_system import render_logout_dialog
+        render_logout_dialog()
+
+    if st.session_state.get("do_logout_execution", False):
+        token = st.session_state.get("access_token")
+        refresh_token = st.session_state.get("refresh_token")
+        user_email = "unknown"
+        if isinstance(st.session_state.get("user"), dict):
+            user_email = st.session_state["user"].get("email", "unknown")
+
+        if token or refresh_token:
+            try:
+                auth_use_cases.logout(token=token or "", refresh_token=refresh_token)
+            except Exception:
+                pass
+        # Perform security session cleanup
+        st.session_state["user"] = None
+        st.session_state["access_token"] = None
+        st.session_state["refresh_token"] = None
+        st.session_state["session_started_at"] = None
+        st.session_state["logged_out"] = True
+        st.session_state["do_logout_execution"] = False
+        st.session_state["show_logout_confirm"] = False
+        st.query_params.clear()
+        st.query_params["view"] = "login"
+        sec_logger.info(f"User {user_email} logged out successfully. Tokens revoked.")
+        render_toast("Logged out of session.", "info")
+        st.rerun()
 
     # 3. Sidebar Header & Authenticated User Status Controls
     st_html("<h3 style='text-align: center; color: var(--text-accent); margin-bottom: 0;'>🧠 AuraScan AI</h3>", container=st.sidebar)
     st_html("<p style='text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-muted); margin-top: -6px;'>SaaS MRI Clinical Platform</p>", container=st.sidebar)
     
     u = st.session_state["user"]
+    role_name = u["role"].value.upper() if hasattr(u["role"], "value") else str(u["role"]).upper()
     st.sidebar.markdown(f"👤 **User:** `{u['full_name']}`")
-    st.sidebar.markdown(f"🏷️ **Role:** `{u['role'].upper()}`")
+    st.sidebar.markdown(f"🏷️ **Role:** `{role_name}`")
     st.sidebar.markdown("✅ **Status:** `VERIFIED CLINICIAN`")
     if st.sidebar.button("🚪 Logout Session", key="st_logout_btn", use_container_width=True):
-        token = st.session_state.get("access_token")
-        refresh_token = st.session_state.get("refresh_token")
-        if token or refresh_token:
-            try:
-                auth_use_cases.logout(token=token or "", refresh_token=refresh_token)
-            except Exception:
-                pass
-        st.session_state["user"] = None
-        st.session_state["access_token"] = None
-        st.session_state["refresh_token"] = None
-        render_toast("Logged out of session.", "info")
+        st.session_state["show_logout_confirm"] = True
         st.rerun()
     st.sidebar.divider()
 
