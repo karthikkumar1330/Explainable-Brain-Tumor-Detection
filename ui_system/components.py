@@ -112,8 +112,8 @@ def render_header(user=None, active_page: str = "🚀 Product Overview") -> None
         st_html(f"""
             <div class="display-flex justify-content-end align-items-center height-full" style="padding-top: 4px;">
                 <div class="theme-toggle-switch-wrapper" title="Toggle color theme" tabindex="0" aria-label="Toggle color theme"
-                     onclick="const btn = document.querySelector('.hidden-theme-btn-global button'); if (btn) btn.click();"
-                     onkeydown="if (event.key === 'Enter' || event.key === ' ') {{ const btn = document.querySelector('.hidden-theme-btn-global button'); if (btn) btn.click(); }}">
+                     onclick="const btn = document.querySelector('.hidden-theme-btn-global').closest('[data-testid=stElementContainer]').nextElementSibling.querySelector('button'); if (btn) btn.click();"
+                     onkeydown="if (event.key === 'Enter' || event.key === ' ') {{ const btn = document.querySelector('.hidden-theme-btn-global').closest('[data-testid=stElementContainer]').nextElementSibling.querySelector('button'); if (btn) btn.click(); }}">
                     <div class="theme-toggle-track {theme_class}">
                         <div class="theme-toggle-knob">
                             <span class="theme-icon-container">
@@ -123,9 +123,14 @@ def render_header(user=None, active_page: str = "🚀 Product Overview") -> None
                     </div>
                 </div>
             </div>
+            <style>
+                div[data-testid="stElementContainer"]:has(.hidden-theme-btn-global) + div[data-testid="stElementContainer"] {{
+                    display: none !important;
+                }}
+            </style>
             <div class="hidden-theme-btn-global" style="display:none;">
         """)
-        if st.button("Hidden Global Toggle", key="global_theme_toggle_btn_hidden"):
+        if st.button("", key="global_theme_toggle_btn_hidden"):
             toggle_theme()
         st_html("</div>")
 
@@ -1306,8 +1311,8 @@ def render_auth_nav_header() -> None:
         st_html(f"""
             <div class="display-flex justify-content-end align-items-center height-full" style="padding-top: 4px;">
                 <div class="theme-toggle-switch-wrapper" title="Toggle color theme" tabindex="0" aria-label="Toggle color theme"
-                     onclick="const btn = document.querySelector('.hidden-theme-btn-auth button'); if (btn) btn.click();"
-                     onkeydown="if (event.key === 'Enter' || event.key === ' ') {{ const btn = document.querySelector('.hidden-theme-btn-auth button'); if (btn) btn.click(); }}">
+                     onclick="const btn = document.querySelector('.hidden-theme-btn-auth').closest('[data-testid=stElementContainer]').nextElementSibling.querySelector('button'); if (btn) btn.click();"
+                     onkeydown="if (event.key === 'Enter' || event.key === ' ') {{ const btn = document.querySelector('.hidden-theme-btn-auth').closest('[data-testid=stElementContainer]').nextElementSibling.querySelector('button'); if (btn) btn.click(); }}">
                     <div class="theme-toggle-track {theme_class}">
                         <div class="theme-toggle-knob">
                             <span class="theme-icon-container">
@@ -1317,9 +1322,14 @@ def render_auth_nav_header() -> None:
                     </div>
                 </div>
             </div>
+            <style>
+                div[data-testid="stElementContainer"]:has(.hidden-theme-btn-auth) + div[data-testid="stElementContainer"] {{
+                    display: none !important;
+                }}
+            </style>
             <div class="hidden-theme-btn-auth" style="display:none;">
         """)
-        if st.button("Hidden Toggle", key="unauth_theme_toggle_hidden"):
+        if st.button("", key="unauth_theme_toggle_hidden"):
             toggle_theme()
         st_html("</div>")
     st_html("<hr class=\"hr-divider\">")
