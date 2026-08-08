@@ -52,7 +52,7 @@ $$\text{MRI Upload} \longrightarrow \text{MRI QA} \longrightarrow \text{Classifi
 | **6** | **Overlay** | Alpha-blended green mask overlay on original anatomical MRI scan | **PASS** |
 | **7** | **Grad-CAM** | Convolutional feature map activation heatmaps for visual explainability | **PASS** |
 | **8** | **Tumor Area** | Morphological pixel-to-$\text{mm}^2$ area computation and parenchymal volume percentage | **PASS** |
-| **9** | **Dashboard** | Streamlit AI Pipeline Health & Analytics KPI Dashboard | **PASS** |
+| **9** | **Dashboard** | Flask AI Pipeline Health & Analytics KPI Dashboard | **PASS** |
 | **10** | **Database** | SQLite database schema persistence (patients, scans, predictions, scorecards) | **PASS** |
 | **11** | **PDF Report** | ReportLab clinical PDF document rendering with tables, disclaimers, and scans | **PASS** |
 | **12** | **Report History** | Patient diagnostic timeline lookup and historical trend retrieval | **PASS** |
@@ -83,7 +83,7 @@ $$\text{MRI Upload} \longrightarrow \text{MRI QA} \longrightarrow \text{Classifi
 ## 6. Deployment Readiness Assessment
 
 - **Production Readiness**: **100% READY FOR DEPLOYMENT**.
-- **User Interface**: Streamlit application UI (`app.py`) is fully operational.
+- **User Interface**: Flask application UI (`run_dashboard.py`) is fully operational.
 - **REST API**: FastAPI service (`run_api.py`) is fully functional.
 - **Database & Security**: Fully configured with default Admin credentials (`admin@aurascan.ai` / `Admin@123456`) and SQLite persistence.
 

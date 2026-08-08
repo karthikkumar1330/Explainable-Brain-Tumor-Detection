@@ -22,8 +22,8 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 # 5. Copy the remaining repository files
 COPY . .
 
-# 6. Expose the API, Streamlit, and Flask Dashboard ports
-EXPOSE 8000 8501 5000
+# 6. Expose the API and Flask Dashboard ports
+EXPOSE 8000 5000
 
-# 7. Set the default entry point command (Streamlit App)
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# 7. Set the default entry point command (Flask Dashboard)
+CMD ["python", "run_dashboard.py", "--host", "0.0.0.0", "--port", "5000"]

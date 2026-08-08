@@ -649,7 +649,7 @@ def create_app(db_path: str) -> Flask:
     @login_required
     def auth_get_sessions(current_user: User):
         import json
-        from ui_system.components import convert_utc_to_ist
+        from dashboard.utils.timezone import convert_utc_to_ist
         conn = sqlite3.connect(app.config["DB_PATH"])
         conn.row_factory = sqlite3.Row
         try:

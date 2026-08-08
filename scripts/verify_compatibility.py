@@ -118,7 +118,7 @@ def generate_compatibility_report(rep, brain_dir):
     report_lines.append("## 1. Compatibility Matrix\n")
     report_lines.append("| Component | Verified Status | Notes |\n")
     report_lines.append("|---|---|---|\n")
-    report_lines.append(f"| **Streamlit Interface** | {'PASS' if rep['classification'] and rep['segmentation'] else 'FAIL'} | Standard loaders compatible with Version 2 weights. |\n")
+    report_lines.append(f"| **Flask Interface** | {'PASS' if rep['classification'] and rep['segmentation'] else 'FAIL'} | Standard loaders compatible with Version 2 weights. |\n")
     report_lines.append(f"| **REST API Server** | {'PASS' if rep['classification'] and rep['segmentation'] else 'FAIL'} | Preloading logic is compatible. |\n")
     report_lines.append(f"| **Grad-CAM Service** | {'PASS' if rep['gradcam'] else 'FAIL'} | EfficientNet target layers unchanged, gradients verified. |\n")
     report_lines.append(f"| **SQLite Database** | {'PASS' if rep['database'] else 'FAIL'} | Telemetry and historical records queried successfully. |\n")
@@ -135,7 +135,7 @@ def generate_compatibility_report(rep, brain_dir):
         
     report_lines.append("\n## 3. Clinical Deployment Recommendations\n")
     report_lines.append("1. **Zero-Overwriting Policy:** The Version 2 checkpoints are saved as `best_v2.pt` and `best_segmentation_v2.pth`. The deployment scripts continue to reference standard Version 1 model files by default, maintaining absolute deployment stability.\n")
-    report_lines.append("2. **Activation Update:** When ready to transition to the improved models, update `app.py` variables `CLS_CHECKPOINT` and `SEG_CHECKPOINT` to point to the `_v2` paths. No other code changes are required.\n")
+    report_lines.append("2. **Activation Update:** When ready to transition to the improved models, update `api/infrastructure/routes.py` variables `CLS_CHECKPOINT` and `SEG_CHECKPOINT` to point to the `_v2` paths. No other code changes are required.\n")
     
     os.makedirs("reports", exist_ok=True)
     report_path = "reports/compatibility_report.md"

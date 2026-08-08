@@ -19,6 +19,5 @@ python-multipart
 flask
 
 # Client Interface
-streamlit
 python-dotenv
 pyngrok

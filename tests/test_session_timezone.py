@@ -2,12 +2,12 @@ import unittest
 from unittest.mock import patch
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from ui_system.components import format_last_login
+from dashboard.utils.timezone import format_last_login
 
 class TestSessionTimezoneFormatter(unittest.TestCase):
     """Regression tests for display-only UTC -> Asia/Kolkata (IST) timezone formatter."""
 
-    @patch("ui_system.components.get_current_ist_time")
+    @patch("dashboard.utils.timezone.get_current_ist_time")
     def test_utc_to_ist_same_day(self, mock_get_current):
         # Mock reference time (now) in IST: 2026-08-08 15:00:00
         mock_get_current.return_value = datetime(2026, 8, 8, 15, 0, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
@@ -22,7 +22,7 @@ class TestSessionTimezoneFormatter(unittest.TestCase):
         self.assertEqual(format_last_login(z_ended_utc), "Today • 11:00 AM")
         self.assertEqual(format_last_login(explicit_offset_utc), "Today • 11:00 AM")
 
-    @patch("ui_system.components.get_current_ist_time")
+    @patch("dashboard.utils.timezone.get_current_ist_time")
     def test_utc_to_ist_explicit_offset(self, mock_get_current):
         mock_get_current.return_value = datetime(2026, 8, 8, 15, 0, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
         
@@ -30,7 +30,7 @@ class TestSessionTimezoneFormatter(unittest.TestCase):
         explicit_ist = "2026-08-08T11:00:00+05:30"
         self.assertEqual(format_last_login(explicit_ist), "Today • 11:00 AM")
 
-    @patch("ui_system.components.get_current_ist_time")
+    @patch("dashboard.utils.timezone.get_current_ist_time")
     def test_date_boundary_crossing_midnight(self, mock_get_current):
         # Mock reference time (now) in IST: 2026-08-08 15:00:00
         mock_get_current.return_value = datetime(2026, 8, 8, 15, 0, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
@@ -57,27 +57,27 @@ class TestSessionTimezoneFormatter(unittest.TestCase):
 
     def test_convert_utc_to_ist_same_date(self):
         # A. UTC timestamp converts to IST on the same date
-        from ui_system.components import convert_utc_to_ist
+        from dashboard.utils.timezone import convert_utc_to_ist
         self.assertEqual(convert_utc_to_ist("2026-08-08T08:03:34"), "2026-08-08T13:33:34+05:30")
 
     def test_convert_utc_to_ist_explicit_offset(self):
         # B. Explicit UTC offset
-        from ui_system.components import convert_utc_to_ist
+        from dashboard.utils.timezone import convert_utc_to_ist
         self.assertEqual(convert_utc_to_ist("2026-08-08T08:03:34+00:00"), "2026-08-08T13:33:34+05:30")
 
     def test_convert_utc_to_ist_z_suffix(self):
         # C. Z suffix
-        from ui_system.components import convert_utc_to_ist
+        from dashboard.utils.timezone import convert_utc_to_ist
         self.assertEqual(convert_utc_to_ist("2026-08-08T08:03:34Z"), "2026-08-08T13:33:34+05:30")
 
     def test_convert_utc_to_ist_midnight_boundary(self):
         # D. Midnight/date-boundary conversion
-        from ui_system.components import convert_utc_to_ist
+        from dashboard.utils.timezone import convert_utc_to_ist
         self.assertEqual(convert_utc_to_ist("2026-08-07T20:00:00Z"), "2026-08-08T01:30:00+05:30")
 
     def test_convert_utc_to_ist_invalid_empty(self):
         # E. Invalid/empty timestamp must not crash the dashboard
-        from ui_system.components import convert_utc_to_ist
+        from dashboard.utils.timezone import convert_utc_to_ist
         self.assertEqual(convert_utc_to_ist(None), None)
         self.assertEqual(convert_utc_to_ist(""), "")
         self.assertEqual(convert_utc_to_ist("invalid-date"), "invalid-date")
@@ -85,7 +85,7 @@ class TestSessionTimezoneFormatter(unittest.TestCase):
 
     def test_convert_utc_to_ist_already_aware_another_offset(self):
         # F. Already timezone-aware timestamp with another explicit offset must be converted correctly without double conversion
-        from ui_system.components import convert_utc_to_ist
+        from dashboard.utils.timezone import convert_utc_to_ist
         self.assertEqual(convert_utc_to_ist("2026-08-08T13:33:34+05:30"), "2026-08-08T13:33:34+05:30")
         self.assertEqual(convert_utc_to_ist("2026-08-08T09:03:34+01:00"), "2026-08-08T13:33:34+05:30")
 
