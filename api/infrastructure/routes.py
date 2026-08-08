@@ -41,7 +41,7 @@ from api.routes.auth_routes import get_current_user, require_roles
 
 
 # Configure paths
-DEFAULT_DB_PATH = "outputs/clinical_reports.db"
+DEFAULT_DB_PATH = os.environ.get("DB_PATH", "outputs/clinical_reports.db")
 CLS_CHECKPOINT = "models/classification/efficientnet_b0_brain_tumor.pth"
 SEG_CHECKPOINT = "models/brain_tumor_unext/model.pth"
 SEG_CONFIG = "models/brain_tumor_unext/config.yml"

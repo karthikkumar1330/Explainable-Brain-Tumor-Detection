@@ -1,5 +1,6 @@
 import argparse
 import sys
+import os
 import logging
 import uvicorn
 from fastapi import FastAPI, Request
@@ -78,7 +79,8 @@ app.include_router(router, prefix="/api")
 def on_startup() -> None:
     """Preloads weights, initializes security tables, and logs parameters once the server boots."""
     logger.info("Initializing security database tables and bootstrapping Admin user...")
-    sec_repo = SQLiteUserRepository(db_path="outputs/clinical_reports.db")
+    db_path = os.environ.get("DB_PATH", "outputs/clinical_reports.db")
+    sec_repo = SQLiteUserRepository(db_path=db_path)
     sec_repo.initialize_security_tables()
     sec_repo.bootstrap_admin()
 

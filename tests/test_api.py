@@ -1,5 +1,7 @@
-import unittest
 import os
+os.environ["DB_PATH"] = os.path.abspath("outputs/test_clinical_reports.db")
+
+import unittest
 from fastapi.testclient import TestClient
 from run_api import app
 from security.domain.entities import Role
@@ -11,10 +13,21 @@ class TestFastAPIRoutes(unittest.TestCase):
     """FastAPI REST routing parameters, security protection, and data schemas validation checks."""
 
     def setUp(self):
+        self.db_path = os.environ.get("DB_PATH", "outputs/test_clinical_reports.db")
+        if os.path.exists(self.db_path):
+            try:
+                os.remove(self.db_path)
+            except Exception:
+                pass
+
+        from persistence.infrastructure.repository import SQLitePersistenceRepository
+        persistence_repo = SQLitePersistenceRepository(db_path=self.db_path)
+        persistence_repo.initialize_db()
+
         self.test_client_ctx = TestClient(app)
         self.client = self.test_client_ctx.__enter__()
         
-        repo = SQLiteUserRepository(db_path="outputs/clinical_reports.db")
+        repo = SQLiteUserRepository(db_path=self.db_path)
         repo.initialize_security_tables()
         admin = repo.bootstrap_admin()
         jwt_svc = JWTService()
@@ -28,6 +41,11 @@ class TestFastAPIRoutes(unittest.TestCase):
 
     def tearDown(self):
         self.test_client_ctx.__exit__()
+        if os.path.exists(self.db_path):
+            try:
+                os.remove(self.db_path)
+            except Exception:
+                pass
 
     def test_dashboard_analytics_api(self):
         """Verify that dashboard analytics telemetry returns correct HTTP status."""
