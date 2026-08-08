@@ -26,7 +26,7 @@ class TestAccountSettings(unittest.TestCase):
         self.password = "SecurePassword@123"
         self.user = User(
             id=None,
-            uuid="test-patient-uuid",
+            uuid="test-avatar-temp-uuid",
             email="patient@aurascan.ai",
             password_hash=PasswordHasher.hash_password(self.password),
             full_name="Patient User",

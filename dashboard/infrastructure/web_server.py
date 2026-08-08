@@ -649,6 +649,7 @@ def create_app(db_path: str) -> Flask:
     @login_required
     def auth_get_sessions(current_user: User):
         import json
+        from ui_system.components import convert_utc_to_ist
         conn = sqlite3.connect(app.config["DB_PATH"])
         conn.row_factory = sqlite3.Row
         try:
@@ -671,14 +672,14 @@ def create_app(db_path: str) -> Flask:
                     details = {}
                 
                 sessions.append({
-                    "timestamp": d.get("timestamp"),
+                    "timestamp": convert_utc_to_ist(d.get("timestamp")),
                     "event_type": d.get("event_type"),
                     "ip_address": d.get("ip_address"),
                     "browser": details.get("browser", "Unknown Browser"),
                     "device": details.get("device", "Unknown Device"),
                     "location": details.get("location", "Unknown Location"),
-                    "login_time": details.get("login_time"),
-                    "logout_time": details.get("logout_time"),
+                    "login_time": convert_utc_to_ist(details.get("login_time")),
+                    "logout_time": convert_utc_to_ist(details.get("logout_time")),
                 })
             return jsonify({"sessions": sessions})
         except Exception as e:
