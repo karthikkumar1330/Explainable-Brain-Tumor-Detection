@@ -19,27 +19,29 @@ class MarkdownJSONReportGenerator(IClinicalReportGenerator):
         Returns:
             A tuple of (saved_markdown_path, saved_json_path, saved_pdf_path).
         """
-        os.makedirs(output_dir, exist_ok=True)
+        from pathlib import Path
+        output_dir_obj = Path(output_dir).resolve()
+        output_dir_obj.mkdir(parents=True, exist_ok=True)
         base_name = f"{report.patient_info.patient_id}_clinical_report"
 
         # 1. Generate JSON report
-        json_path = os.path.join(output_dir, f"{base_name}.json")
+        json_path = output_dir_obj / f"{base_name}.json"
         json_data = self._build_json_payload(report)
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(json_data, f, indent=4)
 
         # 2. Generate Markdown report
-        md_path = os.path.join(output_dir, f"{base_name}.md")
+        md_path = output_dir_obj / f"{base_name}.md"
         md_content = self._build_markdown_content(report)
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(md_content)
 
         # 3. Generate PDF report
-        pdf_path = os.path.join(output_dir, f"{base_name}.pdf")
+        pdf_path = output_dir_obj / f"{base_name}.pdf"
         pdf_gen = ReportLabPDFGenerator()
-        pdf_gen.generate_pdf(report, pdf_path)
+        pdf_gen.generate_pdf(report, str(pdf_path))
 
-        return md_path, json_path, pdf_path
+        return str(md_path), str(json_path), str(pdf_path)
 
     def _build_json_payload(self, report: ClinicalReport) -> dict:
         """Constructs a clean serializable dictionary for downstream ML/systems."""

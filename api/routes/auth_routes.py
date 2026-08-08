@@ -73,6 +73,28 @@ def get_current_user(
             detail="User account does not exist or is inactive.",
         )
 
+    if user.sessions_revoked_at:
+        try:
+            rev_str = user.sessions_revoked_at.replace("Z", "")
+            if "+" in rev_str:
+                rev_dt = datetime.datetime.fromisoformat(rev_str)
+            else:
+                rev_dt = datetime.datetime.fromisoformat(rev_str).replace(tzinfo=datetime.timezone.utc)
+            if payload.iat < rev_dt.timestamp():
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication token has been revoked.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication token has been revoked.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
     return user
 
 
@@ -99,6 +121,7 @@ class LoginSchema(BaseModel):
     email: EmailStr
     password: str
     remember_me: bool = False
+
 
 
 class RefreshSchema(BaseModel):
@@ -175,6 +198,8 @@ def login(
         return res
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
 
 
 @auth_router.post("/refresh")

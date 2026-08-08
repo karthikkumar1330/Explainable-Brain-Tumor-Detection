@@ -1143,7 +1143,7 @@ def render_metric_card(title: str, value: str, border_color: str = "default", va
     """)
 
 
-def render_user_profile(user: dict) -> None:
+def render_user_profile(user: dict, auth_use_cases=None) -> None:
     """Renders the accessible User Profile & Settings management view."""
     st_html("<h2 class=\"m-0 font-weight-600\">⚙️ Account & System Settings</h2>")
     st.markdown("Manage user profile information, security preferences, and system notification rules.")
@@ -1209,16 +1209,83 @@ def render_user_profile(user: dict) -> None:
             </div>
             """)
 
+            # Profile Avatar Upload Section
+            uploaded_avatar = st.file_uploader(
+                "Upload New Profile Picture", 
+                type=["png", "jpg", "jpeg", "gif", "webp"], 
+                key="avatar_file_uploader",
+                help="Allowed formats: PNG, JPG, JPEG, GIF, WEBP. Automatic resize will apply."
+            )
+            
+            if uploaded_avatar is not None:
+                # Use a session key based on filename & size to avoid rerun loops
+                processed_key = f"processed_avatar_{uploaded_avatar.name}_{uploaded_avatar.size}"
+                if not st.session_state.get(processed_key, False):
+                    try:
+                        import os
+                        from security.application.profile_image_service import validate_and_resize_avatar
+                        
+                        # Process image (verify type, structure, and resize to 256x256)
+                        resized_bytes = validate_and_resize_avatar(uploaded_avatar, uploaded_avatar.name)
+                        
+                        # Create upload folder
+                        upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "uploads", "avatars"))
+                        os.makedirs(upload_dir, exist_ok=True)
+                        
+                        file_ext = os.path.splitext(uploaded_avatar.name)[1].lower()
+                        filename = f"{user.get('uuid', 'temp-uuid')}{file_ext}"
+                        filepath = os.path.join(upload_dir, filename)
+                        
+                        # Save safely
+                        with open(filepath, "wb") as f:
+                            f.write(resized_bytes)
+                            
+                        avatar_url = f"/uploads/avatars/{filename}"
+                        
+                        # Update DB user record
+                        if auth_use_cases and user.get("id"):
+                            db_user = auth_use_cases.user_repo.get_by_id(user["id"])
+                            if db_user:
+                                db_user.profile_pic = avatar_url
+                                auth_use_cases.user_repo.update_user(db_user)
+                                user["google_profile_pic"] = avatar_url
+                                st.session_state["user"] = user
+                                st.session_state[processed_key] = True
+                                render_toast("Profile picture uploaded and updated successfully!", "success")
+                                st.rerun()
+                            else:
+                                render_toast("Failed to locate user in database.", "error")
+                        else:
+                            user["google_profile_pic"] = avatar_url
+                            st.session_state["user"] = user
+                            st.session_state[processed_key] = True
+                            render_toast("Profile picture updated successfully!", "success")
+                            st.rerun()
+                    except Exception as e:
+                        render_toast(f"Upload failed: {str(e)}", "error")
+
             u_name = st.text_input("Full Name", value=user.get("full_name", "User"), key="prof_name_input")
             u_email = st.text_input("Email Address", value=user.get("email", ""), disabled=True, key="prof_email_input")
             u_bio = st.text_area("Biography", value="Clinical Radiologist / Attending Physician specializing in Neuro-Oncology diagnostics.", key="prof_bio_input")
             u_phone = st.text_input("Work Phone", value="+1 (555) 019-2834", key="prof_phone_input")
             
             if st.button("Save Profile Changes", key="save_prof_changes_btn", type="primary"):
-                user["full_name"] = u_name
-                st.session_state["user"] = user
-                render_toast("Profile details updated successfully!", "success")
-                st.rerun()
+                if auth_use_cases and user.get("id"):
+                    try:
+                        res = auth_use_cases.update_profile(
+                            user_id=user["id"],
+                            full_name=u_name
+                        )
+                        st.session_state["user"] = res["user"]
+                        render_toast("Profile details updated successfully!", "success")
+                        st.rerun()
+                    except Exception as e:
+                        render_toast(f"Error saving profile: {str(e)}", "error")
+                else:
+                    user["full_name"] = u_name
+                    st.session_state["user"] = user
+                    render_toast("Profile details updated successfully!", "success")
+                    st.rerun()
 
         # Tab 2: Appearance Configurations
         elif active_tab == "appearance":
@@ -1231,8 +1298,27 @@ def render_user_profile(user: dict) -> None:
             st.write("**Brand Accent Color**")
             accent_choice = st.color_picker("Clinical Highlights Base Color", value="#10b981")
             
+            st.write("**Interface Theme**")
+            current_theme = st.session_state.get("theme", "dark")
+            theme_choice = st.selectbox("Select Theme Mode", ["Dark Mode", "Light Mode"], index=0 if current_theme == "dark" else 1)
+            
             if st.button("Apply Appearance Settings", key="save_appearance_btn"):
+                new_theme = "dark" if theme_choice == "Dark Mode" else "light"
+                st.session_state["theme"] = new_theme
+                components.html(f"""
+                    <script>
+                        try {{
+                            localStorage.setItem('color-theme', '{new_theme}');
+                            document.cookie = "color-theme={new_theme}; path=/; max-age=31536000; SameSite=Lax";
+                        }} catch(e) {{}}
+                        try {{
+                            parent.localStorage.setItem('color-theme', '{new_theme}');
+                            parent.document.cookie = "color-theme={new_theme}; path=/; max-age=31536000; SameSite=Lax";
+                        }} catch(e) {{}}
+                    </script>
+                """, height=0, width=0)
                 render_toast("Appearance style sheets updated successfully!", "success")
+                st.rerun()
 
         # Tab 3: Notification Preferences
         elif active_tab == "notifications":
@@ -1263,7 +1349,18 @@ def render_user_profile(user: dict) -> None:
             if st.button("Update Account Password", key="save_sec_pass_btn"):
                 if curr_pass and new_pass:
                     if new_pass == conf_pass:
-                        render_toast("Account security credentials successfully updated!", "success")
+                        if auth_use_cases and user.get("id"):
+                            try:
+                                auth_use_cases.change_password(
+                                    user_id=user["id"],
+                                    current_password=curr_pass,
+                                    new_password=new_pass
+                                )
+                                render_toast("Account security credentials successfully updated!", "success")
+                            except Exception as e:
+                                st.error(f"Failed to update password: {str(e)}")
+                        else:
+                            render_toast("Account security credentials successfully updated!", "success")
                     else:
                         st.warning("New password fields do not match.")
                 else:
@@ -1271,7 +1368,41 @@ def render_user_profile(user: dict) -> None:
                     
             st.divider()
             st.write("**Two-Factor Authentication (2FA)**")
-            st.checkbox("Enable 2-Factor Authentication (2FA)", value=True, key="sec_2fa_cb", help="Require 2-Factor verification code upon account login")
+            is_enabled = user.get("two_factor_enabled", False)
+            
+            new_2fa_state = st.checkbox(
+                "Enable 2-Factor Authentication (2FA)", 
+                value=is_enabled, 
+                key="sec_2fa_cb", 
+                help="Require 2-Factor verification code upon account login"
+            )
+            
+            if new_2fa_state != is_enabled:
+                if auth_use_cases and user.get("id"):
+                    try:
+                        res = auth_use_cases.update_profile(
+                            user_id=user["id"],
+                            enable_2fa=new_2fa_state
+                        )
+                        st.session_state["user"] = res["user"]
+                        user = res["user"]
+                        
+                        if new_2fa_state:
+                            st.success("Two-Factor Authentication enabled successfully!")
+                            if "recovery_codes" in res:
+                                st.write("**Your 2FA Recovery Codes (Save these in a secure place!):**")
+                                for c in res["recovery_codes"]:
+                                    st.code(c)
+                        else:
+                            st.info("Two-Factor Authentication disabled.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to update 2FA status: {str(e)}")
+                else:
+                    user["two_factor_enabled"] = new_2fa_state
+                    st.session_state["user"] = user
+                    st.rerun()
+            
             st.info("Two-Factor Authentication adds an extra layer of clinical security by requiring a verification code from your registered authentication application.")
 
         # Tab 5: API Access Keys
@@ -1373,17 +1504,96 @@ def render_user_profile(user: dict) -> None:
             st.markdown("---")
             
             st.write("##### Active User Browser Sessions")
-            st_html("""
-            <div class="font-mono bg-card p-12 radius-md border-1 mb-16">
-                <div class="text-success font-weight-bold">✦ Chrome on Windows 11 (Current Web Session)</div>
-                <div class="font-size-11 text-muted">IP Address: 192.168.1.45 | Location: Seattle, USA | Login: Today, 08:30</div>
-            </div>
-            <div class="font-mono bg-card p-12 radius-md border-1 mb-16">
-                <div class="text-secondary font-weight-bold">✦ Safari on Apple iPad Pro (Dr. Sarah's Tablet)</div>
-                <div class="font-size-11 text-muted">IP Address: 192.168.1.102 | Location: Neuro-Oncology Suite 4 | Login: Yesterday, 14:15</div>
-            </div>
-            """)
             
+            import sqlite3
+            import json
+            
+            db_path = "outputs/clinical_reports.db"
+            sessions = []
+            try:
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT timestamp, event_type, ip_address, details
+                    FROM security_audit_logs
+                    WHERE user_id = ? AND (event_type LIKE 'LOGIN%' OR event_type = 'LOGOUT' OR event_type = 'REVOKE_ALL_SESSIONS')
+                    ORDER BY id DESC LIMIT 8;
+                """, (user.get("id"),))
+                rows = cursor.fetchall()
+                for r in rows:
+                    d = dict(r)
+                    details_str = d.get("details", "{}")
+                    try:
+                        details = json.loads(details_str)
+                    except Exception:
+                        details = {}
+                    
+                    sessions.append({
+                        "timestamp": d.get("timestamp"),
+                        "event_type": d.get("event_type"),
+                        "ip_address": d.get("ip_address"),
+                        "browser": details.get("browser", "Unknown Browser"),
+                        "device": details.get("device", "Unknown Device"),
+                        "location": details.get("location", "Unknown Location"),
+                        "login_time": details.get("login_time"),
+                        "logout_time": details.get("logout_time"),
+                    })
+                conn.close()
+            except Exception as e:
+                st.error(f"Failed to load session logs: {e}")
+                
+            if not sessions:
+                st.info("No security session logs found.")
+            else:
+                for s in sessions:
+                    if s["event_type"] == "LOGIN_SUCCESS" and not s["logout_time"]:
+                        st_html(f"""
+                        <div class="font-mono bg-card p-12 radius-md border-1 mb-16" style="border-left: 4px solid var(--status-success);">
+                            <div class="text-success font-weight-bold">✦ {s['browser']} on {s['device']} (Active Session)</div>
+                            <div class="font-size-11 text-muted">IP Address: {s['ip_address']} | Location: {s['location']} | Login: {s['timestamp']}</div>
+                        </div>
+                        """)
+                    elif s["logout_time"] or s["event_type"] == "LOGOUT":
+                        st_html(f"""
+                        <div class="font-mono bg-card p-12 radius-md border-1 mb-16" style="border-left: 4px solid var(--text-muted); opacity: 0.7;">
+                            <div class="text-muted font-weight-bold">✦ {s['browser']} on {s['device']} (Logged Out)</div>
+                            <div class="font-size-11 text-muted">IP Address: {s['ip_address']} | Location: {s['location']} | Logout: {s['logout_time'] or s['timestamp']}</div>
+                        </div>
+                        """)
+                    else:
+                        st_html(f"""
+                        <div class="font-mono bg-card p-12 radius-md border-1 mb-16" style="border-left: 4px solid var(--status-error);">
+                            <div class="text-danger font-weight-bold">✦ Failed Login Attempt ({s['event_type']})</div>
+                            <div class="font-size-11 text-muted">IP Address: {s['ip_address']} | Timestamp: {s['timestamp']}</div>
+                        </div>
+                        """)
+            
+            # Action button
+            if st.button("Logout Other Sessions 💻", key="logout_other_sess_btn", type="primary", use_container_width=True):
+                if auth_use_cases and user.get("id"):
+                    try:
+                        import datetime
+                        import time
+                        
+                        now = datetime.datetime.utcnow().isoformat()
+                        # Revoke all other sessions in the DB
+                        auth_use_cases.user_repo.revoke_other_sessions(user["id"], None, now)
+                        
+                        # Invalidate active keys
+                        db_user = auth_use_cases.user_repo.get_by_id(user["id"])
+                        if db_user:
+                            db_user.sessions_revoked_at = (datetime.datetime.utcnow() - datetime.timedelta(seconds=1)).isoformat()
+                            auth_use_cases.user_repo.update_user(db_user)
+                        
+                        render_toast("Successfully logged out of all other device sessions.", "success")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to revoke other sessions: {e}")
+                else:
+                    render_toast("Successfully logged out of all other sessions.", "success")
+            
+            st.divider()
             st.write("##### Registered Hospital Hardware Devices")
             st_html("""
             <div class="font-mono bg-card p-12 radius-md border-1 mb-16">

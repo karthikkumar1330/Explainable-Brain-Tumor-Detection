@@ -31,7 +31,7 @@ class TestFastAPIRoutes(unittest.TestCase):
 
     def test_dashboard_analytics_api(self):
         """Verify that dashboard analytics telemetry returns correct HTTP status."""
-        response = self.client.get("/api/dashboard/analytics")
+        response = self.client.get("/api/dashboard/analytics", headers=self.headers)
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("total_patients", data)
@@ -39,7 +39,7 @@ class TestFastAPIRoutes(unittest.TestCase):
 
     def test_database_history_api(self):
         """Verify that history search listing filters respond correctly."""
-        response = self.client.get("/api/database/history?patient_id=PATIENT_001")
+        response = self.client.get("/api/database/history?patient_id=PATIENT_001", headers=self.headers)
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIsInstance(data, list)

@@ -62,6 +62,12 @@ async def add_security_headers(request: Request, call_next):
 
 
 
+@app.get("/ping")
+def direct_ping():
+    import datetime
+    return {"status": "healthy", "timestamp": datetime.datetime.utcnow().isoformat()}
+
+
 # Register routers
 app.include_router(auth_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")

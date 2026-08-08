@@ -12,6 +12,7 @@ from security.domain.entities import Role, User, TokenType
 from security.infrastructure.repository import SQLiteUserRepository
 from security.infrastructure.jwt_service import JWTService, TokenExpiredError, TokenInvalidError
 from security.application.use_cases import AuthUseCases
+from security.application.profile_image_service import validate_and_resize_avatar
 
 
 def create_app(db_path: str) -> Flask:
@@ -26,7 +27,10 @@ def create_app(db_path: str) -> Flask:
     template_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "presentation", "templates")
     )
-    app = Flask(__name__, template_folder=template_dir)
+    static_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "presentation", "static")
+    )
+    app = Flask(__name__, template_folder=template_dir, static_folder=static_dir, static_url_path="/static")
     app.config["DB_PATH"] = db_path
     app.secret_key = os.environ.get("FLASK_SECRET_KEY", "aurascan_dashboard_secret_key_84739201923")
 
@@ -148,15 +152,16 @@ def create_app(db_path: str) -> Flask:
         if user.sessions_revoked_at:
             import datetime
             try:
-                rev_str = user.sessions_revoked_at
-                if not rev_str.endswith("Z") and "+00:00" not in rev_str:
-                    rev_str += "Z"
-                rev_str = rev_str.replace("Z", "+00:00")
-                rev_dt = datetime.datetime.fromisoformat(rev_str)
-                if payload.iat < rev_dt.timestamp():
+                rev_str = user.sessions_revoked_at.replace("Z", "")
+                if "+" in rev_str:
+                    rev_dt = datetime.datetime.fromisoformat(rev_str)
+                else:
+                    rev_dt = datetime.datetime.fromisoformat(rev_str).replace(tzinfo=datetime.timezone.utc)
+                if payload.iat <= int(rev_dt.timestamp()):
                     return None, "TOKEN_REVOKED"
-            except Exception:
-                pass
+            except Exception as e:
+                # Fail-closed: treat parsing failures as revoked session
+                return None, "TOKEN_REVOKED"
 
         return user, None
 
@@ -320,6 +325,7 @@ def create_app(db_path: str) -> Flask:
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
 
+
     @app.route("/api/auth/refresh", methods=["POST"])
     def auth_refresh():
         refresh_token = request.cookies.get("refresh_token")
@@ -394,8 +400,26 @@ def create_app(db_path: str) -> Flask:
     def auth_me():
         user, err_code = get_current_user_from_request()
         if not user:
-            return jsonify({"authenticated": False, "code": err_code}), 200
-        return jsonify({"authenticated": True, "user": user.to_dict()})
+            response = jsonify({"authenticated": False, "code": err_code})
+            response.set_cookie("access_token", "", expires=0, httponly=True, samesite="Lax")
+            return response
+        
+        response = jsonify({"authenticated": True, "user": user.to_dict()})
+        auth_header = request.headers.get("Authorization")
+        if auth_header:
+            parts = auth_header.split()
+            token = parts[1] if len(parts) == 2 and parts[0].lower() == "bearer" else auth_header
+            if request.cookies.get("access_token") != token:
+                is_secure = request.is_secure or request.headers.get("X-Forwarded-Proto", "").lower() == "https"
+                response.set_cookie(
+                    "access_token",
+                    token,
+                    max_age=30 * 60,
+                    httponly=True,
+                    secure=is_secure,
+                    samesite="Lax"
+                )
+        return response
 
     @app.route("/api/auth/profile", methods=["PUT"])
     @login_required
@@ -405,9 +429,55 @@ def create_app(db_path: str) -> Flask:
             res = auth_use_cases.update_profile(
                 user_id=current_user.id,
                 full_name=data.get("full_name"),
-                email=data.get("email")
+                email=data.get("email"),
+                enable_2fa=data.get("enable_2fa")
             )
             return jsonify(res)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/api/auth/verify-otp", methods=["POST"])
+    def auth_verify_otp():
+        data = request.get_json() or {}
+        user_id = data.get("user_id")
+        otp_code = data.get("otp_code", "")
+        remember_me = data.get("remember_me", False)
+        ip_addr = request.remote_addr or "127.0.0.1"
+
+        if not user_id:
+            return jsonify({"error": "User ID is required."}), 400
+
+        try:
+            res = auth_use_cases.verify_tfa_otp(
+                user_id=int(user_id),
+                otp_code=otp_code,
+                ip_address=ip_addr,
+                remember_me=remember_me,
+                user_agent=request.headers.get("User-Agent", "Unknown")
+            )
+            response = jsonify(res)
+            
+            # If access token was successfully generated, set the cookies
+            if "access_token" in res:
+                is_secure = request.is_secure or request.headers.get("X-Forwarded-Proto", "").lower() == "https"
+                response.set_cookie(
+                    "access_token",
+                    res["access_token"],
+                    max_age=30 * 60,
+                    httponly=True,
+                    secure=is_secure,
+                    samesite="Lax"
+                )
+                refresh_max_age = 30 * 86400 if remember_me else None
+                response.set_cookie(
+                    "refresh_token",
+                    res["refresh_token"],
+                    max_age=refresh_max_age,
+                    httponly=True,
+                    secure=is_secure,
+                    samesite="Lax"
+                )
+            return response
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
 
@@ -424,14 +494,19 @@ def create_app(db_path: str) -> Flask:
         upload_dir = os.path.abspath(os.path.join(app.root_path, "..", "uploads", "avatars"))
         os.makedirs(upload_dir, exist_ok=True)
 
-        # Validate file extension
+        # Validate file extension and format
         file_ext = os.path.splitext(file.filename)[1].lower()
-        if file_ext not in [".png", ".jpg", ".jpeg", ".gif", ".webp"]:
-            return jsonify({"error": "Invalid image format. Allowed formats: PNG, JPG, JPEG, GIF, WEBP."}), 400
+        try:
+            resized_bytes = validate_and_resize_avatar(file.stream, file.filename)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
 
         filename = f"{current_user.uuid}{file_ext}"
         filepath = os.path.join(upload_dir, filename)
-        file.save(filepath)
+        
+        # Save the validated and resized image bytes
+        with open(filepath, "wb") as f:
+            f.write(resized_bytes)
 
         # Update profile URL
         avatar_url = f"/uploads/avatars/{filename}"
@@ -456,11 +531,39 @@ def create_app(db_path: str) -> Flask:
     @login_required
     def auth_logout_other_devices(current_user: User):
         import datetime
+        import time
         now = datetime.datetime.utcnow().isoformat()
-        current_user.sessions_revoked_at = now
+        # Set sessions_revoked_at to 1 second ago so the new token's iat (which is now) is valid
+        current_user.sessions_revoked_at = (datetime.datetime.utcnow() - datetime.timedelta(seconds=1)).isoformat()
         user_repo.update_user(current_user)
 
-        # Generate fresh tokens for the current session (issued at now, which is >= sessions_revoked_at)
+        # Get current session JTI from request token if possible, to avoid revoking ourselves globally!
+        token = request.cookies.get("access_token")
+        auth_header = request.headers.get("Authorization")
+        if auth_header:
+            parts = auth_header.split()
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                token = parts[1]
+            else:
+                token = auth_header
+        
+        current_jti = None
+        if token:
+            try:
+                payload = jwt_svc.decode_token(token, verify_exp=False)
+                current_jti = payload.jti
+            except Exception:
+                pass
+
+        # Revoke other sessions in database & update their logout times
+        user_repo.revoke_other_sessions(current_user.id, current_jti, now)
+
+        # Revoke the current token itself (so the old token is explicitly blocked, but the fresh new one is valid!)
+        if current_jti:
+            user_repo.revoke_token(current_jti, current_user.id, time.time() + 86400)
+            user_repo.update_session_logout(current_jti, now)
+
+        # Generate fresh tokens for the current session
         access_token = jwt_svc.create_access_token(
             user_uuid=current_user.uuid,
             user_id=current_user.id,
@@ -535,6 +638,7 @@ def create_app(db_path: str) -> Flask:
     @app.route("/api/auth/profile/sessions", methods=["GET"])
     @login_required
     def auth_get_sessions(current_user: User):
+        import json
         conn = sqlite3.connect(app.config["DB_PATH"])
         conn.row_factory = sqlite3.Row
         try:
@@ -542,11 +646,30 @@ def create_app(db_path: str) -> Flask:
             cursor.execute("""
                 SELECT timestamp, event_type, ip_address, details
                 FROM security_audit_logs
-                WHERE user_id = ? AND status = 'SUCCESS' AND (event_type LIKE 'LOGIN%' OR event_type = 'REVOKE_ALL_SESSIONS')
+                WHERE user_id = ? AND (event_type LIKE 'LOGIN%' OR event_type = 'LOGOUT' OR event_type = 'REVOKE_ALL_SESSIONS')
                 ORDER BY id DESC LIMIT 15;
             """, (current_user.id,))
             rows = cursor.fetchall()
-            sessions = [dict(r) for r in rows]
+            
+            sessions = []
+            for r in rows:
+                d = dict(r)
+                details_str = d.get("details", "{}")
+                try:
+                    details = json.loads(details_str)
+                except Exception:
+                    details = {}
+                
+                sessions.append({
+                    "timestamp": d.get("timestamp"),
+                    "event_type": d.get("event_type"),
+                    "ip_address": d.get("ip_address"),
+                    "browser": details.get("browser", "Unknown Browser"),
+                    "device": details.get("device", "Unknown Device"),
+                    "location": details.get("location", "Unknown Location"),
+                    "login_time": details.get("login_time"),
+                    "logout_time": details.get("logout_time"),
+                })
             return jsonify({"sessions": sessions})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -789,6 +912,12 @@ def create_app(db_path: str) -> Flask:
     @app.route("/api/report/<int:report_id>/pdf")
     @login_required
     def get_pdf(current_user: User, report_id: int):
+        import logging
+        from pathlib import Path
+        logger = logging.getLogger("dashboard.web_server.get_pdf")
+        
+        logger.info(f"Flask API request received for PDF. Report ID: {report_id}, User: {current_user.email}")
+        
         if current_user.role == Role.PATIENT:
             conn = sqlite3.connect(app.config["DB_PATH"])
             conn.row_factory = sqlite3.Row
@@ -807,19 +936,52 @@ def create_app(db_path: str) -> Flask:
                 )
                 row = cursor.fetchone()
                 if not row:
-                    return "Report not found", 404
+                    logger.warning(f"Report ID {report_id} not found in database for patient check.")
+                    return jsonify({"error": "Report not found"}), 404
                 if row["patient_name"].lower() != current_user.full_name.lower() and row["patient_id"].lower() != current_user.uuid.lower():
-                    return "Access denied to patient report PDF", 403
+                    logger.warning(f"Access denied to patient report PDF for report_id: {report_id}, User: {current_user.email}")
+                    return jsonify({"error": "Access denied to patient report PDF"}), 403
+            except Exception as e:
+                logger.error(f"Database error during patient access check: {e}")
+                return jsonify({"error": "Database access error during validation"}), 500
             finally:
                 conn.close()
 
-        paths = history_repo.get_report_paths(report_id)
-        if not paths or not paths[2]:
-            return "PDF report not found in database record", 404
-        pdf_path = paths[2]
-        if not os.path.exists(pdf_path):
-            return f"PDF file not physically present on server: {pdf_path}", 404
-        return send_file(pdf_path, mimetype="application/pdf")
+        try:
+            from clinical_reporting.infrastructure.pdf_generator import load_or_regenerate_pdf
+            pdf_path = load_or_regenerate_pdf(report_id, app.config["DB_PATH"])
+            
+            if not pdf_path:
+                logger.error(f"load_or_regenerate_pdf returned None for report_id: {report_id}")
+                return jsonify({
+                    "error": "PDF path could not be resolved from database",
+                    "reason": f"No report with ID {report_id} or pdf_path is null in the database."
+                }), 404
+
+            pdf_path_obj = Path(pdf_path).resolve()
+            output_dir = pdf_path_obj.parent
+            filename = pdf_path_obj.name
+            
+            logger.info(f"Resolving PDF path. Directory: {output_dir}, Filename: {filename}")
+            
+            # File exists check
+            if not pdf_path_obj.is_file():
+                logger.error(f"PDF file does not exist on disk at: {pdf_path_obj}")
+                return jsonify({
+                    "error": "PDF report file not found on server disk",
+                    "reason": "The file does not exist at the resolved absolute path.",
+                    "path": str(pdf_path_obj)
+                }), 404
+            
+            logger.info(f"PDF file verified. Serving PDF from: {pdf_path_obj}")
+            return send_file(str(pdf_path_obj), mimetype="application/pdf")
+            
+        except Exception as e:
+            logger.exception(f"Unexpected error in get_pdf endpoint: {e}")
+            return jsonify({
+                "error": "Internal server error occurred while retrieving PDF",
+                "reason": str(e)
+            }), 500
 
     @app.route("/api/report/<int:report_id>/visuals/<image_type>")
     @roles_accepted(Role.ADMIN, Role.DOCTOR)
@@ -839,22 +1001,69 @@ def create_app(db_path: str) -> Flask:
                 (report_id,)
             )
             row = cursor.fetchone()
-            if not row:
-                return "Report visuals not found", 404
+            img_path = None
+            
+            if row:
+                if image_type == "overlay":
+                    img_path = row["overlay_path"]
+                elif image_type == "heatmap":
+                    img_path = row["heatmap_path"]
+                elif image_type == "mask":
+                    img_path = row["mask_path"]
+                elif image_type == "raw":
+                    img_path = row["raw_path"]
+                else:
+                    img_path = None
+            
+            if img_path:
+                img_path = os.path.abspath(img_path)
 
-            if image_type == "overlay":
-                img_path = row["overlay_path"]
-            elif image_type == "heatmap":
-                img_path = row["heatmap_path"]
-            elif image_type == "mask":
-                img_path = row["mask_path"]
-            elif image_type == "raw":
-                img_path = row["raw_path"]
-            else:
-                return "Invalid visual image type. Choose 'overlay', 'heatmap', 'mask', or 'raw'.", 400
+            import logging
+            logger = logging.getLogger("dashboard.web_server.get_visual_scan")
 
             if not img_path or not os.path.exists(img_path):
+                import numpy as np
+                import cv2
+                import io
+                
+                # Generate placeholder image on the fly
+                placeholder = np.zeros((400, 400, 3), dtype=np.uint8)
+                placeholder[:] = [42, 23, 15]  # Slate color
+                cv2.circle(placeholder, (200, 200), 120, (85, 65, 51), thickness=2)
+                cv2.line(placeholder, (150, 200), (250, 200), (105, 85, 71), 1)
+                cv2.line(placeholder, (200, 150), (200, 250), (105, 85, 71), 1)
+                text = "IMAGE NOT FOUND"
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.6
+                thickness = 2
+                text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+                text_x = (400 - text_size[0]) // 2
+                text_y = (400 + text_size[1]) // 2
+                cv2.putText(placeholder, text, (text_x, text_y), font, font_scale, (139, 116, 100), thickness, cv2.LINE_AA)
+                
+                success, encoded_img = cv2.imencode('.png', placeholder)
+                if success:
+                    return send_file(io.BytesIO(encoded_img.tobytes()), mimetype="image/png"), 404
                 return f"Image file not physically present on server: {img_path}", 404
+
+            if img_path.lower().endswith(('.tif', '.tiff')):
+                import numpy as np
+                import cv2
+                import io
+                try:
+                    img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+                    if img is not None:
+                        if img.dtype != np.uint8:
+                            img_min, img_max = img.min(), img.max()
+                            if img_max > img_min:
+                                img = ((img - img_min) / (img_max - img_min) * 255).astype(np.uint8)
+                            else:
+                                img = np.zeros_like(img, dtype=np.uint8)
+                        success, encoded_img = cv2.imencode('.png', img)
+                        if success:
+                            return send_file(io.BytesIO(encoded_img.tobytes()), mimetype="image/png")
+                except Exception as ex:
+                    logger.error(f"Failed to convert TIFF {img_path} to PNG: {ex}")
 
             mimetype = "image/png"
             if img_path.lower().endswith(".jpg") or img_path.lower().endswith(".jpeg"):

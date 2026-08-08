@@ -30,7 +30,7 @@ class SQLiteUserRepository(IUserRepository):
             # Check if old table with google_id column exists
             cursor.execute("PRAGMA table_info(users);")
             columns = [row["name"] for row in cursor.fetchall()]
-            if "google_id" in columns or "two_factor_enabled" in columns:
+            if "google_id" in columns:
                 self.logger.info("Legacy columns detected in users table. Cleaning and recreating security tables...")
                 cursor.execute("DROP TABLE IF EXISTS verification_tokens;")
                 cursor.execute("DROP TABLE IF EXISTS otp_codes;")
@@ -54,11 +54,35 @@ class SQLiteUserRepository(IUserRepository):
                 sessions_revoked_at TEXT,
                 failed_login_attempts INTEGER DEFAULT 0,
                 lockout_until TEXT,
+                two_factor_enabled INTEGER DEFAULT 0,
+                two_factor_secret TEXT,
+                two_factor_recovery_codes TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 last_login_at TEXT
             );
             """)
+
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS otp_codes (
+                user_id INTEGER PRIMARY KEY,
+                otp_code TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            """)
+
+            # Run column migrations if columns are missing in an existing database
+            for col, col_type in [("two_factor_enabled", "INTEGER DEFAULT 0"),
+                                  ("two_factor_secret", "TEXT"),
+                                  ("two_factor_recovery_codes", "TEXT")]:
+                try:
+                    cursor.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type};")
+                except sqlite3.OperationalError as e:
+                    # Ignore duplicate column errors
+                    if "duplicate column name" not in str(e).lower() and "already exists" not in str(e).lower():
+                        raise
 
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS revoked_tokens (
@@ -80,9 +104,58 @@ class SQLiteUserRepository(IUserRepository):
                 ip_address TEXT NOT NULL,
                 status TEXT NOT NULL,
                 details TEXT NOT NULL,
-                user_agent TEXT
+                user_agent TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
             );
             """)
+
+            # Check if existing security_audit_logs has users foreign key
+            cursor.execute("PRAGMA foreign_key_list(security_audit_logs);")
+            fk_list = cursor.fetchall()
+            has_users_fk = any(row["table"].lower() == "users" for row in fk_list)
+
+            if not has_users_fk:
+                # Table might exist without FK constraint. Let's migrate it.
+                self.logger.info("Migrating security_audit_logs schema to add FOREIGN KEY constraint...")
+                cursor.execute("DROP TABLE IF EXISTS _security_audit_logs_old;")
+                cursor.execute("ALTER TABLE security_audit_logs RENAME TO _security_audit_logs_old;")
+                cursor.execute("""
+                CREATE TABLE security_audit_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    user_id INTEGER,
+                    email TEXT,
+                    ip_address TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    details TEXT NOT NULL,
+                    user_agent TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+                );
+                """)
+                cursor.execute("PRAGMA table_info(_security_audit_logs_old);")
+                old_cols = [row["name"] for row in cursor.fetchall()]
+                if old_cols:
+                    select_parts = []
+                    for col in old_cols:
+                        if col == "user_id":
+                            select_parts.append("(SELECT id FROM users WHERE users.id = _security_audit_logs_old.user_id) AS user_id")
+                        else:
+                            select_parts.append(col)
+                    select_str = ", ".join(select_parts)
+                    cols_str = ", ".join(old_cols)
+                    cursor.execute(f"""
+                    INSERT INTO security_audit_logs ({cols_str})
+                    SELECT {select_str} FROM _security_audit_logs_old;
+                    """)
+                cursor.execute("DROP TABLE _security_audit_logs_old;")
+                self.logger.info("security_audit_logs schema migration completed successfully.")
+
+            # Create Indexes
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_security_audit_logs_user ON security_audit_logs(user_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_security_audit_logs_timestamp ON security_audit_logs(timestamp);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON revoked_tokens(expires_at);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_revoked_tokens_user ON revoked_tokens(user_id);")
 
             conn.commit()
             self.logger.info("Security database tables initialized successfully.")
@@ -144,6 +217,9 @@ class SQLiteUserRepository(IUserRepository):
             sessions_revoked_at=row["sessions_revoked_at"] if "sessions_revoked_at" in row.keys() else None,
             failed_login_attempts=row["failed_login_attempts"] if "failed_login_attempts" in row.keys() else 0,
             lockout_until=row["lockout_until"] if "lockout_until" in row.keys() else None,
+            two_factor_enabled=bool(row["two_factor_enabled"]) if "two_factor_enabled" in row.keys() else False,
+            two_factor_secret=row["two_factor_secret"] if "two_factor_secret" in row.keys() else None,
+            two_factor_recovery_codes=row["two_factor_recovery_codes"] if "two_factor_recovery_codes" in row.keys() else None,
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             last_login_at=row["last_login_at"],
@@ -152,27 +228,30 @@ class SQLiteUserRepository(IUserRepository):
     def create_user(self, user: User) -> User:
         conn = self._get_connection()
         try:
-            cursor = conn.cursor()
-            cursor.execute("""
-            INSERT INTO users (uuid, email, password_hash, full_name, role, is_verified, is_active, profile_pic, sessions_revoked_at, failed_login_attempts, lockout_until, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            """, (
-                user.uuid,
-                user.email.lower().strip(),
-                user.password_hash,
-                user.full_name.strip(),
-                user.role.value if isinstance(user.role, Role) else user.role,
-                1 if user.is_verified else 0,
-                1 if user.is_active else 0,
-                user.profile_pic,
-                user.sessions_revoked_at,
-                user.failed_login_attempts,
-                user.lockout_until,
-                user.created_at,
-                user.updated_at,
-            ))
-            conn.commit()
-            user.id = cursor.lastrowid
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                INSERT INTO users (uuid, email, password_hash, full_name, role, is_verified, is_active, profile_pic, sessions_revoked_at, failed_login_attempts, lockout_until, two_factor_enabled, two_factor_secret, two_factor_recovery_codes, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """, (
+                    user.uuid,
+                    user.email.lower().strip(),
+                    user.password_hash,
+                    user.full_name.strip(),
+                    user.role.value if isinstance(user.role, Role) else user.role,
+                    1 if user.is_verified else 0,
+                    1 if user.is_active else 0,
+                    user.profile_pic,
+                    user.sessions_revoked_at,
+                    user.failed_login_attempts,
+                    user.lockout_until,
+                    1 if user.two_factor_enabled else 0,
+                    user.two_factor_secret,
+                    user.two_factor_recovery_codes,
+                    user.created_at,
+                    user.updated_at,
+                ))
+                user.id = cursor.lastrowid
             return user
         finally:
             conn.close()
@@ -210,40 +289,46 @@ class SQLiteUserRepository(IUserRepository):
     def update_user(self, user: User) -> User:
         conn = self._get_connection()
         try:
-            cursor = conn.cursor()
-            now = datetime.datetime.utcnow().isoformat()
-            user.updated_at = now
-            cursor.execute("""
-            UPDATE users SET
-                email = ?,
-                password_hash = ?,
-                full_name = ?,
-                role = ?,
-                is_verified = ?,
-                is_active = ?,
-                profile_pic = ?,
-                sessions_revoked_at = ?,
-                failed_login_attempts = ?,
-                lockout_until = ?,
-                updated_at = ?,
-                last_login_at = ?
-            WHERE id = ?;
-            """, (
-                user.email.lower().strip(),
-                user.password_hash,
-                user.full_name,
-                user.role.value if isinstance(user.role, Role) else user.role,
-                1 if user.is_verified else 0,
-                1 if user.is_active else 0,
-                user.profile_pic,
-                user.sessions_revoked_at,
-                user.failed_login_attempts,
-                user.lockout_until,
-                user.updated_at,
-                user.last_login_at,
-                user.id
-            ))
-            conn.commit()
+            with conn:
+                cursor = conn.cursor()
+                now = datetime.datetime.utcnow().isoformat()
+                user.updated_at = now
+                cursor.execute("""
+                UPDATE users SET
+                    email = ?,
+                    password_hash = ?,
+                    full_name = ?,
+                    role = ?,
+                    is_verified = ?,
+                    is_active = ?,
+                    profile_pic = ?,
+                    sessions_revoked_at = ?,
+                    failed_login_attempts = ?,
+                    lockout_until = ?,
+                    two_factor_enabled = ?,
+                    two_factor_secret = ?,
+                    two_factor_recovery_codes = ?,
+                    updated_at = ?,
+                    last_login_at = ?
+                WHERE id = ?;
+                """, (
+                    user.email.lower().strip(),
+                    user.password_hash,
+                    user.full_name,
+                    user.role.value if isinstance(user.role, Role) else user.role,
+                    1 if user.is_verified else 0,
+                    1 if user.is_active else 0,
+                    user.profile_pic,
+                    user.sessions_revoked_at,
+                    user.failed_login_attempts,
+                    user.lockout_until,
+                    1 if user.two_factor_enabled else 0,
+                    user.two_factor_secret,
+                    user.two_factor_recovery_codes,
+                    user.updated_at,
+                    user.last_login_at,
+                    user.id
+                ))
             return user
         finally:
             conn.close()
@@ -251,9 +336,8 @@ class SQLiteUserRepository(IUserRepository):
     def delete_user(self, user_id: int) -> None:
         conn = self._get_connection()
         try:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM users WHERE id = ?;", (user_id,))
-            conn.commit()
+            with conn:
+                conn.execute("DELETE FROM users WHERE id = ?;", (user_id,))
         finally:
             conn.close()
 
@@ -270,13 +354,13 @@ class SQLiteUserRepository(IUserRepository):
     def revoke_token(self, jti: str, user_id: int, expires_at: float) -> None:
         conn = self._get_connection()
         try:
-            cursor = conn.cursor()
-            now = datetime.datetime.utcnow().isoformat()
-            cursor.execute("""
-            INSERT OR REPLACE INTO revoked_tokens (jti, user_id, revoked_at, expires_at)
-            VALUES (?, ?, ?, ?);
-            """, (jti, user_id, now, expires_at))
-            conn.commit()
+            with conn:
+                cursor = conn.cursor()
+                now = datetime.datetime.utcnow().isoformat()
+                cursor.execute("""
+                INSERT OR REPLACE INTO revoked_tokens (jti, user_id, revoked_at, expires_at)
+                VALUES (?, ?, ?, ?);
+                """, (jti, user_id, now, expires_at))
         finally:
             conn.close()
 
@@ -292,21 +376,21 @@ class SQLiteUserRepository(IUserRepository):
     def log_security_event(self, event: SecurityAuditLog) -> None:
         conn = self._get_connection()
         try:
-            cursor = conn.cursor()
-            cursor.execute("""
-            INSERT INTO security_audit_logs (timestamp, event_type, user_id, email, ip_address, status, details, user_agent)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-            """, (
-                event.timestamp,
-                event.event_type,
-                event.user_id,
-                event.email,
-                event.ip_address,
-                event.status,
-                event.details,
-                event.user_agent,
-            ))
-            conn.commit()
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                INSERT INTO security_audit_logs (timestamp, event_type, user_id, email, ip_address, status, details, user_agent)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                """, (
+                    event.timestamp,
+                    event.event_type,
+                    event.user_id,
+                    event.email,
+                    event.ip_address,
+                    event.status,
+                    event.details,
+                    event.user_agent,
+                ))
         except Exception as e:
             self.logger.error(f"Failed to log security event: {e}")
         finally:
@@ -322,5 +406,70 @@ class SQLiteUserRepository(IUserRepository):
             """, (limit,))
             rows = cursor.fetchall()
             return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def update_session_logout(self, jti: str, logout_time: str) -> None:
+        """Finds active session login log matching JTI and updates its logout_time."""
+        conn = self._get_connection()
+        try:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, details FROM security_audit_logs 
+                    WHERE event_type = 'LOGIN_SUCCESS' AND status = 'SUCCESS' AND details LIKE ?;
+                """, (f'%{jti}%',))
+                rows = cursor.fetchall()
+                for r in rows:
+                    row_id, details_str = r
+                    try:
+                        import json
+                        details = json.loads(details_str)
+                        if details.get("jti") == jti:
+                            details["logout_time"] = logout_time
+                            cursor.execute("""
+                                UPDATE security_audit_logs SET details = ? WHERE id = ?;
+                            """, (json.dumps(details), row_id))
+                    except Exception:
+                        pass
+        finally:
+            conn.close()
+
+    def revoke_other_sessions(self, user_id: int, current_jti: str, logout_time: str) -> None:
+        """Revokes all other active sessions for user, marking them logged out and revoking their JTIs."""
+        conn = self._get_connection()
+        try:
+            import json
+            import time
+            with conn:
+                cursor = conn.cursor()
+                
+                # Find all LOGIN_SUCCESS audit logs for this user
+                cursor.execute("""
+                    SELECT id, details FROM security_audit_logs 
+                    WHERE user_id = ? AND event_type = 'LOGIN_SUCCESS' AND status = 'SUCCESS';
+                """, (user_id,))
+                rows = cursor.fetchall()
+                
+                for r in rows:
+                    row_id, details_str = r
+                    try:
+                        details = json.loads(details_str)
+                        jti = details.get("jti")
+                        if jti and jti != current_jti and not details.get("logout_time"):
+                            # Mark session logged out
+                            details["logout_time"] = logout_time
+                            cursor.execute("""
+                                UPDATE security_audit_logs SET details = ? WHERE id = ?;
+                            """, (json.dumps(details), row_id))
+                            
+                            # Add to revoked_tokens table
+                            expires_at = time.time() + 86400
+                            cursor.execute("""
+                                INSERT OR IGNORE INTO revoked_tokens (jti, user_id, revoked_at, expires_at)
+                                VALUES (?, ?, ?, ?);
+                            """, (jti, user_id, logout_time, expires_at))
+                    except Exception:
+                        pass
         finally:
             conn.close()

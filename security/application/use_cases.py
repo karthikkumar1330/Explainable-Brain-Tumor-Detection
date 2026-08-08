@@ -128,9 +128,20 @@ class AuthUseCases:
                 else:
                     self.user_repo.update_user(user)
             
+            from security.application.tfa_service import TFAService
+            import json
+            browser, device = TFAService.parse_user_agent(user_agent)
+            location = TFAService.get_location_from_ip(ip_address)
+            details_dict = {
+                "browser": browser,
+                "device": device,
+                "location": location,
+                "login_time": now,
+                "reason": f"Invalid credentials. Attempt {user.failed_login_attempts if user else 1}/5"
+            }
             self.user_repo.log_security_event(SecurityAuditLog(
-                id=None, timestamp=now, event_type="LOGIN_ATTEMPT", user_id=user.id if user else None,
-                email=email_clean, ip_address=ip_address, status="FAILURE", details=f"Invalid credentials. Attempt {user.failed_login_attempts if user else 1}/5", user_agent=user_agent
+                id=None, timestamp=now, event_type="LOGIN_FAILURE", user_id=user.id if user else None,
+                email=email_clean, ip_address=ip_address, status="FAILURE", details=json.dumps(details_dict), user_agent=user_agent
             ))
             if user:
                 raise ValueError(f"Invalid email or password. Attempt {user.failed_login_attempts}/5.")
@@ -146,13 +157,48 @@ class AuthUseCases:
         self.user_repo.update_user(user)
         global_rate_limiter.reset_key(f"login:{ip_address}")
 
+        if user.two_factor_enabled:
+            # Generate OTP code using our service
+            from security.application.tfa_service import TFAService
+            otp_code = TFAService.generate_otp()
+            # Save to database
+            TFAService.save_otp(self.user_repo.db_path, user.id, otp_code)
+            # Dispatch email (writes to secure logs & prints to terminal)
+            TFAService.send_otp_via_email(user.email, otp_code)
+            
+            return {
+                "requires_2fa": True,
+                "user_id": user.id,
+                "otp_code": otp_code,  # include otp_code for development testing & UI helper
+                "message": "Two-factor authentication required. OTP sent via email."
+            }
+
         refresh_expires_days = 30 if remember_me else REFRESH_TOKEN_EXPIRE_DAYS
         access_token = self.jwt_service.create_access_token(user.uuid, user.id, user.email, user.role)
         refresh_token = self.jwt_service.create_refresh_token(user.uuid, user.id, user.email, user.role, expires_days=refresh_expires_days)
 
+        # Decode jti
+        payload = self.jwt_service.decode_token(access_token)
+        jti = payload.jti
+
+        # Log session details
+        from security.application.tfa_service import TFAService
+        import json
+        browser, device = TFAService.parse_user_agent(user_agent)
+        location = TFAService.get_location_from_ip(ip_address)
+        
+        details_dict = {
+            "browser": browser,
+            "device": device,
+            "location": location,
+            "login_time": now,
+            "logout_time": None,
+            "jti": jti
+        }
+
         self.user_repo.log_security_event(SecurityAuditLog(
             id=None, timestamp=now, event_type="LOGIN_SUCCESS", user_id=user.id, email=user.email,
-            ip_address=ip_address, status="SUCCESS", details=f"User logged in successfully with role {user.role.value}", user_agent=user_agent
+            ip_address=ip_address, status="SUCCESS", details=json.dumps(details_dict), user_agent=user_agent
         ))
 
         return {
@@ -189,15 +235,18 @@ class AuthUseCases:
         # Check session invalidation timestamp
         if user.sessions_revoked_at:
             try:
-                rev_str = user.sessions_revoked_at
-                if not rev_str.endswith("Z") and "+00:00" not in rev_str:
-                    rev_str += "Z"
-                rev_str = rev_str.replace("Z", "+00:00")
-                rev_dt = datetime.datetime.fromisoformat(rev_str)
+                rev_str = user.sessions_revoked_at.replace("Z", "")
+                if "+" in rev_str:
+                    rev_dt = datetime.datetime.fromisoformat(rev_str)
+                else:
+                    rev_dt = datetime.datetime.fromisoformat(rev_str).replace(tzinfo=datetime.timezone.utc)
                 if payload.iat < rev_dt.timestamp():
                     raise ValueError("Refresh token has been revoked due to session invalidation.")
-            except Exception:
-                pass
+            except ValueError:
+                raise
+            except Exception as e:
+                # Fail-closed: treat parsing failure as revoked session
+                raise ValueError(f"Refresh token has been revoked (session timestamp check failed: {e}).")
 
         # Revoke the old refresh token JTI immediately (rotation)
         self.user_repo.revoke_token(payload.jti, user.id, payload.exp)
@@ -236,6 +285,8 @@ class AuthUseCases:
             access_payload = self.jwt_service.decode_token(token, verify_exp=False)
             if access_payload:
                 self.user_repo.revoke_token(access_payload.jti, access_payload.user_id, access_payload.exp)
+                # Mark session logged out
+                self.user_repo.update_session_logout(access_payload.jti, now)
         except Exception:
             pass
 
@@ -258,8 +309,8 @@ class AuthUseCases:
 
         return {"message": "Logout successful."}
 
-    def update_profile(self, user_id: int, full_name: Optional[str] = None, email: Optional[str] = None) -> Dict[str, Any]:
-        """Updates user profile preferences, enforcing email uniqueness."""
+    def update_profile(self, user_id: int, full_name: Optional[str] = None, email: Optional[str] = None, enable_2fa: Optional[bool] = None) -> Dict[str, Any]:
+        """Updates user profile preferences, enforcing email uniqueness and toggling 2FA."""
         user = self.user_repo.get_by_id(user_id)
         if not user:
             raise ValueError("User not found.")
@@ -277,11 +328,94 @@ class AuthUseCases:
             user.email = new_email
             email_changed = True
 
+        recovery_codes = []
+        if enable_2fa is not None:
+            if enable_2fa and not user.two_factor_enabled:
+                import secrets
+                from security.application.tfa_service import TFAService
+                user.two_factor_enabled = True
+                user.two_factor_secret = secrets.token_hex(16)
+                codes = TFAService.generate_recovery_codes()
+                user.two_factor_recovery_codes = TFAService.hash_recovery_codes(codes)
+                recovery_codes = codes
+            elif not enable_2fa and user.two_factor_enabled:
+                user.two_factor_enabled = False
+                user.two_factor_secret = None
+                user.two_factor_recovery_codes = None
+
         updated = self.user_repo.update_user(user)
-        return {
+        res = {
             "message": "Profile updated successfully.",
             "email_changed": email_changed,
             "user": updated.to_dict()
+        }
+        if recovery_codes:
+            res["recovery_codes"] = recovery_codes
+        return res
+
+    def verify_tfa_otp(self, user_id: int, otp_code: str, ip_address: str = "127.0.0.1", remember_me: bool = False, user_agent: str = "Unknown") -> Dict[str, Any]:
+        """Verifies the OTP (or a recovery code) during the login flow and issues access/refresh tokens."""
+        now = datetime.datetime.utcnow().isoformat()
+        user = self.user_repo.get_by_id(user_id)
+        if not user or not user.is_active:
+            raise ValueError("User not found or account deactivated.")
+
+        from security.application.tfa_service import TFAService
+        
+        # Check if the code is a valid OTP
+        is_valid = TFAService.verify_otp(self.user_repo.db_path, user.id, otp_code)
+        
+        # Check if it is a valid recovery code if not a valid OTP
+        if not is_valid:
+            is_valid = TFAService.verify_and_consume_recovery_code(self.user_repo, user, otp_code)
+            if is_valid:
+                self.user_repo.log_security_event(SecurityAuditLog(
+                    id=None, timestamp=now, event_type="TFA_RECOVERY_USE", user_id=user.id, email=user.email,
+                    ip_address=ip_address, status="SUCCESS", details="User logged in using a recovery code.", user_agent=user_agent
+                ))
+
+        if not is_valid:
+            self.user_repo.log_security_event(SecurityAuditLog(
+                id=None, timestamp=now, event_type="TFA_VERIFICATION_FAILURE", user_id=user.id, email=user.email,
+                ip_address=ip_address, status="FAILURE", details="Invalid or expired 2FA code attempt.", user_agent=user_agent
+            ))
+            raise ValueError("Invalid or expired 2FA code.")
+
+        # Successful OTP validation - issue tokens
+        refresh_expires_days = 30 if remember_me else REFRESH_TOKEN_EXPIRE_DAYS
+        access_token = self.jwt_service.create_access_token(user.uuid, user.id, user.email, user.role)
+        refresh_token = self.jwt_service.create_refresh_token(user.uuid, user.id, user.email, user.role, expires_days=refresh_expires_days)
+
+        # Decode jti
+        payload = self.jwt_service.decode_token(access_token)
+        jti = payload.jti
+
+        # Log session details
+        from security.application.tfa_service import TFAService
+        import json
+        browser, device = TFAService.parse_user_agent(user_agent)
+        location = TFAService.get_location_from_ip(ip_address)
+        
+        details_dict = {
+            "browser": browser,
+            "device": device,
+            "location": location,
+            "login_time": now,
+            "logout_time": None,
+            "jti": jti
+        }
+
+        self.user_repo.log_security_event(SecurityAuditLog(
+            id=None, timestamp=now, event_type="LOGIN_SUCCESS", user_id=user.id, email=user.email,
+            ip_address=ip_address, status="SUCCESS", details=json.dumps(details_dict), user_agent=user_agent
+        ))
+
+        return {
+            "message": "Two-factor verification successful.",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "user": user.to_dict(),
         }
 
     def change_password(self, user_id: int, current_password: str, new_password: str, ip_address: str = "127.0.0.1") -> Dict[str, Any]:
@@ -304,3 +438,4 @@ class AuthUseCases:
         ))
 
         return {"message": "Password changed successfully."}
+

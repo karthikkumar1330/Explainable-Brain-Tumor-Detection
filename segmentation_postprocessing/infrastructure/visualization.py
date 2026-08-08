@@ -99,4 +99,7 @@ def create_segmentation_comparison_image(
 
     # Save output to disk
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    cv2.imwrite(output_path, canvas)
+    success = cv2.imwrite(output_path, canvas)
+    if not success:
+        import logging
+        logging.getLogger("segmentation_postprocessing.visualization").error(f"Failed to save comparison image to {output_path}")

@@ -2,14 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <script>
-        // Apply theme before parsing body
-        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-    </script>
+    <!-- Global Theme Script -->
+    <script src="/static/js/theme.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AuraScan AI - Admin Portal & Security Controls</title>
     <!-- Tailwind CSS CDN -->
@@ -44,69 +38,16 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Google Fonts Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Global Theme Styles -->
+    <link rel="stylesheet" href="/static/css/theme.css">
     <style>
         :root {
-            /* Theme Config - Light Theme */
-            --bg-color: #F8FAFC;
-            --text-color: #0f172a;
-            --text-muted: #64748B;
-            --border-color: #E5E7EB;
-            --border-focus: #2563EB;
-            --panel-bg: rgba(255, 255, 255, 0.85);
-            --card-bg: #FFFFFF;
-            
-            --sidebar-bg: #FFFFFF;
-            --sidebar-text: #64748B;
-            --sidebar-active-bg: rgba(37, 99, 235, 0.08);
-            --sidebar-active-text: #2563EB;
-            
-            --header-bg: rgba(255, 255, 255, 0.8);
-            --hover-bg: #f1f5f9;
-            --input-bg: #FFFFFF;
-            --table-header-bg: #f1f5f9;
-            
-            --primary-color: #2563EB;
-            --primary-hover: #1d4ed8;
-            --accent-color: #3b82f6;
-            --success-color: #10b981;
-            --error-color: #ef4444;
-            --warning-color: #f59e0b;
-            
-            --focus-ring: rgba(37, 99, 235, 0.15);
-            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+            --sidebar-active-text: #4f46e5;
+            --sidebar-active-bg: rgba(79, 70, 229, 0.08);
         }
-
         .dark {
-            /* Theme Config - Dark Theme */
-            --bg-color: #0B1220;
-            --text-color: #F8FAFC;
-            --text-muted: #94a3b8;
-            --border-color: rgba(38, 52, 78, 0.4);
-            --border-focus: #22D3EE;
-            --panel-bg: rgba(23, 32, 51, 0.75);
-            --card-bg: #172033;
-            
-            --sidebar-bg: #090e1a;
-            --sidebar-text: #94a3b8;
-            --sidebar-active-bg: rgba(34, 211, 238, 0.08);
-            --sidebar-active-text: #22D3EE;
-            
-            --header-bg: rgba(11, 18, 32, 0.8);
-            --hover-bg: rgba(38, 52, 78, 0.45);
-            --input-bg: #0c1322;
-            --table-header-bg: #0c1322;
-            
-            --primary-color: #2563EB;
-            --primary-hover: #3b82f6;
-            --accent-color: #22D3EE;
-            --success-color: #14b8a6;
-            --error-color: #f43f5e;
-            --warning-color: #f59e0b;
-            
-            --focus-ring: rgba(34, 211, 238, 0.25);
-            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
-            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
+            --sidebar-active-text: #818cf8;
+            --sidebar-active-bg: rgba(129, 140, 248, 0.08);
         }
 
         body {
@@ -120,7 +61,43 @@
         aside {
             background-color: var(--sidebar-bg) !important;
             border-right: 1px solid var(--border-color) !important;
-            transition: all 0.3s ease;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+
+        /* Sidebar Collapsed Styles */
+        @media (min-width: 768px) {
+            body.sidebar-collapsed #sidebar-container {
+                width: 80px !important;
+                padding-left: 12px !important;
+                padding-right: 12px !important;
+            }
+            body.sidebar-collapsed #sidebar-container .logo-text,
+            body.sidebar-collapsed #sidebar-container .status-text,
+            body.sidebar-collapsed #sidebar-container .system-health-box,
+            body.sidebar-collapsed #sidebar-container nav button span {
+                display: none !important;
+            }
+            body.sidebar-collapsed #sidebar-container nav button {
+                justify-content: center !important;
+                padding-left: 0 !important;
+                padding-right: 0 !important;
+                gap: 0 !important;
+            }
+            body.sidebar-collapsed #sidebar-container nav button i {
+                margin-right: 0 !important;
+                font-size: 1.25rem !important;
+                width: auto !important;
+            }
+            body.sidebar-collapsed #sidebar-container .health-box {
+                justify-content: center !important;
+                padding: 10px 0 !important;
+            }
+            body.sidebar-collapsed #sidebar-container .logo-header {
+                justify-content: center !important;
+            }
+            body.sidebar-collapsed #sidebar-container .logo-wrapper {
+                gap: 0 !important;
+            }
         }
 
         #sidebar-container button {
@@ -407,16 +384,19 @@
     <!-- MOBILE SIDEBAR OVERLAY -->
     <div id="mobile-sidebar-overlay" onclick="toggleMobileSidebar()" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-40 md:hidden"></div>
 
+    <!-- MOBILE SIDEBAR OVERLAY -->
+    <div id="mobile-sidebar-overlay" onclick="toggleMobileSidebar()" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-40 md:hidden"></div>
+
     <!-- SIDEBAR NAVIGATION -->
     <aside id="sidebar-container" class="fixed md:static inset-y-0 left-0 z-50 w-64 bg-slate-900/95 md:bg-slate-900 border-r border-slate-800/80 p-5 flex flex-col justify-between shrink-0 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out">
         <div>
             <!-- Logo Header -->
-            <div class="flex items-center justify-between mb-8">
-                <div class="flex items-center space-x-3">
-                    <div class="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-slate-950 font-bold flex items-center justify-center shadow-lg">
+            <div class="flex items-center justify-between mb-8 logo-header">
+                <div class="flex items-center space-x-3 logo-wrapper">
+                    <div class="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-slate-950 font-bold flex items-center justify-center shadow-lg shrink-0">
                         <i class="fa-solid fa-shield-halved text-xl text-white"></i>
                     </div>
-                    <div>
+                    <div class="logo-text">
                         <h1 class="font-extrabold text-lg leading-tight tracking-wide text-white">AuraScan <span class="text-indigo-400 glow-accent">Admin</span></h1>
                         <span class="text-[10px] text-slate-400 font-semibold uppercase tracking-widest block">System Security Portal</span>
                     </div>
@@ -424,15 +404,18 @@
                 <button onclick="toggleMobileSidebar()" class="md:hidden text-slate-400 hover:text-white p-1">
                     <i class="fa-solid fa-xmark text-lg"></i>
                 </button>
+                <button id="desktop-collapse-btn" onclick="toggleSidebar()" class="hidden md:flex text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition" title="Toggle Sidebar">
+                    <i id="desktop-collapse-icon" class="fa-solid fa-chevron-left text-xs"></i>
+                </button>
             </div>
 
             <!-- Security Badge -->
-            <div class="flex items-center space-x-2.5 bg-slate-950/80 p-3 rounded-xl border border-slate-800/60 mb-6">
-                <span class="relative flex h-3 w-3">
+            <div class="flex items-center space-x-2.5 bg-slate-950/80 p-3 rounded-xl border border-slate-800/60 mb-6 health-box">
+                <span class="relative flex h-3 w-3 shrink-0">
                     <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                     <span class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
                 </span>
-                <div>
+                <div class="status-text">
                     <div class="text-xs font-bold text-slate-200">Root Access Mode</div>
                     <div class="text-[10px] text-red-400 font-bold uppercase tracking-wider">Auditing System Active</div>
                 </div>
@@ -440,38 +423,50 @@
 
             <!-- Navigation Links -->
             <nav class="space-y-1.5" aria-label="Admin Navigation">
-                <button onclick="switchTab('overview')" id="nav-overview" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-indigo-500/20 to-purple-500/10 text-indigo-400 border border-indigo-500/30 shadow-sm">
-                    <i class="fa-solid fa-chart-pie text-lg w-5 text-indigo-400"></i>
-                    <span>Admin Overview</span>
+                <button onclick="switchTab('overview')" id="nav-overview" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition-all duration-200" title="Dashboard">
+                    <i class="fa-solid fa-columns text-lg w-5 shrink-0 text-indigo-400"></i>
+                    <span>Dashboard</span>
                 </button>
-                <button onclick="switchTab('users')" id="nav-users" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50">
-                    <i class="fa-solid fa-users-gear text-lg w-5"></i>
-                    <span>User Management</span>
+                <button onclick="switchTab('generate')" id="nav-generate" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" title="AI Analysis">
+                    <i class="fa-solid fa-brain text-lg w-5 shrink-0"></i>
+                    <span>AI Analysis</span>
                 </button>
-                <button onclick="switchTab('audit')" id="nav-audit" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50">
-                    <i class="fa-solid fa-shield-halved text-lg w-5 text-slate-400"></i>
-                    <span>Security Audit Logs</span>
+                <button onclick="switchTab('users')" id="nav-users" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" title="Patients">
+                    <i class="fa-solid fa-users-gear text-lg w-5 shrink-0"></i>
+                    <span>Patients</span>
                 </button>
-                <button onclick="switchTab('settings')" id="nav-settings" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50">
-                    <i class="fa-solid fa-gear text-lg w-5 text-slate-400"></i>
-                    <span>Account Settings</span>
+                <button onclick="switchTab('reports')" id="nav-reports" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" title="Reports">
+                    <i class="fa-solid fa-file-medical text-lg w-5 shrink-0"></i>
+                    <span>Reports</span>
+                </button>
+                <button onclick="switchTab('audit')" id="nav-audit" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" title="Analytics">
+                    <i class="fa-solid fa-shield-halved text-lg w-5 shrink-0"></i>
+                    <span>Analytics</span>
+                </button>
+                <button onclick="switchTab('settings')" id="nav-settings" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" title="Settings">
+                    <i class="fa-solid fa-gear text-lg w-5 shrink-0"></i>
+                    <span>Settings</span>
+                </button>
+                <button onclick="switchTab('profile')" id="nav-profile" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" title="Profile">
+                    <i class="fa-solid fa-user-circle text-lg w-5 shrink-0"></i>
+                    <span>Profile</span>
                 </button>
             </nav>
         </div>
 
         <!-- Telemetry System Health Box -->
-        <div class="mt-8 pt-4 border-t border-slate-800/60">
-            <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800/50 space-y-1">
-                <div class="flex justify-between items-center text-[10px]">
+        <div class="mt-8 pt-4 border-t border-slate-800/60 system-health-box">
+            <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800/50 space-y-1 health-details">
+                <div class="flex justify-between items-center text-[10px] row-sqlite">
                     <span class="text-slate-400">Security Database</span>
                     <span class="text-emerald-400 font-bold">Encrypted Connection</span>
                 </div>
-                <div class="flex justify-between items-center text-[10px]">
+                <div class="flex justify-between items-center text-[10px] row-fastapi">
                     <span class="text-slate-400">Role Check Middleware</span>
                     <span class="text-sky-400 font-bold">Enforced (OWASP)</span>
                 </div>
             </div>
-            <div class="mt-3 text-[10px] text-slate-500 text-center font-medium">
+            <div class="mt-3 text-[10px] text-slate-500 text-center font-medium system-version">
                 Admin Console v2.5.0
             </div>
         </div>
@@ -481,13 +476,23 @@
     <main class="flex-1 flex flex-col min-w-0 overflow-y-auto max-h-screen">
         <!-- TOP NAVBAR -->
         <header class="h-16 border-b border-slate-800/80 px-4 md:px-6 flex items-center justify-between bg-slate-900/60 backdrop-blur-xl sticky top-0 z-30 shrink-0">
-            <div class="flex items-center space-x-3">
-                <button onclick="toggleMobileSidebar()" class="md:hidden text-slate-300 hover:text-white p-2 rounded-lg bg-slate-800/50">
-                    <i class="fa-solid fa-bars text-lg"></i>
-                </button>
-                <h2 id="page-title" class="font-extrabold text-base md:text-lg text-slate-100 tracking-wide flex items-center gap-2">
-                    <span>System Administrator Panel</span>
-                </h2>
+            <div class="flex flex-col gap-0.5">
+                <div class="flex items-center space-x-3">
+                    <button onclick="toggleMobileSidebar()" class="md:hidden text-slate-300 hover:text-white p-2 rounded-lg bg-slate-800/50">
+                        <i class="fa-solid fa-bars text-lg"></i>
+                    </button>
+                    <h2 id="page-title" class="font-extrabold text-base md:text-lg text-slate-100 tracking-wide">
+                        System Administrator Dashboard
+                    </h2>
+                </div>
+                <!-- Breadcrumbs -->
+                <nav class="hidden sm:flex text-slate-500 text-[10px] font-bold uppercase tracking-wider items-center gap-1.5" aria-label="Breadcrumb">
+                    <span>AuraScan</span>
+                    <i class="fa-solid fa-chevron-right text-[7px] text-slate-700"></i>
+                    <span id="breadcrumb-role" class="text-slate-400">Administrator</span>
+                    <i class="fa-solid fa-chevron-right text-[7px] text-slate-700"></i>
+                    <span id="breadcrumb-page" class="text-indigo-400">Dashboard</span>
+                </nav>
             </div>
 
             <!-- Auth Profile Info -->
@@ -512,7 +517,7 @@
                             <i class="fa-solid fa-circle text-[6px] text-blue-600 dark:text-cyan-400"></i>
                         </span>
                     </button>
-                    <button id="profile-avatar-btn" onclick="switchTab('settings')" class="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center border border-indigo-400/30 shadow-sm transition hover:scale-105">
+                    <button id="profile-avatar-btn" onclick="switchTab('profile')" class="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center border border-indigo-400/30 shadow-sm transition hover:scale-105" title="User Profile">
                         <i class="fa-solid fa-user-shield text-white text-sm"></i>
                     </button>
                     <button onclick="handleLogout()" class="btn-danger text-xs h-9 px-3">
@@ -695,7 +700,7 @@
                 </div>
             </div>
 
-             <!-- TAB 3: AUDIT LOGS -->
+             <!-- TAB 3: AUDIT LOGS / ANALYTICS -->
              <div id="tab-audit" class="hidden space-y-6">
                  <div class="glass-panel rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
                      <div class="p-5 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between">
@@ -727,156 +732,206 @@
                  </div>
              </div>
 
-        </div>
-    </main>
+             <!-- TAB 5: AI ANALYSIS NOTICE -->
+             <div id="tab-generate" class="hidden space-y-6">
+                 <div class="glass-panel p-6 rounded-3xl border border-slate-800 flex items-center justify-between">
+                     <div>
+                         <h3 class="font-extrabold text-xl text-slate-100">AI Diagnostic Workspace</h3>
+                         <p class="text-xs text-slate-400 mt-1">Clinical AI pipeline control panel.</p>
+                     </div>
+                     <div class="hidden md:block text-slate-500 text-3xl">
+                         <i class="fa-solid fa-brain text-indigo-400/20"></i>
+                     </div>
+                 </div>
+                 <div class="glass-panel p-8 rounded-2xl border border-slate-800 text-center max-w-lg mx-auto space-y-4">
+                     <div class="h-16 w-16 bg-amber-500/10 text-amber-400 rounded-full flex items-center justify-center text-3xl mx-auto border border-amber-500/20">
+                         <i class="fa-solid fa-triangle-exclamation"></i>
+                     </div>
+                     <h4 class="font-bold text-slate-100 text-base">Clinician Access Required</h4>
+                     <p class="text-xs text-slate-400 leading-relaxed">The AI inference diagnostic pipeline is restricted to accounts with the **Clinician (Doctor)** role due to HIPAA requirements. Please log in with a doctor account to ingest scans and execute segmentations.</p>
+                 </div>
+             </div>
 
-            <!-- TAB 4: SETTINGS VIEW -->
-            <div id="tab-settings" class="hidden space-y-6">
-                <div class="glass-panel p-6 rounded-3xl border border-slate-800 flex items-center justify-between">
-                    <div>
-                        <h3 class="font-extrabold text-xl text-slate-100">Account Settings</h3>
-                        <p class="text-xs text-slate-400 mt-1">Configure profile details, manage security, and inspect active sessions.</p>
-                    </div>
-                    <div class="hidden md:block text-slate-500 text-3xl">
-                        <i class="fa-solid fa-user-gear text-slate-400/20"></i>
-                    </div>
-                </div>
+             <!-- TAB 6: REPORTS VIEW -->
+             <div id="tab-reports" class="hidden space-y-6">
+                 <div class="glass-panel p-6 rounded-3xl border border-slate-800 flex items-center justify-between">
+                     <div>
+                         <h3 class="font-extrabold text-xl text-slate-100">Patient Scan Reports</h3>
+                         <p class="text-xs text-slate-400 mt-1">Clinical audit archive of generated MRI diagnostics.</p>
+                     </div>
+                     <div class="hidden md:block text-slate-500 text-3xl">
+                         <i class="fa-solid fa-file-medical text-indigo-400/20"></i>
+                     </div>
+                 </div>
+                 <div class="glass-panel p-8 rounded-2xl border border-slate-800 text-center max-w-lg mx-auto space-y-4">
+                     <div class="h-16 w-16 bg-slate-800 text-slate-400 rounded-full flex items-center justify-center text-3xl mx-auto border border-slate-700">
+                         <i class="fa-solid fa-lock"></i>
+                     </div>
+                     <h4 class="font-bold text-slate-100 text-base">Reports Restricted</h4>
+                     <p class="text-xs text-slate-400 leading-relaxed">System administrators do not have access to individual diagnostic report files. Audit logs can be viewed under the Security Logs tab.</p>
+                 </div>
+             </div>
 
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="lg:col-span-2 space-y-6">
-                        <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-6">
-                            <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2 border-b border-slate-800/60 pb-3">
-                                <i class="fa-solid fa-circle-user text-indigo-400"></i>
-                                Public Profile Details
-                            </h4>
-                            <div class="flex flex-col sm:flex-row items-center gap-6 bg-slate-900/40 p-4 rounded-2xl border border-slate-800/40">
-                                <div class="relative group">
-                                    <div class="h-24 w-24 rounded-2xl overflow-hidden bg-slate-800 border border-slate-700/60 flex items-center justify-center shadow-lg relative">
-                                        <img id="settings-avatar-img" class="h-full w-full object-cover" src="https://lh3.googleusercontent.com/avatar" alt="Profile Picture">
-                                    </div>
-                                    <label class="absolute -bottom-2 -right-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl h-8 w-8 flex items-center justify-center cursor-pointer shadow-md transition hover:scale-105 border border-indigo-400/30">
-                                        <i class="fa-solid fa-camera text-xs"></i>
-                                        <input type="file" id="settings-avatar-input" onchange="uploadSettingsAvatar(event)" class="hidden" accept="image/*">
-                                    </label>
-                                </div>
-                                <div class="text-center sm:text-left space-y-1">
-                                    <span class="text-xs text-slate-400 font-bold block uppercase tracking-wider">Profile Photo</span>
-                                    <p class="text-xs text-slate-500">Supports PNG, JPG, JPEG, GIF, or WEBP up to 5MB.</p>
-                                    <div id="avatar-upload-status" class="text-xs font-bold hidden text-indigo-400">Uploading...</div>
-                                </div>
-                            </div>
+             <!-- TAB 7: PROFILE VIEW -->
+             <div id="tab-profile" class="hidden space-y-6">
+                 <div class="glass-panel p-6 rounded-3xl border border-slate-800 flex items-center justify-between">
+                     <div>
+                         <h3 class="font-extrabold text-xl text-slate-100">Administrator Profile</h3>
+                         <p class="text-xs text-slate-400 mt-1">Manage your public admin profile metadata, profile photograph, and contact info.</p>
+                     </div>
+                     <div class="hidden md:block text-slate-500 text-3xl">
+                         <i class="fa-solid fa-user-shield text-indigo-400/20"></i>
+                     </div>
+                 </div>
 
-                            <form onsubmit="handleSettingsUpdate(event)" class="space-y-4">
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div class="space-y-1.5">
-                                        <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Full Name</label>
-                                        <input type="text" id="settings-name" required class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 focus:ring-0 focus:border-indigo-500 text-xs text-slate-100 transition duration-200">
-                                    </div>
-                                    <div class="space-y-1.5">
-                                        <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block flex items-center justify-between">
-                                            <span>Email Address</span>
-                                            <span id="settings-verification-badge" class="text-[9px] px-1.5 py-0.5 rounded font-extrabold uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Verified</span>
-                                        </label>
-                                        <input type="email" id="settings-email" required class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 focus:ring-0 focus:border-indigo-500 text-xs text-slate-100 transition duration-200">
-                                    </div>
-                                </div>
+                 <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-6">
+                     <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2 border-b border-slate-800/60 pb-3">
+                         <i class="fa-solid fa-circle-user text-indigo-400"></i>
+                         Public Profile Details
+                     </h4>
+                     <div class="flex flex-col sm:flex-row items-center gap-6 bg-slate-900/40 p-4 rounded-2xl border border-slate-800/40">
+                         <div class="relative group">
+                             <div class="h-24 w-24 rounded-2xl overflow-hidden bg-slate-800 border border-slate-700/60 flex items-center justify-center shadow-lg relative">
+                                 <img id="settings-avatar-img" class="h-full w-full object-cover" src="https://lh3.googleusercontent.com/avatar" alt="Profile Picture">
+                             </div>
+                             <label class="absolute -bottom-2 -right-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl h-8 w-8 flex items-center justify-center cursor-pointer shadow-md transition hover:scale-105 border border-indigo-400/30">
+                                 <i class="fa-solid fa-camera text-xs"></i>
+                                 <input type="file" id="settings-avatar-input" onchange="uploadSettingsAvatar(event)" class="hidden" accept="image/*">
+                             </label>
+                         </div>
+                         <div class="text-center sm:text-left space-y-1">
+                             <span class="text-xs text-slate-400 font-bold block uppercase tracking-wider">Profile Photo</span>
+                             <p class="text-xs text-slate-500">Supports PNG, JPG, JPEG, GIF, or WEBP up to 5MB.</p>
+                             <div id="avatar-upload-status" class="text-xs font-bold hidden text-indigo-400">Uploading...</div>
+                         </div>
+                     </div>
 
-                                <div id="verification-action-container" class="hidden flex items-center justify-between bg-amber-500/10 p-3.5 rounded-xl border border-amber-500/20">
-                                    <div class="flex items-center gap-2 text-xs text-amber-400 font-medium">
-                                        <i class="fa-solid fa-circle-exclamation"></i>
-                                        <span>Your email is unverified. Verify now to secure your account.</span>
-                                    </div>
-                                    <button type="button" onclick="sendVerificationCode()" class="text-xs bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-3 py-1.5 rounded-lg transition">
-                                        Verify Email
-                                    </button>
-                                </div>
+                     <form onsubmit="handleSettingsUpdate(event)" class="space-y-4">
+                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                             <div class="space-y-1.5">
+                                 <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Full Name</label>
+                                 <input type="text" id="settings-name" required class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 focus:ring-0 focus:border-indigo-500 text-xs text-slate-100 transition duration-200">
+                             </div>
+                             <div class="space-y-1.5">
+                                 <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block flex items-center justify-between">
+                                     <span>Email Address</span>
+                                     <span id="settings-verification-badge" class="text-[9px] px-1.5 py-0.5 rounded font-extrabold uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Verified</span>
+                                 </label>
+                                 <input type="email" id="settings-email" required class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 focus:ring-0 focus:border-indigo-500 text-xs text-slate-100 transition duration-200">
+                             </div>
+                         </div>
 
-                                <div class="flex justify-end pt-2">
-                                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition shadow-md">
-                                        Save Profile Changes
-                                    </button>
-                                </div>
-                                <div id="settings-profile-success" class="text-xs text-emerald-400 font-bold hidden">Profile changes saved successfully!</div>
-                                <div id="settings-profile-error" class="text-xs text-red-400 font-bold hidden">Failed to save profile.</div>
-                            </form>
-                        </div>
+                         <div id="verification-action-container" class="hidden flex items-center justify-between bg-amber-500/10 p-3.5 rounded-xl border border-amber-500/20">
+                             <div class="flex items-center gap-2 text-xs text-amber-400 font-medium">
+                                 <i class="fa-solid fa-circle-exclamation"></i>
+                                 <span>Your email is unverified. Verify now to secure your account.</span>
+                             </div>
+                             <button type="button" onclick="sendVerificationCode()" class="text-xs bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-3 py-1.5 rounded-lg transition">
+                                 Verify Email
+                             </button>
+                         </div>
 
-                        <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-                            <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2 border-b border-slate-800/60 pb-3">
-                                <i class="fa-solid fa-key text-amber-400"></i>
-                                Change Account Password
-                            </h4>
-                            <form onsubmit="handleSettingsPasswordUpdate(event)" class="space-y-4">
-                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                    <div class="space-y-1.5">
-                                        <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Current Password</label>
-                                        <input type="password" id="settings-pass-current" required class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 focus:ring-0 focus:border-indigo-500 text-xs text-slate-100 transition duration-200">
-                                    </div>
-                                    <div class="space-y-1.5">
-                                        <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">New Password</label>
-                                        <input type="password" id="settings-pass-new" required class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 focus:ring-0 focus:border-indigo-500 text-xs text-slate-100 transition duration-200">
-                                    </div>
-                                    <div class="space-y-1.5">
-                                        <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Confirm New Password</label>
-                                        <input type="password" id="settings-pass-confirm" required class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 focus:ring-0 focus:border-indigo-500 text-xs text-slate-100 transition duration-200">
-                                    </div>
-                                </div>
-                                <div class="flex justify-end pt-2">
-                                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition shadow-md">
-                                        Update Password
-                                    </button>
-                                </div>
-                                <div id="settings-pass-success" class="text-xs text-emerald-400 font-bold hidden">Password updated successfully!</div>
-                                <div id="settings-pass-error" class="text-xs text-red-400 font-bold hidden">Failed to update password.</div>
-                            </form>
-                        </div>
-                    </div>
+                         <div class="flex justify-end pt-2">
+                             <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition shadow-md">
+                                 Save Profile Changes
+                             </button>
+                         </div>
+                         <div id="settings-profile-success" class="text-xs text-emerald-400 font-bold hidden">Profile changes saved successfully!</div>
+                         <div id="settings-profile-error" class="text-xs text-red-400 font-bold hidden">Failed to save profile.</div>
+                     </form>
+                 </div>
+             </div>
 
-                    <div class="space-y-6">
-                        <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-                            <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2 border-b border-slate-800/60 pb-3">
-                                <i class="fa-solid fa-shield-halved text-emerald-400"></i>
-                                Two-Factor Security
-                            </h4>
-                            <div class="space-y-3">
-                                <label class="flex items-start space-x-3 cursor-pointer p-3 rounded-xl bg-slate-900/30 border border-slate-800/40 hover:border-indigo-500/40 transition">
-                                    <input id="settings-2fa-toggle" type="checkbox" onchange="toggle2FAFromSettings(this.checked)" class="rounded border-slate-700 text-indigo-500 focus:ring-0 h-4 w-4 mt-0.5">
-                                    <div>
-                                        <span class="font-bold text-xs text-slate-200 block">Enable Two-Factor Authentication</span>
-                                        <span class="text-[10px] text-slate-400 block mt-0.5">Require an OTP code sent to your email during account login.</span>
-                                    </div>
-                                </label>
-                            </div>
-                        </div>
+             <!-- TAB 4: SETTINGS VIEW -->
+             <div id="tab-settings" class="hidden space-y-6">
+                 <div class="glass-panel p-6 rounded-3xl border border-slate-800 flex items-center justify-between">
+                     <div>
+                         <h3 class="font-extrabold text-xl text-slate-100">Account Settings</h3>
+                         <p class="text-xs text-slate-400 mt-1">Configure security controls, password settings, and active audit sessions.</p>
+                     </div>
+                     <div class="hidden md:block text-slate-500 text-3xl">
+                         <i class="fa-solid fa-user-gear text-slate-400/20"></i>
+                     </div>
+                 </div>
 
-                        <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-                            <div class="flex justify-between items-center border-b border-slate-800/60 pb-3">
-                                <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2">
-                                    <i class="fa-solid fa-display text-sky-400"></i>
-                                    Session Logs
-                                </h4>
-                                <button onclick="logoutOtherDevices()" class="text-[10px] bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold px-2 py-1 rounded-lg border border-red-500/20 transition">
-                                    Logout Others
-                                </button>
-                            </div>
-                            <div id="settings-sessions-list" class="space-y-3 max-h-60 overflow-y-auto pr-1">
-                                <div class="text-xs text-slate-500 text-center py-4">Loading sessions logs...</div>
-                            </div>
-                        </div>
+                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                     <div class="lg:col-span-2 space-y-6">
+                         <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
+                             <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2 border-b border-slate-800/60 pb-3">
+                                 <i class="fa-solid fa-key text-amber-400"></i>
+                                 Change Account Password
+                             </h4>
+                             <form onsubmit="handleSettingsPasswordUpdate(event)" class="space-y-4">
+                                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                     <div class="space-y-1.5">
+                                         <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Current Password</label>
+                                         <input type="password" id="settings-pass-current" required class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 focus:ring-0 focus:border-indigo-500 text-xs text-slate-100 transition duration-200">
+                                     </div>
+                                     <div class="space-y-1.5">
+                                         <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">New Password</label>
+                                         <input type="password" id="settings-pass-new" required class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 focus:ring-0 focus:border-indigo-500 text-xs text-slate-100 transition duration-200">
+                                     </div>
+                                     <div class="space-y-1.5">
+                                         <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Confirm New Password</label>
+                                         <input type="password" id="settings-pass-confirm" required class="w-full px-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 focus:ring-0 focus:border-indigo-500 text-xs text-slate-100 transition duration-200">
+                                     </div>
+                                 </div>
+                                 <div class="flex justify-end pt-2">
+                                     <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition shadow-md">
+                                         Update Password
+                                     </button>
+                                 </div>
+                                 <div id="settings-pass-success" class="text-xs text-emerald-400 font-bold hidden">Password updated successfully!</div>
+                                 <div id="settings-pass-error" class="text-xs text-red-400 font-bold hidden">Failed to update password.</div>
+                             </form>
+                         </div>
+                     </div>
 
-                        <div class="glass-panel p-6 rounded-2xl border border-red-500/20 bg-red-500/5 space-y-4">
-                            <h4 class="font-extrabold text-red-400 text-sm flex items-center gap-2 border-b border-red-500/20 pb-3">
-                                <i class="fa-solid fa-triangle-exclamation"></i>
-                                Danger Zone
-                            </h4>
-                            <p class="text-[11px] text-slate-400">Permanently delete your account and all associated brain scans and diagnostic logs. This action is irreversible.</p>
-                            <button onclick="confirmDeleteAccount()" class="w-full text-xs bg-red-600 hover:bg-red-700 text-white font-extrabold py-2.5 rounded-xl transition shadow-md shadow-red-600/10">
-                                Delete My Account
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
+                     <div class="space-y-6">
+                         <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
+                             <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2 border-b border-slate-800/60 pb-3">
+                                 <i class="fa-solid fa-shield-halved text-emerald-400"></i>
+                                 Two-Factor Security
+                             </h4>
+                             <div class="space-y-3">
+                                 <label class="flex items-start space-x-3 cursor-pointer p-3 rounded-xl bg-slate-900/30 border border-slate-800/40 hover:border-indigo-500/40 transition">
+                                     <input id="settings-2fa-toggle" type="checkbox" onchange="toggle2FAFromSettings(this.checked)" class="rounded border-slate-700 text-indigo-500 focus:ring-0 h-4 w-4 mt-0.5">
+                                     <div>
+                                         <span class="font-bold text-xs text-slate-200 block">Enable Two-Factor Authentication</span>
+                                         <span class="text-[10px] text-slate-400 block mt-0.5">Require an OTP code sent to your email during account login.</span>
+                                     </div>
+                                 </label>
+                             </div>
+                         </div>
+
+                         <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
+                             <div class="flex justify-between items-center border-b border-slate-800/60 pb-3">
+                                 <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2">
+                                     <i class="fa-solid fa-display text-sky-400"></i>
+                                     Session Logs
+                                 </h4>
+                                 <button onclick="logoutOtherDevices()" class="text-[10px] bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold px-2 py-1 rounded-lg border border-red-500/20 transition">
+                                     Logout Others
+                                 </button>
+                             </div>
+                             <div id="settings-sessions-list" class="space-y-3 max-h-60 overflow-y-auto pr-1">
+                                 <div class="text-xs text-slate-500 text-center py-4">Loading sessions logs...</div>
+                             </div>
+                         </div>
+
+                         <div class="glass-panel p-6 rounded-2xl border border-red-500/20 bg-red-500/5 space-y-4">
+                             <h4 class="font-extrabold text-red-400 text-sm flex items-center gap-2 border-b border-red-500/20 pb-3">
+                                 <i class="fa-solid fa-triangle-exclamation"></i>
+                                 Danger Zone
+                             </h4>
+                             <p class="text-[11px] text-slate-400">Permanently delete your account and all associated brain scans and diagnostic logs. This action is irreversible.</p>
+                             <button onclick="confirmDeleteAccount()" class="w-full text-xs bg-red-600 hover:bg-red-700 text-white font-extrabold py-2.5 rounded-xl transition shadow-md shadow-red-600/10">
+                                 Delete My Account
+                             </button>
+                         </div>
+                     </div>
+                 </div>
+             </div>       </div>
         </div>
     </main>
 
@@ -907,36 +962,19 @@
         let currentUser = null;
         let authToken = localStorage.getItem("auth_token") || null;
 
+        // Cache flags to prevent redundant API polling and page flickering
+        let adminUsersLoaded = false;
+        let adminAuditLoaded = false;
+        let settingsDataLoaded = false;
+
         document.addEventListener("DOMContentLoaded", async () => {
-            initializeTheme();
+            initSidebarState();
             await checkAuthStatus();
-            loadAdminUsers();
-            loadAdminAuditLogs();
+            // Start on Overview tab
+            switchTab('overview');
         });
 
-        function initializeTheme() {
-            const themeToggleBtn = document.getElementById('theme-toggle');
 
-            themeToggleBtn.addEventListener('click', function() {
-                if (localStorage.getItem('color-theme')) {
-                    if (localStorage.getItem('color-theme') === 'light') {
-                        document.documentElement.classList.add('dark');
-                        localStorage.setItem('color-theme', 'dark');
-                    } else {
-                        document.documentElement.classList.remove('dark');
-                        localStorage.setItem('color-theme', 'light');
-                    }
-                } else {
-                    if (document.documentElement.classList.contains('dark')) {
-                        document.documentElement.classList.remove('dark');
-                        localStorage.setItem('color-theme', 'light');
-                    } else {
-                        document.documentElement.classList.add('dark');
-                        localStorage.setItem('color-theme', 'dark');
-                    }
-                }
-            });
-        }
 
         function toggleMobileSidebar() {
             const sidebar = document.getElementById('sidebar-container');
@@ -945,24 +983,81 @@
             overlay.classList.toggle('hidden');
         }
 
+        // Collapsible sidebar functionality
+        function toggleSidebar() {
+            const body = document.body;
+            const icon = document.getElementById("desktop-collapse-icon");
+            const collapsed = body.classList.toggle("sidebar-collapsed");
+            
+            if (collapsed) {
+                icon.className = "fa-solid fa-chevron-right text-xs";
+            } else {
+                icon.className = "fa-solid fa-chevron-left text-xs";
+            }
+            localStorage.setItem("sidebar-collapsed", collapsed ? "true" : "false");
+        }
+
+        function initSidebarState() {
+            const isCollapsed = localStorage.getItem("sidebar-collapsed") === "true";
+            const body = document.body;
+            const icon = document.getElementById("desktop-collapse-icon");
+            if (isCollapsed) {
+                body.classList.add("sidebar-collapsed");
+                if (icon) icon.className = "fa-solid fa-chevron-right text-xs";
+            } else {
+                body.classList.remove("sidebar-collapsed");
+                if (icon) icon.className = "fa-solid fa-chevron-left text-xs";
+            }
+        }
+
+        const pageTitles = {
+            'overview': 'System Administrator Dashboard',
+            'generate': 'AI Diagnostic Workspace',
+            'users': 'User Management Registry',
+            'reports': 'Clinical Diagnostic Reports Directory',
+            'audit': 'OWASP Security Audit Telemetry',
+            'settings': 'Account Security Settings',
+            'profile': 'Administrator User Profile'
+        };
+
         function switchTab(tabName) {
-            ['overview', 'users', 'audit', 'settings'].forEach(t => {
+            ['overview', 'generate', 'users', 'reports', 'audit', 'settings', 'profile'].forEach(t => {
                 const el = document.getElementById(`tab-${t}`);
                 const btn = document.getElementById(`nav-${t}`);
                 if (el) el.classList.add('hidden');
                 if (btn) {
-                    btn.className = "w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50";
+                    btn.className = "w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm transition-all duration-200 sidebar-nav-btn";
                 }
             });
+            
             const activeEl = document.getElementById(`tab-${tabName}`);
             if (activeEl) activeEl.classList.remove('hidden');
             const activeBtn = document.getElementById(`nav-${tabName}`);
             if (activeBtn) {
-                activeBtn.className = "w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-indigo-500/20 to-purple-500/10 text-indigo-400 border border-indigo-500/30 shadow-sm";
+                activeBtn.className = "w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm transition-all duration-200 sidebar-nav-btn-active";
             }
-            if (tabName === 'users') loadAdminUsers();
-            if (tabName === 'audit') loadAdminAuditLogs();
-            if (tabName === 'settings') loadSettingsData();
+
+            // Update breadcrumb and header title
+            if (pageTitles[tabName]) {
+                document.getElementById('page-title').innerText = pageTitles[tabName];
+                document.getElementById('breadcrumb-page').innerText = tabName.charAt(0).toUpperCase() + tabName.slice(1);
+            }
+
+            if (tabName === 'users') {
+                if (!adminUsersLoaded) {
+                    loadAdminUsers();
+                }
+            }
+            if (tabName === 'audit') {
+                if (!adminAuditLoaded) {
+                    loadAdminAuditLogs();
+                }
+            }
+            if (['settings', 'profile'].includes(tabName)) {
+                if (!settingsDataLoaded) {
+                    loadSettingsData();
+                }
+            }
         }
 
         function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
@@ -1065,6 +1160,7 @@
                 document.getElementById('stat-active-users').innerText = activeCount;
 
                 onUsersSearchFilter();
+                adminUsersLoaded = true;
             } catch (err) { tbody.innerHTML = `<tr><td colspan="9" class="p-4 text-red-500">Failed to load admin users.</td></tr>`; }
         }
 
@@ -1224,6 +1320,9 @@
 
         async function handleAdminPasswordReset(e) {
             e.preventDefault();
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+
             const userId = document.getElementById("reset-target-id").value;
             const newPass = document.getElementById("reset-new-password").value;
             const errorDiv = document.getElementById("reset-password-error");
@@ -1246,6 +1345,8 @@
             } catch (err) {
                 errorDiv.innerText = "Request failed.";
                 errorDiv.classList.remove("hidden");
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
             }
         }
 
@@ -1319,6 +1420,7 @@
                     </tr>
                     `;
                 });
+                adminAuditLoaded = true;
             } catch (err) { tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-red-500">Failed to load security audit logs.</td></tr>`; }
         }
         // Settings tab functions
@@ -1347,6 +1449,7 @@
             }
 
             await loadSessionsList();
+            settingsDataLoaded = true;
         }
 
         async function loadSessionsList() {
@@ -1364,20 +1467,37 @@
                     data.sessions.forEach(s => {
                         const dateStr = new Date(s.timestamp).toLocaleString();
                         const typeIcon = s.event_type.includes("GOOGLE") ? "fa-brands fa-google text-amber-400" : "fa-solid fa-shield-halved text-indigo-400";
+                        const locationStr = s.location ? ` • ${s.location}` : "";
+                        const browserStr = s.browser && s.device ? `${s.browser} (${s.device})` : "Unknown Browser/Device";
+                        
+                        let activeStatus = "Active Session";
+                        let activeColor = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+                        if (s.event_type === "LOGOUT" || s.event_type === "REVOKE_ALL_SESSIONS") {
+                            activeStatus = "Logged Out";
+                            activeColor = "bg-slate-850 text-slate-400";
+                        } else if (s.event_type === "LOGIN_FAILURE") {
+                            activeStatus = "Failed Login";
+                            activeColor = "bg-rose-500/10 text-rose-400 border border-rose-500/20";
+                        } else if (s.logout_time) {
+                            activeStatus = `Ended: ${new Date(s.logout_time).toLocaleTimeString()}`;
+                            activeColor = "bg-slate-850 text-slate-400";
+                        }
                         
                         listContainer.innerHTML += `
                             <div class="flex items-center justify-between p-2.5 bg-slate-900/40 rounded-xl border border-slate-800/40 text-[11px]">
                                 <div class="flex items-center gap-2.5">
-                                    <div class="h-7 w-7 rounded-lg bg-slate-950 flex items-center justify-center">
+                                    <div class="h-7 w-7 rounded-lg bg-slate-950 flex items-center justify-center flex-shrink-0">
                                         <i class="${typeIcon}"></i>
                                     </div>
                                     <div>
-                                        <div class="font-bold text-slate-200">${s.ip_address}</div>
+                                        <div class="font-bold text-slate-200">${s.ip_address}${locationStr}</div>
+                                        <div class="text-[10px] text-slate-300 mt-0.5">${browserStr}</div>
                                         <div class="text-[9px] text-slate-400 mt-0.5">${dateStr}</div>
                                     </div>
                                 </div>
-                                <div class="text-right">
+                                <div class="text-right flex flex-col items-end gap-1 flex-shrink-0">
                                     <span class="text-[9px] px-1.5 py-0.5 rounded font-bold bg-slate-800 text-slate-400">${s.event_type.replace("LOGIN_", "")}</span>
+                                    <span class="text-[9px] px-1.5 py-0.5 rounded font-bold ${activeColor}">${activeStatus}</span>
                                 </div>
                             </div>
                         `;
@@ -1421,6 +1541,9 @@
 
         async function handleSettingsUpdate(e) {
             e.preventDefault();
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+
             const name = document.getElementById("settings-name").value;
             const email = document.getElementById("settings-email").value;
             const successDiv = document.getElementById("settings-profile-success");
@@ -1450,10 +1573,13 @@
                 const headerName = document.getElementById("header-user-name");
                 if (headerName) headerName.innerText = name;
                 
+                settingsDataLoaded = false;
                 await loadSettingsData();
             } catch (err) {
                 errorDiv.innerText = "Request failed.";
                 errorDiv.classList.remove("hidden");
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
             }
         }
 
@@ -1471,6 +1597,9 @@
 
         async function handleSettingsEmailVerification(e) {
             e.preventDefault();
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+
             const code = document.getElementById("settings-verify-code").value;
             const errorDiv = document.getElementById("settings-verify-error");
             errorDiv.classList.add("hidden");
@@ -1490,10 +1619,13 @@
                 closeModal("settings-verify-modal");
                 currentUser.is_verified = true;
                 alert("Email verified successfully!");
+                settingsDataLoaded = false;
                 await loadSettingsData();
             } catch (err) {
                 errorDiv.innerText = "Verification failed.";
                 errorDiv.classList.remove("hidden");
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
             }
         }
 
@@ -1512,6 +1644,9 @@
 
         async function handleSettingsPasswordUpdate(e) {
             e.preventDefault();
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+
             const currentPass = document.getElementById("settings-pass-current").value;
             const newPass = document.getElementById("settings-pass-new").value;
             const confirmPass = document.getElementById("settings-pass-confirm").value;
@@ -1524,6 +1659,7 @@
             if (newPass !== confirmPass) {
                 errorDiv.innerText = "New passwords do not match.";
                 errorDiv.classList.remove("hidden");
+                if (submitBtn) submitBtn.disabled = false;
                 return;
             }
 
@@ -1546,6 +1682,8 @@
             } catch (err) {
                 errorDiv.innerText = "Password update failed.";
                 errorDiv.classList.remove("hidden");
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
             }
         }
 

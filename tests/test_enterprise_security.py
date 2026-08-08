@@ -144,5 +144,37 @@ class TestEnterpriseSecurity(unittest.TestCase):
         self.assertEqual(success_logs[0]["user_agent"], "Mozilla/5.0 TestBrowser")
 
 
+    def test_timezone_aware_session_revocation(self):
+        """Tokens issued before a session revocation event must be immediately invalidated timezone-safely."""
+        login_data = self._login()
+        token = login_data["access_token"]
+
+        # Call profile with active token to verify it works initially
+        self.client.set_cookie("csrf_token", "matching_csrf")
+        resp_ok = self.client.put(
+            "/api/auth/profile",
+            json={"full_name": "Check Session", "email": "patient@aurascan.ai"},
+            headers={"X-CSRF-Token": "matching_csrf"}
+        )
+        self.assertEqual(resp_ok.status_code, 200)
+
+        # Trigger logout-other-devices to invalidate token sessions
+        resp_revoke = self.client.post(
+            "/api/auth/profile/logout-other-devices",
+            headers={"X-CSRF-Token": "matching_csrf"}
+        )
+        self.assertEqual(resp_revoke.status_code, 200)
+
+        # Now attempting to use the old token must return 401 TOKEN_REVOKED
+        self.client.set_cookie("access_token", token)
+        resp_blocked = self.client.put(
+            "/api/auth/profile",
+            json={"full_name": "Try Blocked Update", "email": "patient@aurascan.ai"},
+            headers={"X-CSRF-Token": "matching_csrf"}
+        )
+        self.assertEqual(resp_blocked.status_code, 401)
+        self.assertEqual(resp_blocked.get_json()["code"], "TOKEN_REVOKED")
+
+
 if __name__ == "__main__":
     unittest.main()

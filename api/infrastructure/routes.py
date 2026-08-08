@@ -312,8 +312,14 @@ def run_explainability(filepath: str, target_class: int = 1, method: str = "grad
         raise HTTPException(status_code=500, detail=f"XAI hook execution failed: {e}")
 
 
+@router.get("/ping")
+def ping():
+    """Unauthenticated lightweight liveness probe endpoint."""
+    return {"status": "healthy", "timestamp": datetime.datetime.utcnow().isoformat()}
+
+
 @router.get("/health")
-def get_pipeline_health():
+def get_pipeline_health(current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))):
     """API Endpoint: Runs comprehensive system and model health diagnostics and fetches audit telemetry."""
     try:
         from monitoring.infrastructure.health_monitor import PipelineHealthMonitor
@@ -516,18 +522,25 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
         except Exception as e:
             logger.warning(f"Segmentation failed on {device}: {e}. Retrying with CPU fallback...")
             try:
-                model_seg.to("cpu")
+                if model_seg is not None:
+                    model_seg.to("cpu")
                 active_seg_device = "cpu"
                 input_tensor_seg_cpu = input_tensor_seg.to("cpu")
                 with torch.inference_mode():
-                    output_seg = model_seg(input_tensor_seg_cpu)
-                    if seg_config["deep_supervision"]:
-                        output_seg = output_seg[-1]
-                    output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()
+                    if model_seg is not None:
+                        output_seg = model_seg(input_tensor_seg_cpu)
+                        if seg_config["deep_supervision"]:
+                            output_seg = output_seg[-1]
+                        output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()
+                    else:
+                        raise RuntimeError("Segmentation model is not loaded (None)")
                 seg_warnings.append("Auto-recovery warning: Segmentation execution failed on GPU. Retried and completed on CPU fallback mode.")
             except Exception as cpu_err:
                 logger.critical(f"CPU fallback for segmentation failed: {cpu_err}")
-                raise HTTPException(status_code=500, detail=f"Segmentation inference failed: {cpu_err}")
+                h_shape = seg_config["input_h"] if (seg_config and "input_h" in seg_config) else 224
+                w_shape = seg_config["input_w"] if (seg_config and "input_w" in seg_config) else 224
+                output_seg = np.zeros((h_shape, w_shape), dtype=np.float32)
+                seg_warnings.append(f"Critical fallback: Segmentation engine failed completely ({cpu_err}). Generated empty tumor mask.")
                 
         bin_mask = (output_seg > 0.5).astype(np.uint8)
 
@@ -577,8 +590,31 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
         
         heatmap_uint8 = np.uint8(255 * cv2.resize(heatmap, (img_bgr.shape[1], img_bgr.shape[0])))
         heatmap_color = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
-        cv2.imwrite(heatmap_path, heatmap_color)
-        cv2.imwrite(overlay_path, overlay_with_contour)
+        
+        success_h = cv2.imwrite(heatmap_path, heatmap_color)
+        if not success_h:
+            logger.error(f"Failed to write heatmap image to: {heatmap_path}")
+            
+        success_o = cv2.imwrite(overlay_path, overlay_with_contour)
+        if not success_o:
+            logger.error(f"Failed to write overlay image to: {overlay_path}")
+ 
+        # Save post-processed segmentation mask
+        mask_filename = f"{intake.patient_id}_api_mask.png"
+        mask_path = os.path.join(OUTPUT_REPORTS_DIR, mask_filename)
+        success_m = cv2.imwrite(mask_path, (final_mask * 255).astype(np.uint8))
+        if not success_m:
+            logger.error(f"Failed to write segmentation mask to: {mask_path}")
+ 
+        # Save before-after post-processing comparison image
+        comparison_filename = f"{intake.patient_id}_api_comparison.png"
+        comparison_path = os.path.join(OUTPUT_REPORTS_DIR, comparison_filename)
+        create_segmentation_comparison_image(
+            original_image=img_bgr,
+            before_mask=bin_mask_resized,
+            after_mask=final_mask,
+            output_path=comparison_path
+        )
 
         # 4. Morphological Analysis
         morph_analyzer = OpenCVTumorAnalyzer(low_thresh=1.0, med_thresh=5.0, high_thresh=15.0)
@@ -845,45 +881,168 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
 
 
 @router.get("/report/{report_id}/pdf")
-def serve_report_pdf(report_id: int):
-    """Streams the compiled PDF document directly to clients."""
-    history_repo = SQLitePredictionHistoryRepository(db_path=DEFAULT_DB_PATH)
-    paths = history_repo.get_report_paths(report_id)
+def serve_report_pdf(report_id: int, current_user: User = Depends(get_current_user)):
+    """Streams the compiled PDF document directly to clients with ownership validation."""
+    from pathlib import Path
+    import logging
+    logger = logging.getLogger("api.routes.serve_report_pdf")
     
-    if not paths or not paths[2]:
-        raise HTTPException(status_code=404, detail="PDF report not found in database records.")
+    logger.info(f"API request received for PDF. Report ID: {report_id}, User: {current_user.email}")
     
-    pdf_path = paths[2]
-    if not os.path.exists(pdf_path):
-        raise HTTPException(status_code=404, detail="PDF file missing on server disk.")
-    
-    return FileResponse(pdf_path, media_type="application/pdf", filename=os.path.basename(pdf_path))
+    if current_user.role == Role.PATIENT:
+        conn = sqlite3.connect(DEFAULT_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT p.patient_id, p.name as patient_name
+                FROM clinical_reports cr
+                JOIN predictions pr ON cr.prediction_id = pr.id
+                JOIN mri_scans s ON pr.scan_id = s.id
+                JOIN patients p ON s.patient_id = p.patient_id
+                WHERE cr.id = ?;
+                """,
+                (report_id,)
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Report not found.")
+            if row["patient_name"].lower() != current_user.full_name.lower() and row["patient_id"].lower() != current_user.uuid.lower():
+                logger.warning(f"Access denied to patient report PDF for report_id: {report_id}, User: {current_user.email}")
+                raise HTTPException(status_code=403, detail="Access denied to patient report PDF.")
+        except HTTPException as he:
+            raise he
+        except Exception as e:
+            logger.error(f"Database error during patient access check: {e}")
+            raise HTTPException(status_code=500, detail="Database access error during validation")
+        finally:
+            conn.close()
+
+    try:
+        from clinical_reporting.infrastructure.pdf_generator import load_or_regenerate_pdf
+        pdf_path = load_or_regenerate_pdf(report_id, DEFAULT_DB_PATH)
+        
+        if not pdf_path:
+            logger.error(f"load_or_regenerate_pdf returned None for report_id: {report_id}")
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "error": "PDF path could not be resolved from database",
+                    "reason": f"No report with ID {report_id} or pdf_path is null in the database."
+                }
+            )
+
+        pdf_path_obj = Path(pdf_path).resolve()
+        output_dir = pdf_path_obj.parent
+        filename = pdf_path_obj.name
+        
+        logger.info(f"Resolving PDF path. Directory: {output_dir}, Filename: {filename}")
+        
+        # File exists check
+        if not pdf_path_obj.is_file():
+            logger.error(f"PDF file does not exist on disk at: {pdf_path_obj}")
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "error": "PDF report file not found on server disk",
+                    "reason": "The file does not exist at the resolved absolute path.",
+                    "path": str(pdf_path_obj)
+                }
+            )
+        
+        logger.info(f"PDF file verified. Serving PDF from: {pdf_path_obj}")
+        return FileResponse(str(pdf_path_obj), media_type="application/pdf", filename=filename)
+        
+    except Exception as e:
+        logger.exception(f"Unexpected error in serve_report_pdf endpoint: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "Internal server error occurred while retrieving PDF",
+                "reason": str(e)
+            }
+        )
 
 
 @router.get("/report/{report_id}/visuals/{visual_type}")
-def serve_report_visual(report_id: int, visual_type: str):
-    """Streams diagnostic visual maps (heatmap, overlay, or mask)."""
+def serve_report_visual(report_id: int, visual_type: str, current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))):
+    """Streams diagnostic visual maps (heatmap, overlay, mask, or raw). Only allowed for Admins and Doctors."""
     conn = sqlite3.connect(DEFAULT_DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT overlay_path, heatmap_path, mask_path FROM clinical_reports WHERE id = ?;", (report_id,))
+        cursor.execute(
+            """
+            SELECT cr.overlay_path, cr.heatmap_path, cr.mask_path, s.image_path as raw_path
+            FROM clinical_reports cr
+            JOIN predictions pr ON cr.prediction_id = pr.id
+            JOIN mri_scans s ON pr.scan_id = s.id
+            WHERE cr.id = ?;
+            """,
+            (report_id,)
+        )
         row = cursor.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Report visual not found.")
+        img_path = None
+        if row:
+            if visual_type == "overlay":
+                img_path = row["overlay_path"]
+            elif visual_type == "heatmap":
+                img_path = row["heatmap_path"]
+            elif visual_type == "mask":
+                img_path = row["mask_path"]
+            elif visual_type == "raw":
+                img_path = row["raw_path"]
+            else:
+                img_path = None
         
-        if visual_type == "overlay":
-            img_path = row["overlay_path"]
-        elif visual_type == "heatmap":
-            img_path = row["heatmap_path"]
-        elif visual_type == "mask":
-            img_path = row["mask_path"]
-        else:
-            raise HTTPException(status_code=400, detail="Invalid visual type. Choose 'overlay', 'heatmap', or 'mask'.")
-        
+        if img_path:
+            img_path = os.path.abspath(img_path)
+
         if not img_path or not os.path.exists(img_path):
+            import numpy as np
+            import cv2
+            
+            # Generate placeholder image on the fly
+            placeholder = np.zeros((400, 400, 3), dtype=np.uint8)
+            placeholder[:] = [42, 23, 15]  # Slate color
+            cv2.circle(placeholder, (200, 200), 120, (85, 65, 51), thickness=2)
+            cv2.line(placeholder, (150, 200), (250, 200), (105, 85, 71), 1)
+            cv2.line(placeholder, (200, 150), (200, 250), (105, 85, 71), 1)
+            text = "IMAGE NOT FOUND"
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.6
+            thickness = 2
+            text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+            text_x = (400 - text_size[0]) // 2
+            text_y = (400 + text_size[1]) // 2
+            cv2.putText(placeholder, text, (text_x, text_y), font, font_scale, (139, 116, 100), thickness, cv2.LINE_AA)
+            
+            success, encoded_img = cv2.imencode('.png', placeholder)
+            if success:
+                from fastapi.responses import Response
+                return Response(content=encoded_img.tobytes(), media_type="image/png", status_code=404)
             raise HTTPException(status_code=404, detail="Image file missing on server disk.")
         
+        if img_path.lower().endswith(('.tif', '.tiff')):
+            import numpy as np
+            import cv2
+            try:
+                img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+                if img is not None:
+                    if img.dtype != np.uint8:
+                        img_min, img_max = img.min(), img.max()
+                        if img_max > img_min:
+                            img = ((img - img_min) / (img_max - img_min) * 255).astype(np.uint8)
+                        else:
+                            img = np.zeros_like(img, dtype=np.uint8)
+                    success, encoded_img = cv2.imencode('.png', img)
+                    if success:
+                        from fastapi.responses import Response
+                        return Response(content=encoded_img.tobytes(), media_type="image/png")
+            except Exception as ex:
+                logger.error(f"Failed to convert TIFF {img_path} to PNG: {ex}")
+
         media_type = "image/png"
         if img_path.lower().endswith(".jpg") or img_path.lower().endswith(".jpeg"):
             media_type = "image/jpeg"
@@ -894,8 +1053,12 @@ def serve_report_visual(report_id: int, visual_type: str):
 
 
 @router.get("/database/history")
-def get_prediction_history(patient_id: Optional[str] = Query(None)):
-    """API Endpoint: Retrieves scan prediction logs matching patient ID search filters."""
+def get_prediction_history(patient_id: Optional[str] = Query(None), current_user: User = Depends(get_current_user)):
+    """API Endpoint: Retrieves scan prediction logs matching patient ID search filters with tenant isolation."""
+    # Enforce patient boundaries
+    if current_user.role == Role.PATIENT:
+        patient_id = current_user.uuid
+
     history_repo = SQLitePredictionHistoryRepository(db_path=DEFAULT_DB_PATH)
     criteria = HistorySearchCriteria(patient_id=patient_id if patient_id else None)
     
@@ -903,6 +1066,11 @@ def get_prediction_history(patient_id: Optional[str] = Query(None)):
         summaries = history_repo.search_history(criteria)
         results = []
         for s in summaries:
+            # Multi-tenant safeguard: skip records that don't belong to this patient
+            if current_user.role == Role.PATIENT:
+                if s.patient_id.lower() != current_user.uuid.lower() and s.patient_name.lower() != current_user.full_name.lower():
+                    continue
+
             results.append({
                 "report_id": s.report_id,
                 "prediction_id": s.prediction_id,
@@ -922,8 +1090,8 @@ def get_prediction_history(patient_id: Optional[str] = Query(None)):
 
 
 @router.get("/dashboard/analytics")
-def get_dashboard_telemetry():
-    """API Endpoint: returns analytics distribution graphs counts."""
+def get_dashboard_telemetry(current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))):
+    """API Endpoint: returns analytics distribution graphs counts. Only accessible to Admins and Doctors."""
     persistence_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)
     try:
         summary = persistence_repo.get_analytics_summary()

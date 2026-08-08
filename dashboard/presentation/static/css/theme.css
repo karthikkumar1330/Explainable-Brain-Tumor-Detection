@@ -1,0 +1,250 @@
+:root {
+    /* Unified Premium Light Theme */
+    --bg-color: #F8FAFC;
+    --text-color: #0F172A;
+    --text-muted: #64748B;
+    --border-color: #E2E8F0;
+    --border-focus: #2563EB;
+    --border-hover: #CBD5E1;
+    --panel-bg: rgba(255, 255, 255, 0.85);
+    --card-bg: #FFFFFF;
+    
+    --sidebar-bg: #FFFFFF;
+    --sidebar-text: #64748B;
+    --sidebar-active-bg: rgba(37, 99, 235, 0.08);
+    --sidebar-active-text: #2563EB;
+    
+    --header-bg: rgba(255, 255, 255, 0.8);
+    --hover-bg: #F1F5F9;
+    --input-bg: #FFFFFF;
+    --table-header-bg: #F8FAFC;
+    
+    --primary-color: #2563EB;
+    --primary-hover: #1D4ED8;
+    --accent-color: #3B82F6;
+    --success-color: #10B981;
+    --error-color: #EF4444;
+    --warning-color: #F59E0B;
+    
+    --focus-ring: rgba(37, 99, 235, 0.15);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+}
+
+.dark {
+    /* Unified Premium Dark Theme */
+    --bg-color: #090D16;
+    --text-color: #F8FAFC;
+    --text-muted: #94A3B8;
+    --border-color: rgba(38, 52, 78, 0.4);
+    --border-focus: #22D3EE;
+    --border-hover: rgba(38, 52, 78, 0.6);
+    --panel-bg: rgba(23, 32, 51, 0.75);
+    --card-bg: #172033;
+    
+    --sidebar-bg: #090E1A;
+    --sidebar-text: #94A3B8;
+    --sidebar-active-bg: rgba(34, 211, 238, 0.08);
+    --sidebar-active-text: #22D3EE;
+    
+    --header-bg: rgba(9, 13, 22, 0.8);
+    --hover-bg: rgba(38, 52, 78, 0.45);
+    --input-bg: #0C1322;
+    --table-header-bg: #0C1322;
+    
+    --primary-color: #2563EB;
+    --primary-hover: #3B82F6;
+    --accent-color: #22D3EE;
+    --success-color: #14B8A6;
+    --error-color: #F43F5E;
+    --warning-color: #F59E0B;
+    
+    --focus-ring: rgba(34, 211, 238, 0.25);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
+}
+
+/* Light theme overrides for elements with hardcoded Tailwind dark classes */
+html:not(.dark) body {
+    background-color: var(--bg-color) !important;
+    color: var(--text-color) !important;
+}
+
+html:not(.dark) aside {
+    background-color: var(--sidebar-bg) !important;
+    border-right: 1px solid var(--border-color) !important;
+}
+
+html:not(.dark) header {
+    background-color: var(--header-bg) !important;
+    border-bottom: 1px solid var(--border-color) !important;
+}
+
+html:not(.dark) .glass-panel {
+    background: var(--panel-bg) !important;
+    border-color: var(--border-color) !important;
+    box-shadow: var(--shadow-lg) !important;
+}
+
+/* Dynamic text color inversion in light mode for labels/headings */
+html:not(.dark) h1.text-white,
+html:not(.dark) h2.text-white,
+html:not(.dark) h3.text-white,
+html:not(.dark) h4.text-white,
+html:not(.dark) h5.text-white,
+html:not(.dark) h6.text-white,
+html:not(.dark) p.text-white,
+html:not(.dark) span.text-white,
+html:not(.dark) div.text-white {
+    color: var(--text-color) !important;
+}
+
+html:not(.dark) .text-slate-100,
+html:not(.dark) .text-slate-200,
+html:not(.dark) .text-slate-300 {
+    color: var(--text-color) !important;
+}
+
+html:not(.dark) .text-slate-400,
+html:not(.dark) .text-slate-500 {
+    color: var(--text-muted) !important;
+}
+
+/* Sidebar Specific Light Mode Adjustments */
+html:not(.dark) #sidebar-container .logo-text h1 {
+    color: var(--text-color) !important;
+}
+
+html:not(.dark) #sidebar-container .logo-text h1 span {
+    color: var(--primary-color) !important;
+}
+
+html:not(.dark) #sidebar-container .logo-text span {
+    color: var(--text-muted) !important;
+}
+
+html:not(.dark) #sidebar-container .status-text div:first-child {
+    color: var(--text-color) !important;
+}
+
+html:not(.dark) #sidebar-container .status-text div:last-child {
+    color: var(--text-muted) !important;
+}
+
+html:not(.dark) #sidebar-container .health-box,
+html:not(.dark) #sidebar-container .health-details {
+    background-color: var(--hover-bg) !important;
+    border-color: var(--border-color) !important;
+}
+
+html:not(.dark) #sidebar-container .system-version {
+    color: var(--text-muted) !important;
+}
+
+/* Exclude button elements and standard text indicators from overriding */
+html:not(.dark) button .text-slate-100,
+html:not(.dark) button .text-slate-200,
+html:not(.dark) button .text-slate-300,
+html:not(.dark) button .text-white,
+html:not(.dark) .btn .text-white,
+html:not(.dark) .btn-primary,
+html:not(.dark) .btn-danger {
+    color: #FFFFFF !important;
+}
+
+/* Sidebar navigation buttons custom styling using CSS variables */
+.sidebar-nav-btn {
+    color: var(--sidebar-text) !important;
+    background: transparent !important;
+    border: 1.5px solid transparent !important;
+    box-shadow: none !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease-in-out;
+}
+
+.sidebar-nav-btn:hover {
+    color: var(--sidebar-active-text) !important;
+    background-color: var(--hover-bg) !important;
+}
+
+.sidebar-nav-btn-active {
+    color: var(--sidebar-active-text) !important;
+    background-color: var(--sidebar-active-bg) !important;
+    border-color: var(--sidebar-active-text) !important;
+    font-weight: 600 !important;
+    box-shadow: var(--shadow-md) !important;
+}
+
+.sidebar-nav-btn i {
+    color: var(--text-muted);
+    transition: color 0.2s ease;
+}
+
+.sidebar-nav-btn:hover i,
+.sidebar-nav-btn-active i {
+    color: var(--sidebar-active-text) !important;
+}
+
+/* Light theme overrides for Tailwind slate backgrounds and borders */
+html:not(.dark) .bg-slate-950,
+html:not(.dark) .bg-slate-900,
+html:not(.dark) .bg-slate-950\/90,
+html:not(.dark) .bg-slate-950\/85,
+html:not(.dark) .bg-slate-950\/80,
+html:not(.dark) .bg-slate-950\/70,
+html:not(.dark) .bg-slate-950\/40,
+html:not(.dark) .bg-slate-950\/30,
+html:not(.dark) .bg-slate-950\/20,
+html:not(.dark) .bg-slate-900\/95,
+html:not(.dark) .bg-slate-900\/90,
+html:not(.dark) .bg-slate-900\/80,
+html:not(.dark) .bg-slate-900\/60,
+html:not(.dark) .bg-slate-900\/50,
+html:not(.dark) .bg-slate-900\/40,
+html:not(.dark) .bg-slate-900\/30,
+html:not(.dark) .bg-slate-50\/50,
+html:not(.dark) .bg-emerald-950\/30,
+html:not(.dark) .bg-indigo-950\/30,
+html:not(.dark) .bg-sky-500\/20,
+html:not(.dark) .bg-emerald-500\/20,
+html:not(.dark) .bg-indigo-500\/20,
+html:not(.dark) .bg-emerald-550\/20,
+html:not(.dark) .bg-slate-950\/70 {
+    background-color: var(--hover-bg) !important;
+}
+
+html:not(.dark) input.bg-slate-950,
+html:not(.dark) select.bg-slate-950,
+html:not(.dark) textarea.bg-slate-950 {
+    background-color: var(--input-bg) !important;
+}
+
+html:not(.dark) .border-slate-800,
+html:not(.dark) .border-slate-700,
+html:not(.dark) .border-slate-800\/80,
+html:not(.dark) .border-slate-800\/60,
+html:not(.dark) .border-slate-800\/50,
+html:not(.dark) .border-slate-800\/40,
+html:not(.dark) .border-slate-850,
+html:not(.dark) .border-slate-100 {
+    border-color: var(--border-color) !important;
+}
+
+/* Dynamic text color adjustments for semantic/brand colors in light mode */
+html:not(.dark) .text-sky-400 {
+    color: #0284c7 !important; /* sky-600 */
+}
+html:not(.dark) .text-emerald-400 {
+    color: #059669 !important; /* emerald-600 */
+}
+html:not(.dark) .text-indigo-400 {
+    color: #4f46e5 !important; /* indigo-600 */
+}
+
+/* Light mode overrides for hover backgrounds */
+html:not(.dark) .hover\:bg-slate-800:hover,
+html:not(.dark) .hover\:bg-slate-900:hover,
+html:not(.dark) [class*="hover:bg-slate-800/"]:hover,
+html:not(.dark) [class*="hover:bg-slate-900/"]:hover {
+    background-color: var(--hover-bg) !important;
+}

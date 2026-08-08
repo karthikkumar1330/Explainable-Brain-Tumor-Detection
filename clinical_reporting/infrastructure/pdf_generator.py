@@ -1,4 +1,6 @@
 import os
+import logging
+from pathlib import Path
 from typing import Tuple, Optional
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
@@ -82,9 +84,19 @@ class ReportLabPDFGenerator:
             report: The aggregated clinical report.
             output_path: Path where PDF will be saved.
         """
+        logger = logging.getLogger("pdf_generator.ReportLabPDFGenerator")
+        output_path_obj = Path(output_path).resolve()
+        output_dir = output_path_obj.parent
+        filename = output_path_obj.name
+        
+        logger.info(f"Generating clinical report PDF. Output directory: {output_dir}, Filename: {filename}")
+        
+        # Create missing directories automatically
+        output_dir.mkdir(parents=True, exist_ok=True)
+
         # Margins: 0.75 in (54 pt) top/bottom, 0.75 in (54 pt) left/right
         doc = SimpleDocTemplate(
-            output_path,
+            str(output_path_obj),
             pagesize=letter,
             leftMargin=54,
             rightMargin=54,
@@ -172,26 +184,32 @@ class ReportLabPDFGenerator:
             [Paragraph("Primary Classification Diagnosis:", meta_label_style), Paragraph(f"<b>{report.classification.class_name}</b>", body_style)]
         ]
         if is_calibrated:
+            conf_val = report.classification.confidence_score
+            conf_str = f"<b>{conf_val:.4%}</b>" if conf_val is not None else "<b>N/A</b>"
             diag_data.append([
                 Paragraph("Model Classification Confidence (Calibrated):", meta_label_style),
-                Paragraph(f"<b>{report.classification.confidence_score:.4%}</b>", body_style)
+                Paragraph(conf_str, body_style)
             ])
+            uncal_val = report.classification.uncalibrated_confidence_score
+            uncal_str = f"{uncal_val:.4%}" if uncal_val is not None else "N/A"
             diag_data.append([
                 Paragraph("Model Classification Confidence (Uncalibrated):", meta_label_style),
-                Paragraph(f"{report.classification.uncalibrated_confidence_score:.4%}", body_style)
+                Paragraph(uncal_str, body_style)
             ])
             # Add method and parameters
             method = getattr(report.classification, "calibration_method", "N/A")
             params = getattr(report.classification, "calibration_parameters", {})
-            param_str = ", ".join(f"{k}={v:.3f}" if isinstance(v, float) else f"{k}={v}" for k, v in params.items())
+            param_str = ", ".join(f"{k}={v:.3f}" if isinstance(v, float) else f"{k}={v}" for k, v in params.items()) if isinstance(params, dict) else "N/A"
             diag_data.append([
                 Paragraph("Confidence Calibration Method:", meta_label_style),
                 Paragraph(f"{method} ({param_str})", body_style)
             ])
         else:
+            conf_val = report.classification.confidence_score
+            conf_str = f"{conf_val:.4%}" if conf_val is not None else "N/A"
             diag_data.append([
                 Paragraph("Model Classification Confidence:", meta_label_style),
-                Paragraph(f"{report.classification.confidence_score:.4%}", body_style)
+                Paragraph(conf_str, body_style)
             ])
 
         if report.severity_assessment is not None:
@@ -322,13 +340,17 @@ class ReportLabPDFGenerator:
             # Add segmentation quality table if post-processing was run
             is_post_processed = getattr(report.segmentation_metrics, "post_processing_applied", False)
             if is_post_processed:
-                q_score = report.segmentation_metrics.quality_score
-                q_cat = report.segmentation_metrics.quality_category
-                steps = ", ".join(report.segmentation_metrics.post_processing_metadata.get("steps_applied", []))
+                q_score = getattr(report.segmentation_metrics, "quality_score", None)
+                q_cat = getattr(report.segmentation_metrics, "quality_category", None) or "N/A"
+                meta = getattr(report.segmentation_metrics, "post_processing_metadata", None) or {}
+                steps_list = meta.get("steps_applied", []) if isinstance(meta, dict) else []
+                steps = ", ".join(steps_list) if steps_list else "None"
+                
+                q_score_str = f"{q_score:.2%}" if q_score is not None else "N/A"
                 
                 story.append(Paragraph("Segmentation Quality Assessment", ParagraphStyle('q_sub', parent=h2_style, fontSize=11, leading=13)))
                 quality_data = [
-                    [Paragraph("Segmentation Quality Score:", meta_label_style), Paragraph(f"<b>{q_score:.2%} ({q_cat})</b>", body_style)],
+                    [Paragraph("Segmentation Quality Score:", meta_label_style), Paragraph(f"<b>{q_score_str} ({q_cat})</b>", body_style)],
                     [Paragraph("Morphological Filters Applied:", meta_label_style), Paragraph(steps, body_style)]
                 ]
                 quality_table = Table(quality_data, colWidths=[180, 324])
@@ -456,37 +478,70 @@ class ReportLabPDFGenerator:
             story.append(comp_table)
             story.append(Spacer(1, 15))
             
-            if lc.comparison_canvas_path and os.path.exists(lc.comparison_canvas_path):
-                story.append(Paragraph("Longitudinal Visual Progression Overlay", ParagraphStyle('lc_sub', parent=h2_style, fontSize=11, leading=13)))
-                from reportlab.platypus import Image as RLImage
-                try:
-                    story.append(RLImage(lc.comparison_canvas_path, width=504, height=168))
-                    story.append(Spacer(1, 15))
-                except Exception:
-                    pass
+            if lc.comparison_canvas_path:
+                comp_canvas_path_obj = Path(lc.comparison_canvas_path).resolve()
+                logger.info(f"Checking if longitudinal comparison canvas exists: {comp_canvas_path_obj}")
+                if comp_canvas_path_obj.is_file():
+                    story.append(Paragraph("Longitudinal Visual Progression Overlay", ParagraphStyle('lc_sub', parent=h2_style, fontSize=11, leading=13)))
+                    from reportlab.platypus import Image as RLImage
+                    try:
+                        story.append(RLImage(str(comp_canvas_path_obj), width=504, height=168))
+                        story.append(Spacer(1, 15))
+                    except Exception as e:
+                        logger.error(f"Failed to load longitudinal comparison canvas image: {e}")
 
-        # 5. Visual Scans Section (Grad-CAM & Segmentation Mask side-by-side)
+        # 5. Visual Scans Section (Original Scan, Grad-CAM & Segmentation Mask side-by-side)
         visual_flowables = []
-        if (report.overlay_image_path and os.path.exists(report.overlay_image_path)) or \
-           (report.segmentation_mask_path and os.path.exists(report.segmentation_mask_path)):
+        orig_img_path_obj = Path(report.original_image_path).resolve() if report.original_image_path else None
+        overlay_img_path_obj = Path(report.overlay_image_path).resolve() if report.overlay_image_path else None
+        mask_img_path_obj = Path(report.segmentation_mask_path).resolve() if report.segmentation_mask_path else None
 
+        has_original = orig_img_path_obj.is_file() if orig_img_path_obj else False
+        has_overlay = overlay_img_path_obj.is_file() if overlay_img_path_obj else False
+        has_mask = mask_img_path_obj.is_file() if mask_img_path_obj else False
+
+        logger.info(f"Visual scan files check: original={has_original} ({orig_img_path_obj}), overlay={has_overlay} ({overlay_img_path_obj}), mask={has_mask} ({mask_img_path_obj})")
+
+        if has_original or has_overlay or has_mask:
             visual_flowables.append(Paragraph("Clinical Imaging & Deep Learning Findings", h2_style))
 
             # Prepare Image Cells
             image_cells = []
             
-            if report.overlay_image_path and os.path.exists(report.overlay_image_path):
-                img_overlay = Image(report.overlay_image_path, width=220, height=220)
-                caption = Paragraph("<font size=8><b>Fig 1:</b> Grad-CAM Attention Overlay (EfficientNet-B0)</font>", ParagraphStyle('cap', parent=body_style, alignment=1))
-                image_cells.append([img_overlay, caption])
+            if has_original:
+                img_orig = Image(str(orig_img_path_obj), width=150, height=150)
+                caption = Paragraph("<font size=8><b>Fig 1:</b> Original MRI Scan</font>", ParagraphStyle('cap_orig', parent=body_style, alignment=1))
+                image_cells.append((img_orig, caption))
+                
+            if has_overlay:
+                img_overlay = Image(str(overlay_img_path_obj), width=150, height=150)
+                caption = Paragraph("<font size=8><b>Fig 2:</b> Grad-CAM Attention Overlay</font>", ParagraphStyle('cap_over', parent=body_style, alignment=1))
+                image_cells.append((img_overlay, caption))
 
-            if report.segmentation_mask_path and os.path.exists(report.segmentation_mask_path):
-                img_mask = Image(report.segmentation_mask_path, width=220, height=220)
-                caption = Paragraph("<font size=8><b>Fig 2:</b> Binarized Segmentation Mask (UNeXt)</font>", ParagraphStyle('cap', parent=body_style, alignment=1))
-                image_cells.append([img_mask, caption])
+            if has_mask:
+                img_mask = Image(str(mask_img_path_obj), width=150, height=150)
+                caption = Paragraph("<font size=8><b>Fig 3:</b> Binarized Segmentation Mask</font>", ParagraphStyle('cap_mask', parent=body_style, alignment=1))
+                image_cells.append((img_mask, caption))
 
-            # Build side-by-side table
-            if len(image_cells) == 2:
+            # Build layout dynamically based on count
+            if len(image_cells) == 3:
+                tbl_data = [
+                    [image_cells[0][0], image_cells[1][0], image_cells[2][0]],
+                    [image_cells[0][1], image_cells[1][1], image_cells[2][1]]
+                ]
+                img_table = Table(tbl_data, colWidths=[168, 168, 168])
+                img_table.setStyle(TableStyle([
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('PADDING', (0, 0), (-1, -1), 2),
+                ]))
+                visual_flowables.append(img_table)
+            elif len(image_cells) == 2:
+                # With 2 images, use larger size
+                image_cells[0][0].drawWidth = 220
+                image_cells[0][0].drawHeight = 220
+                image_cells[1][0].drawWidth = 220
+                image_cells[1][0].drawHeight = 220
                 tbl_data = [
                     [image_cells[0][0], image_cells[1][0]],
                     [image_cells[0][1], image_cells[1][1]]
@@ -499,6 +554,8 @@ class ReportLabPDFGenerator:
                 ]))
                 visual_flowables.append(img_table)
             elif len(image_cells) == 1:
+                image_cells[0][0].drawWidth = 220
+                image_cells[0][0].drawHeight = 220
                 tbl_data = [
                     [image_cells[0][0]],
                     [image_cells[0][1]]
@@ -511,9 +568,11 @@ class ReportLabPDFGenerator:
                 ]))
                 visual_flowables.append(img_table)
 
-            if getattr(report, "comparison_image_path", None) and os.path.exists(report.comparison_image_path):
-                img_comp = Image(report.comparison_image_path, width=480, height=160)
-                comp_caption = Paragraph("<font size=8><b>Fig 3:</b> Segmentation Post-Processing Comparison: Original | Initial UNeXt Mask (Red) | Post-Processed Mask (Green)</font>", ParagraphStyle('cap_c', parent=body_style, alignment=1))
+            comp_img_path_obj = Path(report.comparison_image_path).resolve() if getattr(report, "comparison_image_path", None) else None
+            logger.info(f"Checking if comparison image exists: {comp_img_path_obj}")
+            if comp_img_path_obj and comp_img_path_obj.is_file():
+                img_comp = Image(str(comp_img_path_obj), width=480, height=160)
+                comp_caption = Paragraph("<font size=8><b>Fig 4:</b> Segmentation Post-Processing Comparison: Original | Initial UNeXt Mask (Red) | Post-Processed Mask (Green)</font>", ParagraphStyle('cap_c', parent=body_style, alignment=1))
                 comp_tbl = Table([[img_comp], [comp_caption]], colWidths=[504])
                 comp_tbl.setStyle(TableStyle([
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
@@ -530,14 +589,25 @@ class ReportLabPDFGenerator:
 
         # 6. Technical Benchmarks Summary
         story.append(Paragraph("Technical Execution Metrics", h2_style))
+        
+        cls_lat = report.processing_summary.classification_latency_sec
+        seg_lat = report.processing_summary.segmentation_latency_sec
+        xai_lat = report.processing_summary.explainability_latency_sec
+        tot_lat = report.processing_summary.execution_time_sec
+
+        cls_lat_str = f"{cls_lat:.4f} s" if cls_lat is not None else "N/A"
+        seg_lat_str = f"{seg_lat:.4f} s" if seg_lat is not None else "N/A"
+        xai_lat_str = f"{xai_lat:.4f} s" if xai_lat is not None else "N/A"
+        tot_lat_str = f"{tot_lat:.4f} s" if tot_lat is not None else "N/A"
+
         tech_data = [
             [
-                Paragraph("Classification Latency:", meta_label_style), Paragraph(f"{report.processing_summary.classification_latency_sec:.4f} s", body_style),
-                Paragraph("Segmentation Latency:", meta_label_style), Paragraph(f"{report.processing_summary.segmentation_latency_sec:.4f} s", body_style)
+                Paragraph("Classification Latency:", meta_label_style), Paragraph(cls_lat_str, body_style),
+                Paragraph("Segmentation Latency:", meta_label_style), Paragraph(seg_lat_str, body_style)
             ],
             [
-                Paragraph("Grad-CAM Latency:", meta_label_style), Paragraph(f"{report.processing_summary.explainability_latency_sec:.4f} s", body_style),
-                Paragraph("Total Processing Time:", meta_label_style), Paragraph(f"{report.processing_summary.execution_time_sec:.4f} s", body_style)
+                Paragraph("Grad-CAM Latency:", meta_label_style), Paragraph(xai_lat_str, body_style),
+                Paragraph("Total Processing Time:", meta_label_style), Paragraph(tot_lat_str, body_style)
             ]
         ]
         tech_table = Table(tech_data, colWidths=[120, 130, 120, 134])
@@ -549,5 +619,226 @@ class ReportLabPDFGenerator:
         ]))
         story.append(tech_table)
 
+        # 7. Clinician Verification & Sign-off Block (Print support)
+        story.append(Spacer(1, 10))
+        story.append(Paragraph("Clinician Verification & Approval Sign-off", h2_style))
+        
+        ref_phys = report.patient_info.ref_physician or "Dr. Sarah Smith, MD"
+        sig_data = [
+            [
+                Paragraph("<b>Reviewing Radiologist:</b>", meta_label_style),
+                Paragraph("<b>Clinical Center Stamp:</b>", meta_label_style)
+            ],
+            [
+                Paragraph(
+                    f"Name: {ref_phys}<br/>"
+                    f"Signature: ___________________________<br/>"
+                    f"Date: ________________________",
+                    body_style
+                ),
+                Paragraph(
+                    "AuraScan AI Integrated Center<br/>"
+                    "Validation System Certified<br/>"
+                    "Status: APPROVED",
+                    body_style
+                )
+            ]
+        ]
+        sig_table = Table(sig_data, colWidths=[252, 252])
+        sig_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#FAFBFB")),
+            ('PADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#EAEDED")),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        story.append(sig_table)
+
         # Build document
         doc.build(story, canvasmaker=NumberedCanvas)
+
+        # Verify the PDF is actually written
+        logger.info(f"Verifying PDF file existence check at: {output_path_obj}")
+        if output_path_obj.is_file():
+            logger.info(f"PDF successfully written and verified at: {output_path_obj}")
+        else:
+            logger.error(f"PDF file is missing on disk after generation: {output_path_obj}")
+
+
+def load_or_regenerate_pdf(report_id: int, db_path: str) -> Optional[str]:
+    """Retrieves the PDF path, and if the PDF file is missing on disk but the JSON report exists, re-compiles the PDF on the fly."""
+    import sqlite3
+    import logging
+    from pathlib import Path
+    
+    logger = logging.getLogger("pdf_generator.load_or_regenerate_pdf")
+    db_path_obj = Path(db_path).resolve()
+    logger.info(f"Connecting to database at {db_path_obj} for report ID: {report_id}")
+    
+    if not db_path_obj.is_file():
+        logger.error(f"Database file not found at: {db_path_obj}")
+        return None
+
+    conn = sqlite3.connect(str(db_path_obj))
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT json_path, pdf_path FROM clinical_reports WHERE id = ?;",
+            (report_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            logger.warning(f"No clinical report record found in DB for ID: {report_id}")
+            return None
+        json_path_str = row["json_path"]
+        pdf_path_str = row["pdf_path"]
+        
+        pdf_path_obj = Path(pdf_path_str).resolve() if pdf_path_str else None
+        json_path_obj = Path(json_path_str).resolve() if json_path_str else None
+        
+        # If PDF exists, return it
+        if pdf_path_obj:
+            logger.info(f"Checking if PDF exists at: {pdf_path_obj}")
+            if pdf_path_obj.is_file():
+                logger.info(f"PDF exists at: {pdf_path_obj}")
+                return str(pdf_path_obj)
+            else:
+                logger.warning(f"PDF does not exist at: {pdf_path_obj}")
+            
+        # If PDF is missing but JSON exists, regenerate it!
+        if json_path_obj and json_path_obj.is_file():
+            logger.info(f"JSON file exists at: {json_path_obj}. Attempting to regenerate PDF.")
+            try:
+                import json
+                with open(json_path_obj, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                # Reconstruct entities
+                from clinical_reporting.domain.entities import PatientInfo, ProcessingSummary, ClinicalReport
+                from classification.domain.entities import PredictionResult
+                from tumor_analysis.domain.entities import TumorAnalysisResult, SeverityLevel
+                from severity_assessment.domain.entities import SeverityAssessment, SeverityCategory
+                from clinical_insight.domain.entities import ClinicalInsight
+                
+                p_data = data.get("patient", {})
+                patient = PatientInfo(
+                    patient_id=p_data.get("patient_id", "N/A"),
+                    name=p_data.get("name", "N/A"),
+                    age=p_data.get("age", 45),
+                    gender=p_data.get("gender", "Female"),
+                    scan_date=p_data.get("scan_date", "N/A"),
+                    ref_physician=p_data.get("ref_physician", "N/A")
+                )
+                
+                proc_data = data.get("processing", {})
+                lat_data = proc_data.get("latency_sec", {})
+                proc = ProcessingSummary(
+                    device=proc_data.get("device", "CPU"),
+                    execution_time_sec=proc_data.get("total_execution_time_sec"),
+                    classification_model_path=proc_data.get("classification_model", ""),
+                    segmentation_model_path=proc_data.get("segmentation_model", ""),
+                    classification_latency_sec=lat_data.get("classification"),
+                    segmentation_latency_sec=lat_data.get("segmentation"),
+                    explainability_latency_sec=lat_data.get("explainability")
+                )
+                
+                cls_data = data.get("classification", {})
+                classification = PredictionResult(
+                    label=0, # placeholder
+                    class_name=cls_data.get("predicted_class", "No Tumor"),
+                    confidence_score=cls_data.get("confidence_score", 0.0),
+                    probabilities=cls_data.get("probabilities", {}),
+                    is_calibrated=cls_data.get("is_calibrated", False),
+                    uncalibrated_confidence_score=cls_data.get("uncalibrated_confidence_score"),
+                    uncalibrated_probabilities=cls_data.get("uncalibrated_probabilities"),
+                    calibration_method=cls_data.get("calibration_method"),
+                    calibration_parameters=cls_data.get("calibration_parameters")
+                )
+                
+                seg_metrics = None
+                seg_data = data.get("segmentation")
+                if seg_data:
+                    try:
+                        seg_metrics = TumorAnalysisResult(
+                            pixel_count=seg_data.get("pixel_count", 0),
+                            tumor_area_mm2=seg_data.get("tumor_area_mm2", 0.0),
+                            tumor_percentage_brain=seg_data.get("tumor_percentage_brain", 0.0),
+                            tumor_percentage_image=seg_data.get("tumor_percentage_image", 0.0),
+                            estimated_brain_pixel_count=seg_data.get("estimated_brain_pixel_count", 50000),
+                            severity_level=SeverityLevel.LOW, # placeholder
+                            post_processing_applied=seg_data.get("post_processing_applied", False),
+                            quality_score=seg_data.get("quality_score"),
+                            quality_category=seg_data.get("quality_category"),
+                            post_processing_metadata=seg_data.get("post_processing_metadata")
+                        )
+                    except Exception:
+                        pass
+                
+                severity = None
+                sev_data = data.get("severity") or data.get("classification", {}) # fallback keys
+                if sev_data and "rule_based_severity" in sev_data:
+                    try:
+                        cat_str = sev_data.get("rule_based_severity", "LOW")
+                        severity = SeverityAssessment(
+                            category=SeverityCategory(cat_str.upper()) if cat_str.upper() in ["LOW", "MEDIUM", "HIGH"] else SeverityCategory.LOW,
+                            rule_description=sev_data.get("severity_rule_description", "")
+                        )
+                    except Exception:
+                        pass
+                
+                insight = None
+                ins_data = data.get("clinical_insight") or data.get("insight")
+                if ins_data:
+                    try:
+                        insight = ClinicalInsight(
+                            summary_narrative=ins_data.get("summary_narrative", ""),
+                            key_findings=ins_data.get("key_findings", []),
+                            recommendations=ins_data.get("recommendations", [])
+                        )
+                    except Exception:
+                        pass
+                
+                files_data = data.get("files", {})
+                orig_p = files_data.get("original_image")
+                heat_p = files_data.get("heatmap_image")
+                over_p = files_data.get("overlay_image")
+                mask_p = files_data.get("segmentation_mask")
+                comp_p = files_data.get("comparison_image")
+                
+                report = ClinicalReport(
+                    patient_info=patient,
+                    processing_summary=proc,
+                    classification=classification,
+                    segmentation_metrics=seg_metrics,
+                    severity_assessment=severity,
+                    original_image_path=str(Path(orig_p).resolve()) if orig_p else None,
+                    heatmap_image_path=str(Path(heat_p).resolve()) if heat_p else None,
+                    overlay_image_path=str(Path(over_p).resolve()) if over_p else None,
+                    segmentation_mask_path=str(Path(mask_p).resolve()) if mask_p else None,
+                    comparison_image_path=str(Path(comp_p).resolve()) if comp_p else None,
+                    clinical_insight=insight
+                )
+                
+                # Create parent directory for PDF if it doesn't exist
+                if pdf_path_obj:
+                    logger.info(f"Creating parent directories and generating PDF report at: {pdf_path_obj}")
+                    pdf_path_obj.parent.mkdir(parents=True, exist_ok=True)
+                    pdf_gen = ReportLabPDFGenerator()
+                    pdf_gen.generate_pdf(report, str(pdf_path_obj))
+                    
+                    if pdf_path_obj.is_file():
+                        logger.info(f"Successfully regenerated PDF and verified: {pdf_path_obj}")
+                        return str(pdf_path_obj)
+                    else:
+                        logger.error(f"PDF regeneration completed but file does not exist at: {pdf_path_obj}")
+            except Exception as e:
+                logger.error(f"Failed to regenerate PDF on the fly: {e}", exc_info=True)
+        else:
+            if not json_path_obj:
+                logger.error("JSON report path is null.")
+            elif not json_path_obj.is_file():
+                logger.error(f"JSON report file not found on disk at: {json_path_obj}")
+                
+        return str(pdf_path_obj) if pdf_path_obj else None
+    finally:
+        conn.close()

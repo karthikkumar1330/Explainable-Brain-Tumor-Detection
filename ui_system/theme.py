@@ -10,11 +10,17 @@ def get_css_filepath() -> str:
 
 
 def init_theme_state() -> str:
-    """Initializes theme state in st.session_state to always be 'dark'."""
-    st.session_state["theme"] = "dark"
-    if "theme" in st.query_params:
-        st.query_params["theme"] = "dark"
-    return "dark"
+    """Initializes theme state in st.session_state."""
+    if "theme" not in st.session_state:
+        try:
+            cookie_val = st.context.cookies.get("color-theme")
+            if cookie_val in ["light", "dark"]:
+                st.session_state["theme"] = cookie_val
+                return cookie_val
+        except Exception:
+            pass
+        st.session_state["theme"] = "dark"
+    return st.session_state["theme"]
 
 def clean_html(html_str: str) -> str:
     """Strips leading/trailing whitespace and removes line indentation to prevent Markdown code block parsing."""
@@ -35,6 +41,7 @@ def st_html(html_str: str, container=None) -> None:
 
 def inject_design_system() -> None:
     """Injects the design system CSS and active theme variable overrides instantly."""
+    init_theme_state()
     css_path = get_css_filepath()
     
     css_content = ""
@@ -42,7 +49,69 @@ def inject_design_system() -> None:
         with open(css_path, "r", encoding="utf-8") as f:
             css_content = f.read()
 
-    theme_variables = """
+    active_theme = st.session_state.get("theme", "dark")
+    if active_theme == "light":
+        theme_variables = """
+    :root, html, body, [data-theme="light"], .stApp, [data-testid="stAppViewContainer"], [data-testid="stSidebar"], [data-testid="stHeader"], .main {
+        --bg: #F7F9FC;
+        --surface: #FFFFFF;
+        --card: #FFFFFF;
+        --text: #0F172A;
+        --muted: #64748B;
+        --primary: #2563EB;
+        --border: #E2E8F0;
+
+        --bg-primary: #F7F9FC;
+        --bg-secondary: #FFFFFF;
+        --bg-tertiary: #F1F5F9;
+        --bg-card: #FFFFFF;
+        --bg-card-hover: #F8FAFC;
+        
+        --border-color: #E2E8F0;
+        --border-highlight: #2563EB;
+
+        --text-primary: #0F172A;
+        --text-secondary: #334155;
+        --text-muted: #64748B;
+        --text-accent: #0EA5E9;
+        --text-inverse: #FFFFFF;
+
+        --accent-primary: #2563EB;
+        --accent-primary-hover: #1D4ED8;
+        --accent-secondary: #0EA5E9;
+        --accent-glow: none;
+
+        --status-success: #10B981;
+        --status-success-bg: rgba(16, 185, 129, 0.12);
+        --status-warning: #F59E0B;
+        --status-warning-bg: rgba(245, 158, 11, 0.12);
+        --status-danger: #EF4444;
+        --status-danger-bg: rgba(239, 68, 68, 0.12);
+        --status-info: #2563EB;
+        --status-info-bg: rgba(37, 99, 235, 0.12);
+
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+        --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.06);
+        --shadow-lg: 0 4px 10px rgba(0, 0, 0, 0.08);
+
+        --auth-glass-bg: rgba(255, 255, 255, 0.78);
+        --auth-glass-border: rgba(37, 99, 235, 0.12);
+        --auth-glass-shadow: 0 24px 64px -16px rgba(37, 99, 235, 0.08), 0 0 0 1px rgba(226, 232, 240, 0.8), inset 0 1px 1px rgba(255, 255, 255, 0.6);
+        --auth-badge-bg: rgba(241, 245, 249, 0.6);
+        --auth-badge-border: rgba(226, 232, 240, 0.8);
+        --auth-badge-hover-bg: rgba(255, 255, 255, 0.95);
+        --btn-gradient: linear-gradient(135deg, #2563EB 0%, #1D4ED8 50%, #0EA5E9 100%);
+        --btn-gradient-hover: linear-gradient(135deg, #1D4ED8 0%, #1E40AF 50%, #0284C7 100%);
+        --btn-gradient-shadow: 0 4px 14px 0 rgba(37, 99, 235, 0.15);
+        
+        --radius: 10px;
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 14px;
+    }
+    """
+    else:
+        theme_variables = """
     :root, html, body, [data-theme="dark"], .stApp, [data-testid="stAppViewContainer"], [data-testid="stSidebar"], [data-testid="stHeader"], .main {
         --bg: #0F172A;
         --surface: #1E293B;

@@ -26,85 +26,16 @@
             }
         }
     </script>
-    <script>
-        // Apply theme before parsing body to prevent layout flashes
-        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-    </script>
+    <!-- Global Theme Script -->
+    <script src="/static/js/theme.js"></script>
     <!-- FontAwesome CDN -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Google Fonts Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <!-- Google Sign-In SDK -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
     
+    <!-- Global Theme Styles -->
+    <link rel="stylesheet" href="/static/css/theme.css">
     <style>
-        :root {
-            /* Theme Config - Light Theme */
-            --bg-color: #F8FAFC;
-            --text-color: #0f172a;
-            --text-muted: #64748B;
-            --border-color: #E5E7EB;
-            --border-focus: #2563EB;
-            --panel-bg: rgba(255, 255, 255, 0.85);
-            --card-bg: #FFFFFF;
-            
-            --sidebar-bg: #FFFFFF;
-            --sidebar-text: #64748B;
-            --sidebar-active-bg: rgba(37, 99, 235, 0.08);
-            --sidebar-active-text: #2563EB;
-            
-            --header-bg: rgba(255, 255, 255, 0.8);
-            --hover-bg: #f1f5f9;
-            --input-bg: #FFFFFF;
-            --table-header-bg: #f1f5f9;
-            
-            --primary-color: #2563EB;
-            --primary-hover: #1d4ed8;
-            --accent-color: #3b82f6;
-            --success-color: #10b981;
-            --error-color: #ef4444;
-            --warning-color: #f59e0b;
-            
-            --focus-ring: rgba(37, 99, 235, 0.15);
-            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
-        }
-
-        .dark {
-            /* Theme Config - Dark Theme */
-            --bg-color: #0B1220;
-            --text-color: #F8FAFC;
-            --text-muted: #94a3b8;
-            --border-color: rgba(38, 52, 78, 0.4);
-            --border-focus: #22D3EE;
-            --panel-bg: rgba(23, 32, 51, 0.75);
-            --card-bg: #172033;
-            
-            --sidebar-bg: #090e1a;
-            --sidebar-text: #94a3b8;
-            --sidebar-active-bg: rgba(34, 211, 238, 0.08);
-            --sidebar-active-text: #22D3EE;
-            
-            --header-bg: rgba(11, 18, 32, 0.8);
-            --hover-bg: rgba(38, 52, 78, 0.45);
-            --input-bg: #0c1322;
-            --table-header-bg: #0c1322;
-            
-            --primary-color: #2563EB;
-            --primary-hover: #3b82f6;
-            --accent-color: #22D3EE;
-            --success-color: #14b8a6;
-            --error-color: #f43f5e;
-            --warning-color: #f59e0b;
-            
-            --focus-ring: rgba(34, 211, 238, 0.25);
-            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
-            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
-        }
 
         body {
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -431,15 +362,6 @@
                         Access Portal
                     </button>
                 </form>
-
-                <!-- GOOGLE SIGN IN CONTAINER -->
-                <div class="mt-6 border-t border-slate-250/60 dark:border-slate-800/60 pt-6 space-y-4">
-                    <div id="google-signin-btn" class="flex justify-center w-full"></div>
-                    <div class="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest shrink-0">— OR —</div>
-                    <button type="button" onclick="handleMockGoogleLogin()" class="w-full btn-secondary flex items-center justify-center gap-2">
-                        <i class="fa-brands fa-google text-red-500 text-sm"></i> Demo Google Sign-In (Linked/Auto-Create)
-                    </button>
-                </div>
             </div>
 
             <!-- REGISTER VIEW -->
@@ -601,8 +523,6 @@
 
         // Boot Initialization
         document.addEventListener("DOMContentLoaded", async () => {
-            initializeTheme();
-            initializeGoogleSignIn();
             await checkAuthStatus();
         });
 
@@ -624,84 +544,9 @@
             }
         }
 
-        // Theme Switcher Controls
-        function initializeTheme() {
-            const themeToggleBtn = document.getElementById('theme-toggle');
 
-            themeToggleBtn.addEventListener('click', function() {
-                if (localStorage.getItem('color-theme')) {
-                    if (localStorage.getItem('color-theme') === 'light') {
-                        document.documentElement.classList.add('dark');
-                        localStorage.setItem('color-theme', 'dark');
-                    } else {
-                        document.documentElement.classList.remove('dark');
-                        localStorage.setItem('color-theme', 'light');
-                    }
-                } else {
-                    if (document.documentElement.classList.contains('dark')) {
-                        document.documentElement.classList.remove('dark');
-                        localStorage.setItem('color-theme', 'light');
-                    } else {
-                        document.documentElement.classList.add('dark');
-                        localStorage.setItem('color-theme', 'dark');
-                    }
-                }
-                // Refresh Google Button to match theme
-                initializeGoogleSignIn();
-            });
-        }
 
-        // Google Sign-In SDK Initialization
-        function initializeGoogleSignIn() {
-            if (typeof google !== 'undefined') {
-                google.accounts.id.initialize({
-                    client_id: "784930192348-mockclientid.apps.googleusercontent.com", // client_id placeholder (matches mock credentials)
-                    callback: handleCredentialResponse
-                });
-                google.accounts.id.renderButton(
-                    document.getElementById("google-signin-btn"),
-                    { 
-                        theme: document.documentElement.classList.contains('dark') ? "filled_black" : "outline", 
-                        size: "large", 
-                        width: document.getElementById("auth-card").clientWidth > 350 ? "350" : "280"
-                    }
-                );
-            }
-        }
 
-        async function handleCredentialResponse(response) {
-            await submitGoogleOAuth(response.credential);
-        }
-
-        async function submitGoogleOAuth(credentialToken) {
-            const errDiv = document.getElementById('login-error');
-            errDiv.classList.add('hidden');
-            try {
-                const res = await fetch('/api/auth/google', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ credential: credentialToken })
-                });
-                const data = await res.json();
-                if (data.error) {
-                    errDiv.innerText = data.error;
-                    errDiv.classList.remove('hidden');
-                    return;
-                }
-                authToken = data.access_token;
-                localStorage.setItem("auth_token", authToken);
-                redirectToDashboard(data.user.role);
-            } catch (err) {
-                errDiv.innerText = "Google Login failed: " + err;
-                errDiv.classList.remove('hidden');
-            }
-        }
-
-        function handleMockGoogleLogin() {
-            const randomId = Math.floor(Math.random() * 100000);
-            const mockToken = `mock_google_token_${randomId}_googlepatient${randomId}@aurascan.ai_Jane Patient_${btoa("https://lh3.googleusercontent.com/avatar")}`;
-            submitGoogleOAuth(mockToken);
-        }
 
         // Tab views toggle
         function toggleAuthView(viewName) {
@@ -764,6 +609,9 @@
         // Auth Form Handlers
         async function handleLoginSubmit(e) {
             e.preventDefault();
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+
             const errDiv = document.getElementById('login-error');
             errDiv.classList.add('hidden');
 
@@ -806,11 +654,16 @@
             } catch (err) {
                 errDiv.innerText = "Login request failed: " + err;
                 errDiv.classList.remove('hidden');
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
             }
         }
 
         async function handleOtpSubmit(e) {
             e.preventDefault();
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+
             const userId = document.getElementById('otp-user-id').value;
             const otpCode = document.getElementById('otp-code').value;
             const errDiv = document.getElementById('otp-error');
@@ -841,11 +694,16 @@
             } catch (err) {
                 errDiv.innerText = "OTP verification failed: " + err;
                 errDiv.classList.remove('hidden');
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
             }
         }
 
         async function handleRegisterSubmit(e) {
             e.preventDefault();
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+
             const name = document.getElementById('reg-name').value;
             const email = document.getElementById('reg-email').value;
             const role = document.getElementById('reg-role').value;
@@ -878,11 +736,16 @@
             } catch (err) {
                 errDiv.innerText = "Registration failed: " + err;
                 errDiv.classList.remove('hidden');
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
             }
         }
 
         async function handleForgotPasswordSubmit(e) {
             e.preventDefault();
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+
             const email = document.getElementById('forgot-email').value;
             const msgDiv = document.getElementById('forgot-msg');
             try {
@@ -896,11 +759,16 @@
                 msgDiv.classList.remove('hidden');
             } catch (err) {
                 alert("Failed: " + err);
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
             }
         }
 
         async function handleResetPasswordSubmit(e) {
             e.preventDefault();
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+
             const code = document.getElementById('reset-code').value;
             const email = document.getElementById('reset-email').value;
             const newPass = document.getElementById('reset-new-pass').value;
@@ -916,6 +784,9 @@
                 alert(data.message);
                 closeModal('forgot-modal');
             } catch (err) { alert("Password reset failed: " + err); }
+            finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
         }
     </script>
 </body>

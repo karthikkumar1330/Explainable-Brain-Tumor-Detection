@@ -1663,7 +1663,7 @@ def main() -> None:
                         </div>
                         """
                         st_html(card_html)
-                        if os.path.exists(mask_path):
+                        if mask_path and os.path.exists(mask_path):
                             st.image(mask_path, caption="UNeXt Contour Mask", use_container_width=True)
 
                     # 3. GradCAM Card
@@ -1683,7 +1683,7 @@ def main() -> None:
                         </div>
                         """
                         st_html(card_html)
-                        if os.path.exists(overlay_path):
+                        if overlay_path and os.path.exists(overlay_path):
                             st.image(overlay_path, caption="Grad-CAM Focus Overlay", use_container_width=True)
 
                     # Bounding Box Expandable Section
@@ -1920,9 +1920,40 @@ def main() -> None:
                 return s.predicted_class
             elif sort_col == "Confidence":
                 return s.confidence_score
-            return s.report_id
-
         filtered_summaries.sort(key=get_sort_key, reverse=reverse_sort)
+
+        # Export CSV option (B6.8 / Export Audits)
+        if filtered_summaries:
+            import io
+            import csv
+            
+            csv_buffer = io.StringIO()
+            writer = csv.writer(csv_buffer)
+            # Write headers
+            writer.writerow(["Report ID", "Prediction ID", "Patient ID", "Patient Name", "Scan Date", "Predicted Class", "Confidence Score", "Tumor Area (mm2)", "Severity Risk", "Created At"])
+            # Write data rows
+            for s in filtered_summaries:
+                writer.writerow([
+                    s.report_id,
+                    s.prediction_id,
+                    s.patient_id,
+                    s.patient_name,
+                    s.scan_date,
+                    s.predicted_class,
+                    f"{s.confidence_score:.4f}",
+                    f"{s.tumor_area_mm2:.2f}",
+                    s.rule_based_severity,
+                    s.created_at
+                ])
+            
+            st.download_button(
+                label="📥 Export Filtered Registry to CSV",
+                data=csv_buffer.getvalue(),
+                file_name=f"AuraScan_Patient_Registry_{datetime.date.today().isoformat()}.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key="export_registry_csv_btn"
+            )
 
         # Pagination
         total_items = len(filtered_summaries)
@@ -2594,7 +2625,7 @@ def main() -> None:
     # =================================================================
     elif page in ["⚙️ Settings & Profile", "Settings & Profile"]:
         user_data = st.session_state.get("user") or {"full_name": "Dr. Sarah Smith", "email": "admin@aurascan.ai", "role": "doctor"}
-        render_user_profile(user_data)
+        render_user_profile(user_data, auth_use_cases=auth_use_cases)
 
 
 if __name__ == "__main__":

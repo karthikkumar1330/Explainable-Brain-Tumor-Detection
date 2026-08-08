@@ -36,6 +36,9 @@ class User:
     sessions_revoked_at: Optional[str] = None
     failed_login_attempts: int = 0
     lockout_until: Optional[str] = None
+    two_factor_enabled: bool = False
+    two_factor_secret: Optional[str] = None
+    two_factor_recovery_codes: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.datetime.utcnow().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.datetime.utcnow().isoformat())
     last_login_at: Optional[str] = None
@@ -62,6 +65,7 @@ class User:
             "sessions_revoked_at": self.sessions_revoked_at,
             "failed_login_attempts": self.failed_login_attempts,
             "lockout_until": self.lockout_until,
+            "two_factor_enabled": self.two_factor_enabled,
             "created_at": self.created_at,
             "last_login_at": self.last_login_at,
         }
