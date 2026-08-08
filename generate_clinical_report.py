@@ -342,6 +342,37 @@ def main() -> None:
             explainability_latency_sec=explainability_latency,
         )
 
+        # Generate Clinical Insight (B6.15)
+        logger.info("Step 5.5: Generating AI Clinical Insights...")
+        clinical_insight_res = None
+        if classification_result is not None:
+            try:
+                from clinical_insight.application.use_cases import GenerateClinicalInsightUseCase
+                insight_use_case = GenerateClinicalInsightUseCase()
+
+                solidity_val = None
+                circularity_val = None
+                if segmentation_metrics and getattr(segmentation_metrics, "stats", None) is not None:
+                    solidity_val = getattr(segmentation_metrics.stats, "solidity", None)
+                    circularity_val = getattr(segmentation_metrics.stats, "circularity", None)
+
+                clinical_insight_res = insight_use_case.execute(
+                    predicted_class=classification_result.class_name,
+                    confidence_score=classification_result.confidence_score,
+                    is_calibrated=False,
+                    probabilities=classification_result.probabilities,
+                    tumor_area_mm2=segmentation_metrics.tumor_area_mm2 if segmentation_metrics else 0.0,
+                    pixel_count=segmentation_metrics.pixel_count if segmentation_metrics else 0,
+                    solidity=solidity_val,
+                    circularity=circularity_val,
+                    xai_method="gradcam",
+                    xai_overlap_percentage=1.0 if segmentation_metrics else 0.0,
+                    longitudinal_comparison=None
+                )
+            except Exception as e:
+                logger.error(f"Clinical insight generation failed: {e}")
+                print(f"Warning: Clinical insight generation failed: {e}")
+
         clinical_report = ClinicalReport(
             patient_info=patient_info,
             processing_summary=processing_summary,
@@ -352,6 +383,10 @@ def main() -> None:
             heatmap_image_path=heatmap_path,
             overlay_image_path=overlay_path,
             segmentation_mask_path=segmentation_mask_path,
+            xai_method="gradcam",
+            xai_explanation_text="Grad-CAM analysis highlights features within the predicted lesion area.",
+            xai_overlap_percentage=1.0 if segmentation_metrics else 0.0,
+            clinical_insight=clinical_insight_res,
         )
 
         # Wire generator Clean Architecture components

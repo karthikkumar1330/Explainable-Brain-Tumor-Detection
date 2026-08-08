@@ -87,7 +87,11 @@ class OpenCVTumorStatsEngine(ITumorStatsEngine):
 
                 # Eccentricity = sqrt(1 - (minor_axis / major_axis)^2)
                 if major_axis > 0:
-                    eccentricity = float(np.sqrt(1.0 - (minor_axis / major_axis) ** 2))
+                    ratio = minor_axis / major_axis
+                    ratio = min(max(ratio, 0.0), 1.0)
+                    val = 1.0 - ratio ** 2
+                    val = max(val, 0.0)
+                    eccentricity = float(np.sqrt(val)) if not (np.isnan(val) or np.isinf(val)) else 0.0
                 else:
                     eccentricity = 0.0
             except Exception:
@@ -140,11 +144,14 @@ class OpenCVTumorStatsEngine(ITumorStatsEngine):
         major_axis_mm = major_axis * pixel_spacing_mm
         minor_axis_mm = minor_axis * pixel_spacing_mm
 
-        eccentricity = (
-            float(np.sqrt(1.0 - (minor_axis / major_axis) ** 2))
-            if major_axis > 0
-            else 0.0
-        )
+        if major_axis > 0:
+            ratio = minor_axis / major_axis
+            ratio = min(max(ratio, 0.0), 1.0)
+            val = 1.0 - ratio ** 2
+            val = max(val, 0.0)
+            eccentricity = float(np.sqrt(val)) if not (np.isnan(val) or np.isinf(val)) else 0.0
+        else:
+            eccentricity = 0.0
 
         # Orientation angle in degrees
         orientation_deg = (
