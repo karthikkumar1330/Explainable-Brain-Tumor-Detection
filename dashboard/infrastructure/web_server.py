@@ -58,7 +58,8 @@ def create_app(db_path: str) -> Flask:
                 csrf_val,
                 samesite="Lax",
                 secure=False,  # False for local dev server compatibility
-                httponly=False  # Must be False so frontend JS can read and submit it
+                httponly=False,  # Must be False so frontend JS can read and submit it
+                path="/"
             )
         
         # Configure robust Enterprise Security Headers
@@ -274,7 +275,8 @@ def create_app(db_path: str) -> Flask:
                     max_age=30 * 60,
                     httponly=True,
                     secure=is_secure,
-                    samesite="Lax"
+                    samesite="Lax",
+                    path="/"
                 )
                 response.set_cookie(
                     "refresh_token",
@@ -282,7 +284,8 @@ def create_app(db_path: str) -> Flask:
                     max_age=30 * 86400,
                     httponly=True,
                     secure=is_secure,
-                    samesite="Lax"
+                    samesite="Lax",
+                    path="/"
                 )
             return response
         except ValueError as e:
@@ -310,7 +313,8 @@ def create_app(db_path: str) -> Flask:
                     max_age=30 * 60,
                     httponly=True,
                     secure=is_secure,
-                    samesite="Lax"
+                    samesite="Lax",
+                    path="/"
                 )
                 refresh_max_age = 30 * 86400 if remember_me else None
                 response.set_cookie(
@@ -319,7 +323,8 @@ def create_app(db_path: str) -> Flask:
                     max_age=refresh_max_age,
                     httponly=True,
                     secure=is_secure,
-                    samesite="Lax"
+                    samesite="Lax",
+                    path="/"
                 )
             return response
         except ValueError as e:
@@ -356,7 +361,8 @@ def create_app(db_path: str) -> Flask:
                 max_age=30 * 60,
                 httponly=True,
                 secure=is_secure,
-                samesite="Lax"
+                samesite="Lax",
+                path="/"
             )
             
             refresh_max_age = 30 * 86400 if remember_me else None
@@ -366,13 +372,14 @@ def create_app(db_path: str) -> Flask:
                 max_age=refresh_max_age,
                 httponly=True,
                 secure=is_secure,
-                samesite="Lax"
+                samesite="Lax",
+                path="/"
             )
             return response
         except ValueError as e:
             response = jsonify({"error": str(e), "code": "REFRESH_TOKEN_INVALID"}), 401
-            response.set_cookie("access_token", "", expires=0, httponly=True, samesite="Lax")
-            response.set_cookie("refresh_token", "", expires=0, httponly=True, samesite="Lax")
+            response.set_cookie("access_token", "", expires=0, httponly=True, samesite="Lax", path="/")
+            response.set_cookie("refresh_token", "", expires=0, httponly=True, samesite="Lax", path="/")
             return response
 
     @app.route("/api/auth/logout", methods=["POST"])
@@ -392,8 +399,8 @@ def create_app(db_path: str) -> Flask:
             auth_use_cases.logout(token=token or "", refresh_token=refresh_token, ip_address=ip_addr)
             
         response = jsonify({"message": "Logout successful."})
-        response.set_cookie("access_token", "", expires=0, httponly=True, samesite="Lax")
-        response.set_cookie("refresh_token", "", expires=0, httponly=True, samesite="Lax")
+        response.set_cookie("access_token", "", expires=0, httponly=True, samesite="Lax", path="/")
+        response.set_cookie("refresh_token", "", expires=0, httponly=True, samesite="Lax", path="/")
         return response
 
     @app.route("/api/auth/me", methods=["GET"])
@@ -401,7 +408,7 @@ def create_app(db_path: str) -> Flask:
         user, err_code = get_current_user_from_request()
         if not user:
             response = jsonify({"authenticated": False, "code": err_code})
-            response.set_cookie("access_token", "", expires=0, httponly=True, samesite="Lax")
+            response.set_cookie("access_token", "", expires=0, httponly=True, samesite="Lax", path="/")
             return response
         
         response = jsonify({"authenticated": True, "user": user.to_dict()})
@@ -417,7 +424,8 @@ def create_app(db_path: str) -> Flask:
                     max_age=30 * 60,
                     httponly=True,
                     secure=is_secure,
-                    samesite="Lax"
+                    samesite="Lax",
+                    path="/"
                 )
         return response
 
@@ -466,7 +474,8 @@ def create_app(db_path: str) -> Flask:
                     max_age=30 * 60,
                     httponly=True,
                     secure=is_secure,
-                    samesite="Lax"
+                    samesite="Lax",
+                    path="/"
                 )
                 refresh_max_age = 30 * 86400 if remember_me else None
                 response.set_cookie(
@@ -475,7 +484,8 @@ def create_app(db_path: str) -> Flask:
                     max_age=refresh_max_age,
                     httponly=True,
                     secure=is_secure,
-                    samesite="Lax"
+                    samesite="Lax",
+                    path="/"
                 )
             return response
         except ValueError as e:
@@ -586,8 +596,8 @@ def create_app(db_path: str) -> Flask:
         })
 
         is_secure = request.is_secure or request.headers.get("X-Forwarded-Proto", "").lower() == "https"
-        response.set_cookie("access_token", access_token, max_age=30*60, httponly=True, secure=is_secure, samesite="Lax")
-        response.set_cookie("refresh_token", refresh_token, max_age=30*86400, httponly=True, secure=is_secure, samesite="Lax")
+        response.set_cookie("access_token", access_token, max_age=30*60, httponly=True, secure=is_secure, samesite="Lax", path="/")
+        response.set_cookie("refresh_token", refresh_token, max_age=30*86400, httponly=True, secure=is_secure, samesite="Lax", path="/")
 
         # Log audit trail
         from security.domain.entities import SecurityAuditLog
@@ -629,8 +639,8 @@ def create_app(db_path: str) -> Flask:
 
             # Clear session cookies
             response = jsonify({"message": "Your account has been deleted permanently."})
-            response.set_cookie("access_token", "", expires=0, httponly=True, samesite="Lax")
-            response.set_cookie("refresh_token", "", expires=0, httponly=True, samesite="Lax")
+            response.set_cookie("access_token", "", expires=0, httponly=True, samesite="Lax", path="/")
+            response.set_cookie("refresh_token", "", expires=0, httponly=True, samesite="Lax", path="/")
             return response
         except Exception as e:
             return jsonify({"error": str(e)}), 500

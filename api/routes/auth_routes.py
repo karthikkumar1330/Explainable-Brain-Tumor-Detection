@@ -184,7 +184,8 @@ def login(
                 max_age=30 * 60,
                 httponly=True,
                 secure=is_secure,
-                samesite="lax"
+                samesite="lax",
+                path="/"
             )
             refresh_max_age = 30 * 86400 if data.remember_me else None
             response.set_cookie(
@@ -193,7 +194,8 @@ def login(
                 max_age=refresh_max_age,
                 httponly=True,
                 secure=is_secure,
-                samesite="lax"
+                samesite="lax",
+                path="/"
             )
         return res
     except ValueError as e:
@@ -232,7 +234,8 @@ def refresh(
             max_age=30 * 60,
             httponly=True,
             secure=is_secure,
-            samesite="lax"
+            samesite="lax",
+            path="/"
         )
         refresh_max_age = 30 * 86400 if remember_me else None
         response.set_cookie(
@@ -241,12 +244,13 @@ def refresh(
             max_age=refresh_max_age,
             httponly=True,
             secure=is_secure,
-            samesite="lax"
+            samesite="lax",
+            path="/"
         )
         return res
     except ValueError as e:
-        response.delete_cookie("access_token")
-        response.delete_cookie("refresh_token")
+        response.delete_cookie("access_token", path="/")
+        response.delete_cookie("refresh_token", path="/")
         raise HTTPException(status_code=401, detail=str(e))
 
 
@@ -267,8 +271,8 @@ def logout(
     if token or refresh_token:
         use_cases.logout(token=token or "", refresh_token=refresh_token, ip_address=client_ip)
         
-    response.delete_cookie("access_token")
-    response.delete_cookie("refresh_token")
+    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("refresh_token", path="/")
     return {"message": "Logout successful."}
 
 

@@ -1097,41 +1097,24 @@
         async function checkAuthStatus() {
             try {
                 const res = await fetchWithAuth('/api/auth/me');
-                if (!res.ok) {
-                    if (res.status === 401 || res.status === 403) {
-                        handleLogoutRedirect();
-                        return;
-                    }
-                    console.error('Auth status request failed:', res.status);
-                    return;
-                }
                 const data = await res.json();
-                if (!data.authenticated || !data.user || data.user.role !== 'admin') {
-                    handleLogoutRedirect();
-                    return;
-                }
-                currentUser = data.user;
-                const headerUserName = document.getElementById('header-user-name');
-                if (headerUserName) {
-                    headerUserName.innerText = currentUser.full_name || 'Admin';
-                }
-                const profEmail = document.getElementById('prof-email');
-                if (profEmail) {
-                    profEmail.innerText = currentUser.email || '';
-                }
-                const prof2fa = document.getElementById('prof-2fa');
-                if (prof2fa) {
-                    prof2fa.checked = Boolean(currentUser.two_factor_enabled);
-                }
-                if (currentUser.google_profile_pic) {
-                    const avatarBtn = document.getElementById('profile-avatar-btn');
-                    if (avatarBtn) {
-                        avatarBtn.innerHTML = `<img src="${currentUser.google_profile_pic}" class="h-full w-full rounded-xl object-cover">`;
+                if (data.authenticated && data.user && data.user.role === 'admin') {
+                    currentUser = data.user;
+                    document.getElementById('header-user-name').innerText = currentUser.full_name;
+                    document.getElementById('prof-email').innerText = currentUser.email;
+                    document.getElementById('prof-2fa').checked = currentUser.two_factor_enabled;
+                    if (currentUser.google_profile_pic) {
+                        const avatarBtn = document.getElementById('profile-avatar-btn');
+                        if (avatarBtn) {
+                            avatarBtn.innerHTML = `<img src="${currentUser.google_profile_pic}" class="h-full w-full rounded-xl object-cover">`;
+                        }
                     }
+                } else {
+                    handleLogoutRedirect();
                 }
             } catch (err) {
-                console.error('Auth check failed:', err);
-                // Genuinely unexpected UI or frontend error - do not redirect to '/'
+                console.error("Auth check failed:", err);
+                handleLogoutRedirect();
             }
         }
 

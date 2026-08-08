@@ -14,3 +14,7 @@ outputs/
 
 # VS Code
 .vscode/
+
+# Avatar Uploads
+dashboard/uploads/avatars/*
+!dashboard/uploads/avatars/test-patient-uuid.png

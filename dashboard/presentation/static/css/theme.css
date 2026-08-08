@@ -147,9 +147,18 @@ html:not(.dark) button .text-slate-200,
 html:not(.dark) button .text-slate-300,
 html:not(.dark) button .text-white,
 html:not(.dark) .btn .text-white,
-html:not(.dark) .btn-primary,
-html:not(.dark) .btn-danger {
+html:not(.dark) .btn-primary {
     color: #FFFFFF !important;
+}
+
+html:not(.dark) .btn-danger {
+    color: #DC2626 !important;
+    background-color: rgba(220, 38, 38, 0.09) !important;
+    border-color: rgba(220, 38, 38, 0.2) !important;
+}
+
+html:not(.dark) .btn-danger:hover {
+    background-color: rgba(220, 38, 38, 0.18) !important;
 }
 
 /* Sidebar navigation buttons custom styling using CSS variables */
