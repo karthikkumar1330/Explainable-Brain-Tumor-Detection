@@ -932,12 +932,19 @@ def serve_report_pdf(report_id: int, version: Optional[int] = Query(None), curre
             conn.row_factory = sqlite3.Row
             try:
                 row = conn.execute(
-                    "SELECT pdf_path FROM report_versions WHERE report_id = ? AND version_number = ?;",
+                    "SELECT pdf_path, json_path FROM report_versions WHERE report_id = ? AND version_number = ?;",
                     (report_id, version)
                 ).fetchone()
                 if not row:
                     return JSONResponse(status_code=404, content={"error": f"Version {version} not found for report {report_id}."})
                 pdf_path = row["pdf_path"]
+                json_path = row["json_path"]
+
+                # Regenerate if missing on disk
+                if not pdf_path or not os.path.exists(pdf_path):
+                    from clinical_reporting.application.services import ReportService
+                    service = ReportService(db_path=DEFAULT_DB_PATH)
+                    service._regenerate_pdf_internal(conn, report_id, version)
             finally:
                 conn.close()
         else:
@@ -1285,3 +1292,20 @@ def get_report_version_details_api(report_id: int, version_id: int, current_user
             raise e
         logger.error(f"Error fetching version details: {e}")
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/reports/verify/{token}")
+def verify_report_api(token: str):
+    """Public verification endpoint to validate report integrity and authenticity by token."""
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        result = service.verify_report_by_token(token)
+        state = result.get("verification_state", "INVALID")
+        if state == "INVALID":
+            raise HTTPException(status_code=404, detail="Verification token not found or invalid.")
+        return result
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error in verification API: {e}")
+        raise HTTPException(status_code=500, detail="Internal verification error")

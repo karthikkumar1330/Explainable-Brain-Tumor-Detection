@@ -93,9 +93,9 @@ class ReportLabPDFGenerator:
         output_path_obj = Path(output_path).resolve()
         output_dir = output_path_obj.parent
         filename = output_path_obj.name
-        
+
         logger.info(f"Generating clinical report PDF. Output directory: {output_dir}, Filename: {filename}")
-        
+
         # Create missing directories automatically
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -109,6 +109,28 @@ class ReportLabPDFGenerator:
             data = report
         else:
             raise ValueError(f"Unsupported report type: {type(report)}. Expected ClinicalReport or ReportData.")
+
+        # F2.2: Extract and override metadata fields if they are attached as attributes on report
+        v_token = getattr(report, "verification_token", getattr(data.metadata, "verification_token", None))
+        i_hash = getattr(report, "integrity_hash", getattr(data.metadata, "integrity_hash", None))
+        ver = getattr(report, "version", getattr(data.metadata, "version", 1))
+        stat = getattr(report, "status", getattr(data.metadata, "status", "DRAFT"))
+        rep_num = getattr(report, "report_number", None) or data.metadata.report_id
+
+        from enum import Enum
+        if isinstance(stat, Enum):
+            stat = stat.value
+
+        from dataclasses import replace
+        new_metadata = replace(
+            data.metadata,
+            report_id=rep_num,
+            version=ver,
+            status=stat,
+            integrity_hash=i_hash,
+            verification_token=v_token
+        )
+        data = replace(data, metadata=new_metadata)
 
         # 2. Configure canvas-level values
         NumberedCanvas.report_id = data.metadata.report_id
@@ -146,11 +168,11 @@ def load_or_regenerate_pdf(report_id: int, db_path: str) -> Optional[str]:
     import sqlite3
     import logging
     from pathlib import Path
-    
+
     logger = logging.getLogger("pdf_generator.load_or_regenerate_pdf")
     db_path_obj = Path(db_path).resolve()
     logger.info(f"Connecting to database at {db_path_obj} for report ID: {report_id}")
-    
+
     if not db_path_obj.is_file():
         logger.error(f"Database file not found at: {db_path_obj}")
         return None
@@ -160,7 +182,12 @@ def load_or_regenerate_pdf(report_id: int, db_path: str) -> Optional[str]:
     try:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT json_path, pdf_path FROM clinical_reports WHERE id = ?;",
+            """
+            SELECT cr.json_path, cr.pdf_path, r.report_number, r.current_version, r.status, r.verification_token, r.integrity_hash
+            FROM clinical_reports cr
+            LEFT JOIN reports r ON cr.id = r.report_id
+            WHERE cr.id = ?;
+            """,
             (report_id,)
         )
         row = cursor.fetchone()
@@ -169,10 +196,10 @@ def load_or_regenerate_pdf(report_id: int, db_path: str) -> Optional[str]:
             return None
         json_path_str = row["json_path"]
         pdf_path_str = row["pdf_path"]
-        
+
         pdf_path_obj = Path(pdf_path_str).resolve() if pdf_path_str else None
         json_path_obj = Path(json_path_str).resolve() if json_path_str else None
-        
+
         # If PDF exists, return it
         if pdf_path_obj:
             logger.info(f"Checking if PDF exists at: {pdf_path_obj}")
@@ -181,7 +208,7 @@ def load_or_regenerate_pdf(report_id: int, db_path: str) -> Optional[str]:
                 return str(pdf_path_obj)
             else:
                 logger.warning(f"PDF does not exist at: {pdf_path_obj}")
-            
+
         # If PDF is missing but JSON exists, regenerate it!
         if json_path_obj and json_path_obj.is_file():
             logger.info(f"JSON file exists at: {json_path_obj}. Attempting to regenerate PDF.")
@@ -189,14 +216,14 @@ def load_or_regenerate_pdf(report_id: int, db_path: str) -> Optional[str]:
                 import json
                 with open(json_path_obj, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                
+
                 # Reconstruct entities
                 from clinical_reporting.domain.entities import PatientInfo, ProcessingSummary, ClinicalReport
                 from classification.domain.entities import PredictionResult
                 from tumor_analysis.domain.entities import TumorAnalysisResult, SeverityLevel
                 from severity_assessment.domain.entities import SeverityAssessment, SeverityCategory
                 from clinical_insight.domain.entities import ClinicalInsight
-                
+
                 p_data = data.get("patient", {})
                 patient = PatientInfo(
                     patient_id=p_data.get("patient_id", "N/A"),
@@ -206,7 +233,7 @@ def load_or_regenerate_pdf(report_id: int, db_path: str) -> Optional[str]:
                     scan_date=p_data.get("scan_date", "N/A"),
                     ref_physician=p_data.get("ref_physician", "N/A")
                 )
-                
+
                 proc_data = data.get("processing", {})
                 lat_data = proc_data.get("latency_sec", {})
                 proc = ProcessingSummary(
@@ -218,7 +245,7 @@ def load_or_regenerate_pdf(report_id: int, db_path: str) -> Optional[str]:
                     segmentation_latency_sec=lat_data.get("segmentation"),
                     explainability_latency_sec=lat_data.get("explainability")
                 )
-                
+
                 cls_data = data.get("classification", {})
                 classification = PredictionResult(
                     label=0, # placeholder
@@ -231,7 +258,7 @@ def load_or_regenerate_pdf(report_id: int, db_path: str) -> Optional[str]:
                     calibration_method=cls_data.get("calibration_method"),
                     calibration_parameters=cls_data.get("calibration_parameters")
                 )
-                
+
                 seg_metrics = None
                 seg_data = data.get("segmentation")
                 if seg_data:
@@ -250,7 +277,7 @@ def load_or_regenerate_pdf(report_id: int, db_path: str) -> Optional[str]:
                         )
                     except Exception:
                         pass
-                
+
                 severity = None
                 sev_data = data.get("severity") or data.get("classification", {}) # fallback keys
                 if sev_data and "rule_based_severity" in sev_data:
@@ -262,7 +289,7 @@ def load_or_regenerate_pdf(report_id: int, db_path: str) -> Optional[str]:
                         )
                     except Exception:
                         pass
-                
+
                 insight = None
                 ins_data = data.get("clinical_insight") or data.get("insight")
                 if ins_data:
@@ -274,14 +301,14 @@ def load_or_regenerate_pdf(report_id: int, db_path: str) -> Optional[str]:
                         )
                     except Exception:
                         pass
-                
+
                 files_data = data.get("files", {})
                 orig_p = files_data.get("original_image")
                 heat_p = files_data.get("heatmap_image")
                 over_p = files_data.get("overlay_image")
                 mask_p = files_data.get("segmentation_mask")
                 comp_p = files_data.get("comparison_image")
-                
+
                 report = ClinicalReport(
                     patient_info=patient,
                     processing_summary=proc,
@@ -295,14 +322,25 @@ def load_or_regenerate_pdf(report_id: int, db_path: str) -> Optional[str]:
                     comparison_image_path=str(Path(comp_p).resolve()) if comp_p else None,
                     clinical_insight=insight
                 )
-                
+
+                # F2.2: Attach verification details if present
+                if row:
+                    try:
+                        setattr(report, "report_number", row["report_number"])
+                        setattr(report, "version", row["current_version"])
+                        setattr(report, "status", row["status"])
+                        setattr(report, "verification_token", row["verification_token"])
+                        setattr(report, "integrity_hash", row["integrity_hash"])
+                    except Exception:
+                        pass
+
                 # Create parent directory for PDF if it doesn't exist
                 if pdf_path_obj:
                     logger.info(f"Creating parent directories and generating PDF report at: {pdf_path_obj}")
                     pdf_path_obj.parent.mkdir(parents=True, exist_ok=True)
                     pdf_gen = ReportLabPDFGenerator()
                     pdf_gen.generate_pdf(report, str(pdf_path_obj))
-                    
+
                     if pdf_path_obj.is_file():
                         logger.info(f"Successfully regenerated PDF and verified: {pdf_path_obj}")
                         return str(pdf_path_obj)
@@ -315,7 +353,7 @@ def load_or_regenerate_pdf(report_id: int, db_path: str) -> Optional[str]:
                 logger.error("JSON report path is null.")
             elif not json_path_obj.is_file():
                 logger.error(f"JSON report file not found on disk at: {json_path_obj}")
-                
+
         return str(pdf_path_obj) if pdf_path_obj else None
     finally:
         conn.close()

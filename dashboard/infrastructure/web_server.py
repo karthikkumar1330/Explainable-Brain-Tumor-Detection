@@ -1292,4 +1292,162 @@ def create_app(db_path: str) -> Flask:
         except Exception as e:
             return jsonify({"error": f"An unexpected pipeline error occurred: {str(e)}"}), 500
 
+    @app.route("/verify/<token>")
+    def verify_report_page(token: str):
+        """Web page for public verification of a report version by secure token."""
+        from clinical_reporting.application.services import ReportService
+        service = ReportService(db_path=app.config["DB_PATH"])
+
+        result = service.verify_report_by_token(token)
+        state = result.get("verification_state", "INVALID")
+
+        if state == "INVALID":
+            html_content = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Report Verification Failed</title>
+                <style>
+                    body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #FDEDEC; color: #78281F; padding: 50px; text-align: center; }
+                    .card { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: inline-block; max-width: 500px; border-top: 5px solid #C0392B; }
+                    h1 { color: #C0392B; font-size: 24px; margin-bottom: 20px; }
+                    p { font-size: 16px; line-height: 1.5; color: #5D6D7E; }
+                    .icon { font-size: 48px; color: #C0392B; margin-bottom: 20px; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <div class="icon">✕</div>
+                    <h1>Verification Failed</h1>
+                    <p>The verification token is invalid or does not exist in the system database.</p>
+                </div>
+            </body>
+            </html>
+            """
+            return render_template_string(html_content), 404
+
+        elif state == "TAMPERED":
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Report Integrity Warning</title>
+                <style>
+                    body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #FDEDEC; color: #78281F; padding: 50px; text-align: center; }}
+                    .card {{ background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: inline-block; max-width: 500px; border-top: 5px solid #C0392B; text-align: left; }}
+                    h1 {{ color: #C0392B; font-size: 24px; margin-bottom: 20px; text-align: center; }}
+                    p {{ font-size: 14px; line-height: 1.5; color: #2C3E50; margin: 10px 0; }}
+                    .icon {{ font-size: 48px; color: #C0392B; margin-bottom: 20px; text-align: center; }}
+                    .label {{ font-weight: bold; color: #34495E; }}
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <div class="icon">⚠️</div>
+                    <h1>TAMPERED REPORT</h1>
+                    <p style="text-align: center; font-weight: bold; color: #C0392B; margin-bottom: 20px;">✕ Integrity mismatch detected!</p>
+                    <p><span class="label">Report:</span> {result['report_number']}</p>
+                    <p><span class="label">Version:</span> {result['version']}</p>
+                    <p><span class="label">Status:</span> {result['status']}</p>
+                    <p><span class="label">Integrity:</span> <span style="color: #C0392B; font-weight: bold;">TAMPERED</span></p>
+                    <p><span class="label">Generated:</span> {result['created_at']}</p>
+                </div>
+            </body>
+            </html>
+            """
+            return render_template_string(html_content), 200
+
+        elif state == "SUPERSEDED":
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Report Verified (Superseded)</title>
+                <style>
+                    body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #FEF9E7; color: #7D6608; padding: 50px; text-align: center; }}
+                    .card {{ background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: inline-block; max-width: 500px; border-top: 5px solid #F39C12; text-align: left; }}
+                    h1 {{ color: #D35400; font-size: 24px; margin-bottom: 20px; text-align: center; }}
+                    p {{ font-size: 14px; line-height: 1.5; color: #2C3E50; margin: 10px 0; }}
+                    .icon {{ font-size: 48px; color: #F39C12; margin-bottom: 20px; text-align: center; }}
+                    .label {{ font-weight: bold; color: #34495E; }}
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <div class="icon">ℹ️</div>
+                    <h1>Report Verified</h1>
+                    <p style="text-align: center; font-weight: bold; color: #D35400; margin-bottom: 20px;">Report verified but superseded by a newer version</p>
+                    <p><span class="label">Report:</span> {result['report_number']}</p>
+                    <p><span class="label">Version:</span> {result['version']}</p>
+                    <p><span class="label">Status:</span> SUPERSEDED</p>
+                    <p><span class="label">Integrity:</span> <span style="color: #27AE60; font-weight: bold;">VERIFIED</span></p>
+                    <p><span class="label">Generated:</span> {result['created_at']}</p>
+                </div>
+            </body>
+            </html>
+            """
+            return render_template_string(html_content), 200
+
+        elif state == "ARCHIVED":
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Report Verified (Archived)</title>
+                <style>
+                    body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #EAEDED; color: #2C3E50; padding: 50px; text-align: center; }}
+                    .card {{ background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: inline-block; max-width: 500px; border-top: 5px solid #7F8C8D; text-align: left; }}
+                    h1 {{ color: #34495E; font-size: 24px; margin-bottom: 20px; text-align: center; }}
+                    p {{ font-size: 14px; line-height: 1.5; color: #2C3E50; margin: 10px 0; }}
+                    .icon {{ font-size: 48px; color: #7F8C8D; margin-bottom: 20px; text-align: center; }}
+                    .label {{ font-weight: bold; color: #34495E; }}
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <div class="icon">📦</div>
+                    <h1>Report Verified</h1>
+                    <p style="text-align: center; font-weight: bold; color: #7F8C8D; margin-bottom: 20px;">Report verified (Status: ARCHIVED)</p>
+                    <p><span class="label">Report:</span> {result['report_number']}</p>
+                    <p><span class="label">Version:</span> {result['version']}</p>
+                    <p><span class="label">Status:</span> ARCHIVED</p>
+                    <p><span class="label">Integrity:</span> <span style="color: #27AE60; font-weight: bold;">VERIFIED</span></p>
+                    <p><span class="label">Generated:</span> {result['created_at']}</p>
+                </div>
+            </body>
+            </html>
+            """
+            return render_template_string(html_content), 200
+
+        else: # VALID
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Report Verified</title>
+                <style>
+                    body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #E8F8F5; color: #117864; padding: 50px; text-align: center; }}
+                    .card {{ background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: inline-block; max-width: 500px; border-top: 5px solid #27AE60; text-align: left; }}
+                    h1 {{ color: #27AE60; font-size: 24px; margin-bottom: 20px; text-align: center; }}
+                    p {{ font-size: 14px; line-height: 1.5; color: #2C3E50; margin: 10px 0; }}
+                    .icon {{ font-size: 48px; color: #27AE60; margin-bottom: 20px; text-align: center; }}
+                    .label {{ font-weight: bold; color: #34495E; }}
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <div class="icon">✓</div>
+                    <h1>VALID REPORT</h1>
+                    <p style="text-align: center; font-weight: bold; color: #27AE60; margin-bottom: 20px;">✓ Report authenticity verified</p>
+                    <p><span class="label">Report:</span> {result['report_number']}</p>
+                    <p><span class="label">Version:</span> {result['version']}</p>
+                    <p><span class="label">Status:</span> {result['status']}</p>
+                    <p><span class="label">Integrity:</span> <span style="color: #27AE60; font-weight: bold;">VERIFIED</span></p>
+                    <p><span class="label">Generated:</span> {result['created_at']}</p>
+                </div>
+            </body>
+            </html>
+            """
+            return render_template_string(html_content), 200
+
     return app

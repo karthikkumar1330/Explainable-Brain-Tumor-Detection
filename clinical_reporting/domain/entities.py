@@ -50,6 +50,11 @@ class ClinicalReport:
     longitudinal_comparison: Optional[LongitudinalComparison] = None
     quality_warnings: Optional[List[str]] = None
     clinical_insight: Optional[ClinicalInsight] = None
+    report_number: Optional[str] = None
+    version: Optional[int] = None
+    status: Optional[str] = None
+    verification_token: Optional[str] = None
+    integrity_hash: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -134,6 +139,11 @@ class Metadata:
     report_type: str
     brand_name: str
     timestamp: str
+    version: Optional[int] = None
+    status: Optional[str] = None
+    integrity_hash: Optional[str] = None
+    verification_token: Optional[str] = None
+
 
 
 @dataclass(frozen=True)
@@ -234,3 +244,61 @@ class ReportVersion:
             "status": self.status.value,
             "prediction_id": self.prediction_id
         }
+
+
+class VerificationState(str, Enum):
+    VALID = "VALID"
+    INVALID = "INVALID"
+    TAMPERED = "TAMPERED"
+    SUPERSEDED = "SUPERSEDED"
+    ARCHIVED = "ARCHIVED"
+
+
+@dataclass
+class ReportVerification:
+    report_id: int
+    version: int
+    verification_token: str
+    integrity_hash: str
+    algorithm: str
+    status: str
+    created_at: str
+    finalized_at: Optional[str]
+    verification_state: VerificationState
+
+
+def canonicalize_report_data(data: Dict[str, Any]) -> str:
+    """Recursively sorts dictionary keys and returns a deterministic JSON string.
+    Strips out unstable fields like paths, execution times, and temporary timestamps.
+    """
+    import copy
+    import json
+    cleaned = copy.deepcopy(data)
+
+    def strip_unstable(d: Any) -> Any:
+        if isinstance(d, dict):
+            # Remove keys related to file paths, execution latency, and temporary timestamps
+            keys_to_remove = [
+                'files', 'pdf_path', 'json_path', 'checksum',
+                'created_at', 'updated_at', 'finalized_at', 'archived_at',
+                'timestamp', 'execution_time_sec', 'classification_latency_sec',
+                'segmentation_latency_sec', 'explainability_latency_sec', 'total_execution_time_sec',
+                'latency_sec', 'device'
+            ]
+            for key in keys_to_remove:
+                d.pop(key, None)
+            return {k: strip_unstable(v) for k, v in d.items()}
+        elif isinstance(d, list):
+            return [strip_unstable(item) for item in d]
+        else:
+            return d
+
+    cleaned = strip_unstable(cleaned)
+    return json.dumps(cleaned, sort_keys=True, separators=(',', ':'))
+
+
+def generate_integrity_hash(data: Dict[str, Any]) -> str:
+    """Generates the SHA-256 integrity hash for canonicalized report data."""
+    import hashlib
+    canonical_str = canonicalize_report_data(data)
+    return hashlib.sha256(canonical_str.encode('utf-8')).hexdigest()

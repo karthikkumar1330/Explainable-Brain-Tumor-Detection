@@ -647,6 +647,63 @@ class EnterpriseReportRenderer:
             ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#BDC3C7")),
         ]))
         technical_and_signoff.append(disc_table)
+        technical_and_signoff.append(Spacer(1, 10))
+
+        # F2.2 Integrity & Verification Block
+        verification_flowables = []
+        verification_flowables.append(Paragraph("Enterprise Report Integrity & Verification", self.h2_style))
+
+        qr_flowable = None
+        if hasattr(data.metadata, "verification_token") and data.metadata.verification_token:
+            from clinical_reporting.application.qr_service import QRGeneratorService
+            qr_service = QRGeneratorService()
+            qr_filename = f"qrcode_{data.metadata.verification_token}.png"
+            qr_dir = "outputs/clinical_reports"
+            os.makedirs(qr_dir, exist_ok=True)
+            qr_path = os.path.join(qr_dir, qr_filename)
+            try:
+                qr_service.generate_qr_code_image(data.metadata.verification_token, qr_path, box_size=3, border=1)
+                if os.path.exists(qr_path):
+                    from reportlab.platypus import Image as RLImage
+                    qr_flowable = RLImage(qr_path, width=70, height=70)
+            except Exception:
+                pass
+
+        if not qr_flowable:
+            error_style = ParagraphStyle(
+                name='EntQrError',
+                fontName='Helvetica',
+                fontSize=8,
+                textColor=colors.HexColor("#C0392B")
+            )
+            qr_flowable = Paragraph("<b>[QR Code Unavailable]</b>", error_style)
+
+        report_num = getattr(data.metadata, "report_id", "N/A")
+        version_str = str(getattr(data.metadata, "version", 1) if getattr(data.metadata, "version", None) is not None else 1)
+        status_str = getattr(data.metadata, "status", "DRAFT")
+        hash_str = getattr(data.metadata, "integrity_hash", "N/A")
+        short_hash = hash_str[:12] if hash_str and hash_str != "N/A" else "N/A"
+
+        verify_text = f"""
+        <b>Report ID:</b> {report_num}<br/>
+        <b>Version:</b> {version_str}<br/>
+        <b>Lifecycle Status:</b> {status_str}<br/>
+        <b>Integrity Fingerprint:</b> <font face="Courier">{short_hash}</font><br/><br/>
+        Scan the QR code to verify the authenticity and integrity of this report.
+        """
+        verify_paragraph = Paragraph(verify_text, self.body_style)
+
+        verify_table_data = [[qr_flowable, verify_paragraph]]
+        verify_table = Table(verify_table_data, colWidths=[90, 414])
+        verify_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#FAFBFB")),
+            ('PADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#BDC3C7")),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        verification_flowables.append(verify_table)
+
+        technical_and_signoff.append(KeepTogether(verification_flowables))
 
         story.append(KeepTogether(technical_and_signoff))
 

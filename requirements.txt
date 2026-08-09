@@ -17,6 +17,8 @@ uvicorn
 pydantic
 python-multipart
 flask
+qrcode>=8.0.0
+
 
 # Client Interface
 python-dotenv

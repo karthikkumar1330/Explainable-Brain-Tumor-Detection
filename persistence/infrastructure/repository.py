@@ -163,6 +163,8 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             pdf_path TEXT,
             json_path TEXT,
             checksum TEXT,
+            verification_token TEXT,
+            integrity_hash TEXT,
             FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE
         );
         """
@@ -180,6 +182,8 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             checksum TEXT NOT NULL,
             status TEXT NOT NULL,
             prediction_id INTEGER,
+            verification_token TEXT,
+            integrity_hash TEXT,
             FOREIGN KEY (report_id) REFERENCES reports(report_id) ON DELETE CASCADE,
             FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE SET NULL
         );
@@ -236,6 +240,60 @@ class SQLitePersistenceRepository(IPersistenceRepository):
 
                 # Run legacy reports migration
                 self._migrate_legacy_reports(conn)
+
+                # Migrate report_versions and reports to support F2.2 integrity metadata
+                for table in ["reports", "report_versions"]:
+                    for col, col_type in [("verification_token", "TEXT"), ("integrity_hash", "TEXT")]:
+                        try:
+                            conn.execute(f"SELECT {col} FROM {table} LIMIT 1;")
+                        except sqlite3.OperationalError:
+                            try:
+                                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type};")
+                                self.logger.info(f"Added column {col} to table {table}")
+                            except Exception as alt_err:
+                                self.logger.warning(f"Could not migrate {table} column {col}: {alt_err}")
+
+                # Backfill missing verification tokens and integrity hashes for existing report versions
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT version_id, json_path FROM report_versions WHERE verification_token IS NULL OR integrity_hash IS NULL;")
+                    rows = cursor.fetchall()
+                    if rows:
+                        import secrets
+                        import json
+                        for r_row in rows:
+                            v_id = r_row["version_id"]
+                            json_path = r_row["json_path"]
+                            token = secrets.token_urlsafe(32)
+                            h = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                            if json_path and os.path.exists(json_path):
+                                try:
+                                    with open(json_path, "r", encoding="utf-8") as f:
+                                        payload = json.load(f)
+                                    from clinical_reporting.domain.entities import generate_integrity_hash
+                                    h = generate_integrity_hash(payload)
+                                except Exception:
+                                    pass
+                            conn.execute("UPDATE report_versions SET verification_token = ?, integrity_hash = ? WHERE version_id = ?;", (token, h, v_id))
+
+                        # Sync reports table with current version's token/hash
+                        conn.execute("""
+                            UPDATE reports
+                            SET verification_token = (
+                                SELECT verification_token FROM report_versions
+                                WHERE report_versions.report_id = reports.report_id
+                                AND report_versions.version_number = reports.current_version
+                            ),
+                            integrity_hash = (
+                                SELECT integrity_hash FROM report_versions
+                                WHERE report_versions.report_id = reports.report_id
+                                AND report_versions.version_number = reports.current_version
+                            )
+                            WHERE verification_token IS NULL;
+                        """)
+                except Exception as backfill_err:
+                    self.logger.warning(f"Failed to backfill F2.2 columns: {backfill_err}")
+
             self.logger.info("Database schema and analytics indices verified successfully.")
         except Exception as e:
             self.logger.error(f"Failed to initialize SQLite database: {e}")
@@ -394,24 +452,56 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 report_number = self._generate_report_number(conn)
                 checksum = calculate_sha256(pdf_p)
 
+                # F2.2: Generate verification token and calculate canonical integrity hash
+                import secrets
+                verification_token = secrets.token_urlsafe(32)
+
+                from clinical_reporting.domain.entities import generate_integrity_hash
+                integrity_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                if js_p and os.path.exists(js_p):
+                    try:
+                        import json
+                        with open(js_p, "r", encoding="utf-8") as f:
+                            payload = json.load(f)
+                        integrity_hash = generate_integrity_hash(payload)
+                    except Exception:
+                        pass
+
                 conn.execute("""
                     INSERT INTO reports (
                         report_id, report_number, patient_id, created_by, report_type,
-                        current_version, status, created_at, updated_at, pdf_path, json_path, checksum
-                    ) VALUES (?, ?, ?, ?, 'MRI Brain Scan', 1, 'GENERATED', ?, ?, ?, ?, ?);
+                        current_version, status, created_at, updated_at, pdf_path, json_path, checksum,
+                        verification_token, integrity_hash
+                    ) VALUES (?, ?, ?, ?, 'MRI Brain Scan', 1, 'GENERATED', ?, ?, ?, ?, ?, ?, ?);
                 """, (
                     report_id, report_number, report.patient_info.patient_id,
-                    report.patient_info.ref_physician, now_str, now_str, pdf_p, js_p, checksum
+                    report.patient_info.ref_physician, now_str, now_str, pdf_p, js_p, checksum,
+                    verification_token, integrity_hash
                 ))
 
                 conn.execute("""
                     INSERT INTO report_versions (
                         report_id, version_number, created_at, created_by, reason,
-                        pdf_path, json_path, checksum, status, prediction_id
-                    ) VALUES (?, 1, ?, ?, 'Initial report generation', ?, ?, ?, 'GENERATED', ?);
+                        pdf_path, json_path, checksum, status, prediction_id,
+                        verification_token, integrity_hash
+                    ) VALUES (?, 1, ?, ?, 'Initial report generation', ?, ?, ?, 'GENERATED', ?, ?, ?);
                 """, (
-                    report_id, now_str, report.patient_info.ref_physician, pdf_p, js_p, checksum, pred_id
+                    report_id, now_str, report.patient_info.ref_physician, pdf_p, js_p, checksum, pred_id,
+                    verification_token, integrity_hash
                 ))
+
+                # F2.2: Regenerate PDF to bake in the verification token, integrity hash, version and status
+                try:
+                    from clinical_reporting.application.services import ReportService
+                    service = ReportService(db_path=self.db_path)
+                    service._regenerate_pdf_internal(conn, report_id, 1)
+
+                    # Update database checksums with the regenerated PDF checksum
+                    new_checksum = service._calculate_checksum(pdf_p)
+                    conn.execute("UPDATE reports SET checksum = ? WHERE report_id = ?;", (new_checksum, report_id))
+                    conn.execute("UPDATE report_versions SET checksum = ? WHERE report_id = ? AND version_number = 1;", (new_checksum, report_id))
+                except Exception as pdf_err:
+                    self.logger.warning(f"Failed to bake verification block into PDF during save_report: {pdf_err}")
 
             self.logger.info(f"Report findings saved successfully. Assigned Database Report ID: {report_id}")
             return report_id

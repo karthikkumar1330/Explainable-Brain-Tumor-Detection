@@ -209,10 +209,24 @@ class ReportDataBuilder:
 
         # 11. Generate Metadata
         timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # F2.2: Extract verification details if attached to the report object
+        version_val = getattr(report, "version", 1)
+        status_val = getattr(report, "status", "DRAFT")
+        from enum import Enum
+        if isinstance(status_val, Enum):
+            status_val = status_val.value
+        integrity_hash_val = getattr(report, "integrity_hash", "N/A")
+        verification_token_val = getattr(report, "verification_token", None)
+        report_number_val = getattr(report, "report_number", None)
+
         if not report_id:
-            patient_slug = patient_info.patient_id.replace(" ", "_").upper()
-            time_slug = timestamp_str.replace("-", "").replace(":", "").replace(" ", "")
-            report_id = f"REP-{patient_slug}-{time_slug[:8]}"
+            if report_number_val:
+                report_id = report_number_val
+            else:
+                patient_slug = patient_info.patient_id.replace(" ", "_").upper()
+                time_slug = timestamp_str.replace("-", "").replace(":", "").replace(" ", "")
+                report_id = f"REP-{patient_slug}-{time_slug[:8]}"
 
         metadata = Metadata(
             report_id=report_id,
@@ -220,6 +234,10 @@ class ReportDataBuilder:
             report_type="Brain MRI Classification & Segmentation Analysis",
             brand_name="AuraScan AI",
             timestamp=timestamp_str,
+            version=version_val,
+            status=status_val,
+            integrity_hash=integrity_hash_val,
+            verification_token=verification_token_val
         )
 
         # 12. Assemble ReportData
