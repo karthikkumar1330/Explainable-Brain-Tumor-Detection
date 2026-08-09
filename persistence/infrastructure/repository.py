@@ -196,7 +196,24 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         );
         """
 
-        # Analytics Indices
+        create_email_deliveries_table_sql = """
+        CREATE TABLE IF NOT EXISTS email_deliveries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_id INTEGER NOT NULL,
+            actor_user_id INTEGER NOT NULL,
+            recipient_email TEXT NOT NULL,
+            status TEXT NOT NULL,
+            attempted_at TEXT NOT NULL,
+            sent_at TEXT,
+            failure_reason TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (report_id) REFERENCES reports(report_id) ON DELETE CASCADE,
+            FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        """
+
+        # Analytics and Delivery Indices
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_patients_age_gender ON patients(age, gender);",
             "CREATE INDEX IF NOT EXISTS idx_mri_scans_date ON mri_scans(scan_date);",
@@ -209,7 +226,11 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             "CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at);",
             "CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);",
             "CREATE INDEX IF NOT EXISTS idx_versions_version_number ON report_versions(version_number);",
-            "CREATE INDEX IF NOT EXISTS idx_versions_report_id ON report_versions(report_id);"
+            "CREATE INDEX IF NOT EXISTS idx_versions_report_id ON report_versions(report_id);",
+            "CREATE INDEX IF NOT EXISTS idx_email_deliveries_report ON email_deliveries(report_id);",
+            "CREATE INDEX IF NOT EXISTS idx_email_deliveries_actor ON email_deliveries(actor_user_id);",
+            "CREATE INDEX IF NOT EXISTS idx_email_deliveries_status ON email_deliveries(status);",
+            "CREATE INDEX IF NOT EXISTS idx_email_deliveries_attempted ON email_deliveries(attempted_at);"
         ]
 
         conn = self._get_connection()
@@ -225,6 +246,7 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 conn.execute(create_reports_table_sql)
                 conn.execute(create_report_versions_table_sql)
                 conn.execute(create_report_sequence_table_sql)
+                conn.execute(create_email_deliveries_table_sql)
                 for idx_sql in indices:
                     conn.execute(idx_sql)
 

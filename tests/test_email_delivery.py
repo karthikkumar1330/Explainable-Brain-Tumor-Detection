@@ -311,6 +311,158 @@ class TestEmailDelivery(unittest.TestCase):
         self.assertNotIn("smtp", str(data).lower())
         self.assertNotIn("outputs/clinical_reports", str(data).lower())
 
+    @patch("clinical_reporting.infrastructure.email_service.EmailService.send")
+    def test_12_email_history_record_created_on_success(self, mock_send) -> None:
+        """Verify that an email delivery record with status 'SENT' is logged in the database on success."""
+        response = self.client.post(
+            "/api/reports/1/email",
+            json={"recipient_email": "patient1@aurascan.ai"},
+            headers=self.doc_headers
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Inspect the email_deliveries table in the database
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM email_deliveries WHERE report_id = 1;").fetchall()
+            self.assertEqual(len(rows), 1)
+            row = rows[0]
+            self.assertEqual(row["status"], "SENT")
+            self.assertEqual(row["recipient_email"], "patient1@aurascan.ai")
+            self.assertIsNotNone(row["sent_at"])
+            self.assertIsNone(row["failure_reason"])
+        finally:
+            conn.close()
+
+    @patch("clinical_reporting.infrastructure.email_service.EmailService.send")
+    def test_13_email_history_record_created_on_failure(self, mock_send) -> None:
+        """Verify that a failed send attempt logs status 'FAILED' and normalizes failure reason."""
+        mock_send.side_effect = Exception("SMTP Connection Refused")
+
+        response = self.client.post(
+            "/api/reports/1/email",
+            json={"recipient_email": "patient1@aurascan.ai"},
+            headers=self.doc_headers
+        )
+        self.assertEqual(response.status_code, 500)
+
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM email_deliveries WHERE report_id = 1;").fetchall()
+            self.assertEqual(len(rows), 1)
+            row = rows[0]
+            self.assertEqual(row["status"], "FAILED")
+            self.assertEqual(row["failure_reason"], "SMTP_CONNECTION_FAILED")
+            self.assertIsNone(row["sent_at"])
+        finally:
+            conn.close()
+
+    @patch("clinical_reporting.infrastructure.email_service.EmailService.send")
+    def test_14_email_history_api_authorization_and_masking(self, mock_send) -> None:
+        """Verify that the email history API is secured and applies masking to recipient emails."""
+        # Insert a successful delivery record manually to ensure history exists
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute("""
+                INSERT INTO email_deliveries (report_id, actor_user_id, recipient_email, status, attempted_at, created_at, updated_at)
+                VALUES (1, ?, 'patient1@aurascan.ai', 'SENT', '2026-08-09T12:00:00', '2026-08-09T12:00:00', '2026-08-09T12:00:00');
+            """, (self.doctor.id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Doctor user should see the record, but with masked recipient email
+        response = self.client.get(
+            "/api/reports/email/history",
+            headers=self.doc_headers
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("items", data)
+        self.assertTrue(len(data["items"]) >= 1)
+
+        item = data["items"][0]
+        # Masking should mask the email (e.g. 'patient1@aurascan.ai' to 'pa****@aurascan.ai')
+        self.assertEqual(item["recipient_email"], "pa****@aurascan.ai")
+        self.assertEqual(item["report_number"], "RPT-2026-000001")
+
+        # Unauthenticated user should be rejected
+        response_anon = self.client.get("/api/reports/email/history")
+        self.assertEqual(response_anon.status_code, 401)
+
+    @patch("clinical_reporting.infrastructure.email_service.EmailService.send")
+    def test_15_email_history_patient_idor_filtering(self, mock_send) -> None:
+        """Verify that patients can only retrieve history for reports they own."""
+        # Insert two delivery records: one for report 1 (owned by patient 1), one for report 2 (owned by patient 2)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            # Report 1
+            conn.execute("""
+                INSERT INTO email_deliveries (report_id, actor_user_id, recipient_email, status, attempted_at, created_at, updated_at)
+                VALUES (1, ?, 'patient1@aurascan.ai', 'SENT', '2026-08-09T12:00:00', '2026-08-09T12:00:00', '2026-08-09T12:00:00');
+            """, (self.patient_user1.id,))
+            # Report 2
+            conn.execute("""
+                INSERT INTO email_deliveries (report_id, actor_user_id, recipient_email, status, attempted_at, created_at, updated_at)
+                VALUES (2, ?, 'patient2@aurascan.ai', 'SENT', '2026-08-09T12:05:00', '2026-08-09T12:05:00', '2026-08-09T12:05:00');
+            """, (self.patient_user2.id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Alice (Patient 1) queries the email history API
+        response = self.client.get(
+            "/api/reports/email/history",
+            headers=self.pat1_headers
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+
+        # Verify Alice ONLY sees report 1's history
+        for item in data["items"]:
+            self.assertEqual(item["report_id"], 1)
+            self.assertNotEqual(item["report_id"], 2)
+
+    @patch("clinical_reporting.infrastructure.email_service.EmailService.send")
+    def test_16_email_history_search_and_filters(self, mock_send) -> None:
+        """Verify searching and status filtering on the history endpoint."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute("""
+                INSERT INTO email_deliveries (report_id, actor_user_id, recipient_email, status, attempted_at, created_at, updated_at)
+                VALUES (1, ?, 'doctor@aurascan.ai', 'SENT', '2026-08-09T12:00:00', '2026-08-09T12:00:00', '2026-08-09T12:00:00');
+            """, (self.doctor.id,))
+            conn.execute("""
+                INSERT INTO email_deliveries (report_id, actor_user_id, recipient_email, status, attempted_at, created_at, updated_at, failure_reason)
+                VALUES (1, ?, 'recipient@aurascan.ai', 'FAILED', '2026-08-09T12:10:00', '2026-08-09T12:10:00', '2026-08-09T12:10:00', 'SMTP_TIMEOUT');
+            """, (self.doctor.id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Filter by status = FAILED
+        response_failed = self.client.get(
+            "/api/reports/email/history?status=FAILED",
+            headers=self.doc_headers
+        )
+        self.assertEqual(response_failed.status_code, 200)
+        items = response_failed.json()["items"]
+        self.assertTrue(len(items) >= 1)
+        for item in items:
+            self.assertEqual(item["status"], "FAILED")
+
+        # Search by recipient_email (searched by raw input, but displayed masked)
+        response_search = self.client.get(
+            "/api/reports/email/history?search=recipient",
+            headers=self.doc_headers
+        )
+        self.assertEqual(response_search.status_code, 200)
+        items_search = response_search.json()["items"]
+        self.assertEqual(len(items_search), 1)
+        self.assertEqual(items_search[0]["recipient_email"], "re****@aurascan.ai")
+
 
 if __name__ == "__main__":
     unittest.main()

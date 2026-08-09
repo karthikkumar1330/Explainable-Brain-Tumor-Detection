@@ -2689,6 +2689,21 @@ class ReportService:
             if not recipient_user:
                 raise PermissionError("Recipient must be a registered user on the AuraScan platform.")
 
+        # Create Initial EmailDelivery record with 'SENDING' status
+        import datetime
+        attempted_at = datetime.datetime.utcnow().isoformat()
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO email_deliveries (report_id, actor_user_id, recipient_email, status, attempted_at, created_at, updated_at)
+                VALUES (?, ?, ?, 'SENDING', ?, ?, ?);
+            """, (report_id, actor.id, recipient_email, attempted_at, attempted_at, attempted_at))
+            conn.commit()
+            delivery_id = cursor.lastrowid
+        finally:
+            conn.close()
+
         # 4. Resolve the version number if None
         conn = self._get_connection()
         try:
@@ -2773,6 +2788,19 @@ class ReportService:
                 body_html=html_body,
                 attachment_path=pdf_path
             )
+            # Update delivery status to SENT
+            now = datetime.datetime.utcnow().isoformat()
+            conn = self._get_connection()
+            try:
+                conn.execute("""
+                    UPDATE email_deliveries
+                    SET status = 'SENT', sent_at = ?, updated_at = ?
+                    WHERE id = ?;
+                """, (now, now, delivery_id))
+                conn.commit()
+            finally:
+                conn.close()
+
             # Log security event
             self.log_report_access_event(
                 "REPORT_EMAIL_SENT",
@@ -2783,6 +2811,31 @@ class ReportService:
             )
             return {"success": True, "message": "Report email sent successfully"}
         except Exception as e:
+            # Normalize failure reason
+            err_msg = str(e).lower()
+            if "timeout" in err_msg:
+                reason = "SMTP_TIMEOUT"
+            elif "auth" in err_msg or "credential" in err_msg:
+                reason = "SMTP_AUTH_FAILED"
+            elif "connection" in err_msg or "refused" in err_msg or "socket" in err_msg:
+                reason = "SMTP_CONNECTION_FAILED"
+            elif "format" in err_msg or "invalid recipient" in err_msg:
+                reason = "INVALID_RECIPIENT"
+            else:
+                reason = "EMAIL_SEND_FAILED"
+
+            now = datetime.datetime.utcnow().isoformat()
+            conn = self._get_connection()
+            try:
+                conn.execute("""
+                    UPDATE email_deliveries
+                    SET status = 'FAILED', failure_reason = ?, updated_at = ?
+                    WHERE id = ?;
+                """, (reason, now, delivery_id))
+                conn.commit()
+            finally:
+                conn.close()
+
             self.log_report_access_event(
                 "REPORT_EMAIL_FAILED",
                 actor,
@@ -2791,3 +2844,123 @@ class ReportService:
                 f"Failed to email clinical report to {recipient_email}. Error: {e}"
             )
             raise ReportServiceException(f"Failed to send email: {e}")
+
+    def get_email_history(
+        self,
+        actor: Optional[Any],
+        page: int = 1,
+        per_page: int = 10,
+        status: Optional[str] = None,
+        search: Optional[str] = None,
+        report_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Fetches paginated, authorized email delivery records with optional filters and search."""
+        if actor is None:
+            raise PermissionError("Authentication required.")
+
+        caller_role = actor.role.value if hasattr(actor.role, 'value') else str(actor.role).lower()
+
+        # Build SQL query dynamically
+        where_clauses = []
+        params = []
+
+        # Enforce RBAC/IDOR: Patients can only see histories for reports they own
+        if caller_role == "patient":
+            where_clauses.append("(r.patient_id = ? OR p.name = ?)")
+            params.extend([actor.uuid, actor.full_name])
+
+        if status:
+            where_clauses.append("ed.status = ?")
+            params.append(status)
+
+        if report_id:
+            where_clauses.append("ed.report_id = ?")
+            params.append(report_id)
+
+        if search:
+            where_clauses.append("(ed.recipient_email LIKE ? OR r.report_number LIKE ?)")
+            search_param = f"%{search}%"
+            params.extend([search_param, search_param])
+
+        where_str = ""
+        if where_clauses:
+            where_str = "WHERE " + " AND ".join(where_clauses)
+
+        # Count query
+        count_query = f"""
+            SELECT COUNT(*) as cnt
+            FROM email_deliveries ed
+            JOIN reports r ON ed.report_id = r.report_id
+            JOIN patients p ON r.patient_id = p.patient_id
+            {where_str}
+        """
+
+        # Data query
+        offset = (page - 1) * per_page
+        data_query = f"""
+            SELECT ed.id, ed.report_id, ed.actor_user_id, ed.recipient_email, ed.status,
+                   ed.attempted_at, ed.sent_at, ed.failure_reason,
+                   r.report_number, u.full_name as actor_name, u.email as actor_email
+            FROM email_deliveries ed
+            JOIN reports r ON ed.report_id = r.report_id
+            JOIN patients p ON r.patient_id = p.patient_id
+            JOIN users u ON ed.actor_user_id = u.id
+            {where_str}
+            ORDER BY ed.attempted_at DESC
+            LIMIT ? OFFSET ?
+        """
+
+        conn = self._get_connection()
+        try:
+            # Execute count
+            row_count = conn.execute(count_query, params).fetchone()
+            total_items = row_count["cnt"] if row_count else 0
+
+            # Execute data query
+            data_params = list(params)
+            data_params.extend([per_page, offset])
+            rows = conn.execute(data_query, data_params).fetchall()
+
+            items = []
+            for r in rows:
+                masked_recipient = mask_email(r["recipient_email"])
+
+                items.append({
+                    "id": r["id"],
+                    "report_id": r["report_id"],
+                    "report_number": r["report_number"],
+                    "actor_user_id": r["actor_user_id"],
+                    "actor_name": r["actor_name"],
+                    "actor_email": mask_email(r["actor_email"]) if caller_role == "patient" else r["actor_email"],
+                    "recipient_email": masked_recipient,
+                    "status": r["status"],
+                    "attempted_at": r["attempted_at"],
+                    "sent_at": r["sent_at"],
+                    "failure_reason": r["failure_reason"]
+                })
+
+            total_pages = (total_items + per_page - 1) // per_page if total_items > 0 else 0
+
+            return {
+                "items": items,
+                "total_items": total_items,
+                "page": page,
+                "per_page": per_page,
+                "total_pages": total_pages
+            }
+        finally:
+            conn.close()
+
+
+def mask_email(email: str) -> str:
+    """Masks email address characters for confidentiality."""
+    if not email or "@" not in email:
+        return email
+    parts = email.split("@")
+    name = parts[0]
+    domain = parts[1]
+    if len(name) <= 2:
+        masked_name = name + "****"
+    else:
+        masked_name = name[:2] + "****"
+    return f"{masked_name}@{domain}"

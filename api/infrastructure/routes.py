@@ -1499,6 +1499,36 @@ def email_report_api(
         raise HTTPException(status_code=500, detail="Internal server error sending report email.")
 
 
+@router.get("/reports/email/history")
+def get_email_history_api(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1, le=100),
+    status: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    report_id: Optional[int] = Query(None),
+    current_user: User = Depends(get_current_user)
+):
+    """Fetches paginated, authorized email delivery history records."""
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        history = service.get_email_history(
+            actor=current_user,
+            page=page,
+            per_page=per_page,
+            status=status,
+            search=search,
+            report_id=report_id
+        )
+        return history
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error fetching email history: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error fetching email history.")
+
+
+
+
 @router.patch("/reports/{report_id}/status")
 def patch_report_status_api(
     report_id: int,

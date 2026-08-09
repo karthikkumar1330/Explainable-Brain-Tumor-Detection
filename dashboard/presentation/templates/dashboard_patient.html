@@ -447,6 +447,10 @@
                     <i class="fa-solid fa-list-check text-lg w-5 shrink-0"></i>
                     <span>Audit Trail</span>
                 </button>
+                <button onclick="switchTab('email-history')" id="nav-email-history" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" title="Email History">
+                    <i class="fa-solid fa-paper-plane text-lg w-5 shrink-0"></i>
+                    <span>Email History</span>
+                </button>
             </nav>
         </div>
 
@@ -1056,6 +1060,57 @@
                                 <tr><td colspan="5" class="p-8 text-center text-slate-500 font-medium">Loading security audit trail...</td></tr>
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 6: EMAIL HISTORY VIEW -->
+            <div id="tab-email-history" class="hidden space-y-6">
+                <div class="glass-panel rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+                    <div class="p-5 bg-slate-900/80 border-b border-slate-800/80 flex flex-col md:flex-row justify-between items-center gap-4">
+                        <div>
+                            <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2">
+                                <i class="fa-solid fa-paper-plane text-sky-400"></i>
+                                Email History & Delivery Tracking
+                            </h4>
+                            <p class="text-xs text-slate-400">Observe clinical report delivery attempts, outcomes, and failure codes.</p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <input id="email-history-search" type="text" placeholder="Search email/report..." class="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 w-44 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition">
+                            <select id="email-history-status" class="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                <option value="">All Statuses</option>
+                                <option value="SENDING">Sending</option>
+                                <option value="SENT">Sent</option>
+                                <option value="FAILED">Failed</option>
+                            </select>
+                            <button onclick="loadEmailHistoryData(1)" class="text-xs bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl transition cursor-pointer">
+                                <i class="fa-solid fa-rotate"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-950/90 text-slate-400 text-xs uppercase font-bold tracking-wider border-b border-slate-800">
+                                <tr>
+                                    <th class="p-4">Attempted At</th>
+                                    <th class="p-4">Report Details</th>
+                                    <th class="p-4">Recipient Email</th>
+                                    <th class="p-4">Actor</th>
+                                    <th class="p-4">Status</th>
+                                    <th class="p-4">Failure/Info</th>
+                                </tr>
+                            </thead>
+                            <tbody id="email-history-table-body" class="divide-y divide-slate-800/60 text-xs">
+                                <tr><td colspan="6" class="p-8 text-center text-slate-500 font-medium">No email history records found.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="p-4 bg-slate-900/60 border-t border-slate-800/80 flex justify-between items-center text-xs text-slate-400">
+                        <span id="email-history-pagination-info">Showing page 1 of 1</span>
+                        <div class="flex items-center gap-2">
+                            <button id="email-history-prev-btn" onclick="prevEmailHistoryPage()" class="btn-secondary h-8 px-3 text-xs cursor-pointer" disabled>Prev</button>
+                            <button id="email-history-next-btn" onclick="nextEmailHistoryPage()" class="btn-secondary h-8 px-3 text-xs cursor-pointer" disabled>Next</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1785,6 +1840,24 @@
             await checkAuthStatus();
             // Start on Dashboard welcome page
             switchTab('dashboard');
+
+            // Email History Filters
+            const searchInput = document.getElementById("email-history-search");
+            const statusSelect = document.getElementById("email-history-status");
+            let searchTimeout = null;
+            if (searchInput) {
+                searchInput.addEventListener("input", () => {
+                    clearTimeout(searchTimeout);
+                    searchTimeout = setTimeout(() => {
+                        loadEmailHistoryData(1);
+                    }, 400);
+                });
+            }
+            if (statusSelect) {
+                statusSelect.addEventListener("change", () => {
+                    loadEmailHistoryData(1);
+                });
+            }
         });
 
 
@@ -1909,11 +1982,12 @@
             'reports': 'My Brain MRI Diagnostic Reports',
             'settings': 'Account Security Settings',
             'profile': 'Patient User Profile',
-            'audit': 'Report Access Security Audit Trail'
+            'audit': 'Report Access Security Audit Trail',
+            'email-history': 'Email History & Delivery Tracking'
         };
 
         function switchTab(tabName) {
-            ['dashboard', 'reports', 'settings', 'profile', 'audit'].forEach(t => {
+            ['dashboard', 'reports', 'settings', 'profile', 'audit', 'email-history'].forEach(t => {
                 const el = document.getElementById(`tab-${t}`);
                 const btn = document.getElementById(`nav-${t}`);
                 if (el) el.classList.add('hidden');
@@ -1935,9 +2009,12 @@
                 document.getElementById('breadcrumb-page').innerText = tabName.charAt(0).toUpperCase() + tabName.slice(1);
             }
 
-            if (['dashboard', 'reports'].includes(tabName)) {
+            if (['dashboard', 'reports', 'email-history'].includes(tabName)) {
                 if (!dashboardDataLoaded) {
                     loadDashboardData();
+                }
+                if (tabName === 'email-history') {
+                    loadEmailHistoryData(1);
                 }
             }
             if (['settings', 'profile'].includes(tabName)) {
@@ -1982,6 +2059,83 @@
                 }
             }
         }
+
+        let currentEmailHistoryPage = 1;
+        let totalEmailHistoryPages = 1;
+
+        async function loadEmailHistoryData(page = 1) {
+            currentEmailHistoryPage = page;
+            const search = document.getElementById("email-history-search")?.value || "";
+            const status = document.getElementById("email-history-status")?.value || "";
+            const tbody = document.getElementById("email-history-table-body");
+            if (!tbody) return;
+
+            tbody.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-slate-500 font-medium"><i class="fa-solid fa-circle-notch fa-spin text-sky-400 mr-2"></i>Loading email history...</td></tr>';
+
+            try {
+                let url = `/api/reports/email/history?page=${page}&per_page=10`;
+                if (search) url += `&search=${encodeURIComponent(search)}`;
+                if (status) url += `&status=${encodeURIComponent(status)}`;
+
+                const res = await fetchWithAuth(url);
+                const data = await res.json();
+
+                tbody.innerHTML = "";
+                if (data.items && data.items.length > 0) {
+                    data.items.forEach(item => {
+                        const tr = document.createElement("tr");
+                        tr.className = "table-row-hover hover:bg-slate-800/20";
+
+                        let statusBadge = "";
+                        if (item.status === "SENT") {
+                            statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-900">SENT</span>';
+                        } else if (item.status === "FAILED") {
+                            statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-950 text-red-400 border border-red-900">FAILED</span>';
+                        } else {
+                            statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-950 text-sky-400 border border-sky-900">SENDING</span>';
+                        }
+
+                        const dateStr = item.attempted_at ? item.attempted_at.replace("T", " ").substring(0, 19) : "-";
+
+                        tr.innerHTML = `
+                            <td class="p-4 font-medium text-slate-350">${dateStr}</td>
+                            <td class="p-4 font-bold text-slate-200">#${item.report_id} (${item.report_number})</td>
+                            <td class="p-4 text-slate-300 font-mono">${item.recipient_email}</td>
+                            <td class="p-4 text-slate-300">${item.actor_name}</td>
+                            <td class="p-4">${statusBadge}</td>
+                            <td class="p-4 text-slate-400">${item.failure_reason || '-'}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-slate-500 font-medium">No email history records found.</td></tr>';
+                }
+
+                // Update pagination controls
+                totalEmailHistoryPages = data.total_pages || 1;
+                document.getElementById("email-history-pagination-info").innerText = `Showing page ${currentEmailHistoryPage} of ${totalEmailHistoryPages}`;
+
+                document.getElementById("email-history-prev-btn").disabled = (currentEmailHistoryPage <= 1);
+                document.getElementById("email-history-next-btn").disabled = (currentEmailHistoryPage >= totalEmailHistoryPages);
+            } catch (err) {
+                console.error("Failed to load email history:", err);
+                tbody.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-red-400 font-medium">Failed to load email history.</td></tr>';
+            }
+        }
+
+        function prevEmailHistoryPage() {
+            if (currentEmailHistoryPage > 1) {
+                loadEmailHistoryData(currentEmailHistoryPage - 1);
+            }
+        }
+
+        function nextEmailHistoryPage() {
+            if (currentEmailHistoryPage < totalEmailHistoryPages) {
+                loadEmailHistoryData(currentEmailHistoryPage + 1);
+            }
+        }
+
+
 
         async function handleLogout() {
             try {
