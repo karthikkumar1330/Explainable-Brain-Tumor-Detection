@@ -36,6 +36,16 @@ class FinalizedReportException(ReportServiceException):
     pass
 
 
+class IntegrityFailureException(ReportServiceException):
+    """Exception raised when integrity check fails."""
+    pass
+
+
+class PathTraversalException(ReportServiceException):
+    """Exception raised when path traversal is detected."""
+    pass
+
+
 class ReportService:
     """Service class orchestrating the lifecycle, versioning, and state transitions of clinical reports."""
 
@@ -862,3 +872,252 @@ class ReportService:
         from clinical_reporting.infrastructure.pdf_generator import ReportLabPDFGenerator
         pdf_gen = ReportLabPDFGenerator()
         pdf_gen.generate_pdf(report, pdf_path)
+
+    def check_report_access(self, report_id: int, user: Optional[Any]) -> str:
+        """Verifies user access permissions for a specific report."""
+        conn = self._get_connection()
+        try:
+            row = conn.execute("SELECT patient_id FROM reports WHERE report_id = ?;", (report_id,)).fetchone()
+            if not row:
+                return "NOT_FOUND"
+
+            if user is None:
+                return "UNAUTHORIZED"
+
+            from security.domain.entities import Role
+            role_val = user.role.value if hasattr(user.role, 'value') else str(user.role).lower()
+
+            if role_val in ["admin", "doctor"]:
+                return "AUTHORIZED"
+
+            if role_val == "patient":
+                # Check patient boundaries using name and patient_id
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT p.patient_id, p.name as patient_name
+                    FROM clinical_reports cr
+                    JOIN predictions pr ON cr.prediction_id = pr.id
+                    JOIN mri_scans s ON pr.scan_id = s.id
+                    JOIN patients p ON s.patient_id = p.patient_id
+                    WHERE cr.id = ?;
+                    """,
+                    (report_id,)
+                )
+                row_pat = cursor.fetchone()
+                if not row_pat:
+                    r_pat_id = row["patient_id"]
+                    cursor.execute("SELECT patient_id, name as patient_name FROM patients WHERE patient_id = ?;", (r_pat_id,))
+                    row_pat = cursor.fetchone()
+
+                if not row_pat:
+                    return "FORBIDDEN"
+
+                pat_name = row_pat["patient_name"].lower()
+                pat_id = row_pat["patient_id"].lower()
+                user_name = user.full_name.lower() if user.full_name else ""
+                user_uuid = user.uuid.lower() if user.uuid else ""
+
+                if pat_name == user_name or pat_id == user_uuid:
+                    return "AUTHORIZED"
+
+                return "FORBIDDEN"
+
+            return "FORBIDDEN"
+        finally:
+            conn.close()
+
+    def resolve_secure_pdf_path(self, report_id: int, version: Optional[int] = None) -> str:
+        """Resolves, checks boundaries and verifies integrity of a report's PDF path."""
+        conn = self._get_connection()
+        try:
+            if version is not None:
+                row = conn.execute("""
+                    SELECT rv.pdf_path, rv.json_path, rv.integrity_hash, rv.status, r.report_number, rv.version_number
+                    FROM report_versions rv
+                    JOIN reports r ON rv.report_id = r.report_id
+                    WHERE rv.report_id = ? AND rv.version_number = ?;
+                """, (report_id, version)).fetchone()
+                if not row:
+                    raise VersionNotFoundException(f"Version {version} not found for report {report_id}.")
+            else:
+                row = conn.execute("""
+                    SELECT rv.pdf_path, rv.json_path, rv.integrity_hash, rv.status, r.report_number, rv.version_number
+                    FROM report_versions rv
+                    JOIN reports r ON rv.report_id = r.report_id
+                    WHERE rv.report_id = ? AND rv.version_number = r.current_version;
+                """, (report_id,)).fetchone()
+                if not row:
+                    raise ReportNotFoundException(f"Report with ID {report_id} not found.")
+
+            pdf_path = row["pdf_path"]
+            json_path = row["json_path"]
+            stored_hash = row["integrity_hash"]
+            version_number = row["version_number"]
+
+            if not pdf_path:
+                raise ReportServiceException("PDF path is null in the database.")
+
+            # Path traversal and directory boundary check
+            trusted_dir = os.path.abspath("outputs/clinical_reports")
+            resolved_pdf = os.path.abspath(pdf_path)
+            if not resolved_pdf.startswith(trusted_dir + os.sep) and resolved_pdf != trusted_dir:
+                raise PathTraversalException("Path traversal or directory escape detected.")
+
+            # File existence check
+            if not os.path.exists(resolved_pdf):
+                # Try regenerating on the fly
+                try:
+                    self._regenerate_pdf_internal(conn, report_id, version_number)
+                except Exception:
+                    pass
+                if not os.path.exists(resolved_pdf):
+                    raise FileNotFoundError(f"PDF file does not exist on disk at {resolved_pdf}.")
+
+            # Integrity check if hash is available
+            if stored_hash:
+                if not json_path or not os.path.exists(json_path):
+                    self._log_security_audit_event(
+                        conn=conn,
+                        event_type="REPORT_INTEGRITY_FAILED",
+                        user=None,
+                        report_id=report_id,
+                        status="FAILED",
+                        details=f"Report ID: {report_id}, Version: {version_number}, reason: JSON file missing"
+                    )
+                    raise IntegrityFailureException("Integrity check failed: JSON file missing.")
+                try:
+                    import json
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        payload = json.load(f)
+                    from clinical_reporting.domain.entities import generate_integrity_hash
+                    calculated_hash = generate_integrity_hash(payload)
+                    import secrets
+                    if not secrets.compare_digest(calculated_hash, stored_hash):
+                        self._log_security_audit_event(
+                            conn=conn,
+                            event_type="REPORT_INTEGRITY_FAILED",
+                            user=None,
+                            report_id=report_id,
+                            status="FAILED",
+                            details=f"Report ID: {report_id}, Version: {version_number}, reason: hash mismatch"
+                        )
+                        raise IntegrityFailureException("Integrity check failed: hash mismatch.")
+                except Exception as e:
+                    if isinstance(e, IntegrityFailureException):
+                        raise e
+                    self._log_security_audit_event(
+                        conn=conn,
+                        event_type="REPORT_INTEGRITY_FAILED",
+                        user=None,
+                        report_id=report_id,
+                        status="FAILED",
+                        details=f"Report ID: {report_id}, Version: {version_number}, reason: {e}"
+                    )
+                    raise IntegrityFailureException(f"Integrity check failed: {e}")
+
+            return resolved_pdf
+        finally:
+            conn.close()
+
+    def get_report_audit_history(self, user: Any) -> List[Dict[str, Any]]:
+        """Retrieves and filters access history logs according to RBAC."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT timestamp, event_type, email, status, details
+                FROM security_audit_logs
+                WHERE event_type IN (
+                    'REPORT_VIEWED', 'REPORT_DOWNLOADED',
+                    'REPORT_ACCESS_DENIED', 'REPORT_NOT_FOUND',
+                    'REPORT_INTEGRITY_FAILED', 'REPORT_LIFECYCLE_CHANGE'
+                )
+                ORDER BY id DESC;
+            """)
+            rows = cursor.fetchall()
+            logs = [dict(r) for r in rows]
+
+            role_val = user.role.value if hasattr(user.role, 'value') else str(user.role).lower()
+            if role_val in ["admin", "doctor"]:
+                return logs
+
+            if role_val == "patient":
+                cursor.execute(
+                    """
+                    SELECT cr.id
+                    FROM clinical_reports cr
+                    JOIN predictions pr ON cr.prediction_id = pr.id
+                    JOIN mri_scans s ON pr.scan_id = s.id
+                    JOIN patients p ON s.patient_id = p.patient_id
+                    WHERE p.name = ? OR p.patient_id = ?;
+                    """,
+                    (user.full_name, user.uuid)
+                )
+                p_rows = cursor.fetchall()
+                permitted_ids = {r["id"] for r in p_rows}
+
+                cursor.execute("SELECT report_id FROM reports WHERE patient_id = ?;", (user.uuid,))
+                for r in cursor.fetchall():
+                    permitted_ids.add(r["report_id"])
+
+                import re
+                filtered = []
+                for log in logs:
+                    details = log.get("details", "")
+                    m = re.search(r"Report ID:\s*(\d+)", details)
+                    if m:
+                        rep_id = int(m.group(1))
+                        if rep_id in permitted_ids:
+                            filtered.append(log)
+                return filtered
+
+            return []
+        finally:
+            conn.close()
+
+    def log_report_access_event(
+        self,
+        event_type: str,
+        user: Optional[Any],
+        report_id: Optional[int],
+        status: str,
+        details: str
+    ) -> None:
+        """Public wrapper to log access events."""
+        conn = self._get_connection()
+        try:
+            self._log_security_audit_event(conn, event_type, user, report_id, status, details)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _log_security_audit_event(
+        self,
+        conn: sqlite3.Connection,
+        event_type: str,
+        user: Optional[Any],
+        report_id: Optional[int],
+        status: str,
+        details: str
+    ) -> None:
+        """Helper to insert structured logs into security_audit_logs."""
+        now_str = datetime.datetime.utcnow().isoformat()
+        user_id = None
+        email = None
+        if user:
+            if isinstance(user, dict):
+                user_id = user.get("id")
+                email = user.get("email")
+            else:
+                user_id = getattr(user, "id", None)
+                email = getattr(user, "email", None)
+
+        if report_id is not None and "Report ID:" not in details:
+            details = f"Report ID: {report_id}, {details}"
+
+        conn.execute("""
+            INSERT INTO security_audit_logs (
+                timestamp, event_type, user_id, email, ip_address, status, details, user_agent
+            ) VALUES (?, ?, ?, ?, '127.0.0.1', ?, ?, 'System');
+        """, (now_str, event_type, user_id, email, status, details))

@@ -504,6 +504,10 @@
                     <i class="fa-solid fa-user-circle text-lg w-5 shrink-0"></i>
                     <span>Profile</span>
                 </button>
+                <button onclick="switchTab('audit')" id="nav-audit" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" title="Audit Trail">
+                    <i class="fa-solid fa-list-check text-lg w-5 shrink-0"></i>
+                    <span>Audit Trail</span>
+                </button>
             </nav>
         </div>
 
@@ -1150,6 +1154,40 @@
                     </div>
                 </div>
             </div>
+
+            <!-- TAB 5: AUDIT LOGS VIEW -->
+            <div id="tab-audit" class="hidden space-y-6">
+                <div class="glass-panel rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+                    <div class="p-5 bg-slate-900/80 border-b border-slate-800/80 flex justify-between items-center">
+                        <div>
+                            <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2">
+                                <i class="fa-solid fa-list-check text-sky-400"></i>
+                                Report Access Security Audit Trail
+                            </h4>
+                            <p class="text-xs text-slate-400">Audit logs of all access, downloads, views, and integrity checks for permitted records.</p>
+                        </div>
+                        <button onclick="loadAuditData()" class="text-xs bg-slate-800 hover:bg-slate-700 text-sky-400 font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition">
+                            <i class="fa-solid fa-rotate mr-1"></i> Refresh
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-950/90 text-slate-400 text-xs uppercase font-bold tracking-wider border-b border-slate-800">
+                                <tr>
+                                    <th class="p-4">Timestamp</th>
+                                    <th class="p-4">Event Type</th>
+                                    <th class="p-4">User Email</th>
+                                    <th class="p-4">Status</th>
+                                    <th class="p-4">Audit Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-table-body" class="divide-y divide-slate-800/60 text-xs">
+                                <tr><td colspan="5" class="p-8 text-center text-slate-500 font-medium">Loading security audit trail...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -1408,11 +1446,12 @@
             'reports': 'Clinical Diagnostic Reports',
             'analytics': 'Diagnostic Analytics Telemetry',
             'settings': 'Account Security Settings',
-            'profile': 'Clinician User Profile'
+            'profile': 'Clinician User Profile',
+            'audit': 'Report Access Security Audit Trail'
         };
 
         function switchTab(tabName) {
-            ['dashboard', 'generate', 'database', 'reports', 'analytics', 'settings', 'profile'].forEach(t => {
+            ['dashboard', 'generate', 'database', 'reports', 'analytics', 'settings', 'profile', 'audit'].forEach(t => {
                 const el = document.getElementById(`tab-${t}`);
                 const btn = document.getElementById(`nav-${t}`);
                 if (el) el.classList.add('hidden');
@@ -1444,6 +1483,42 @@
             if (['settings', 'profile'].includes(tabName)) {
                 if (!settingsDataLoaded) {
                     loadSettingsData();
+                }
+            }
+            if (tabName === 'audit') {
+                loadAuditData();
+            }
+        }
+
+        async function loadAuditData() {
+            try {
+                const res = await fetchWithAuth("/api/reports/audit-history");
+                const logs = await res.json();
+                const tbody = document.getElementById("audit-table-body");
+                if (!tbody) return;
+                tbody.innerHTML = "";
+                if (Array.isArray(logs) && logs.length > 0) {
+                    logs.forEach(log => {
+                        const tr = document.createElement("tr");
+                        tr.className = "table-row-hover hover:bg-slate-800/20";
+                        const statusColor = log.status === "SUCCESS" ? "text-emerald-400" : "text-red-400";
+                        tr.innerHTML = `
+                            <td class="p-4 font-medium text-slate-350">${log.timestamp}</td>
+                            <td class="p-4 font-bold text-slate-200">${log.event_type}</td>
+                            <td class="p-4 text-slate-300">${log.email || 'System / Anonymous'}</td>
+                            <td class="p-4 font-extrabold ${statusColor}">${log.status}</td>
+                            <td class="p-4 text-slate-400">${log.details}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-slate-500 font-medium">No report access security events found.</td></tr>`;
+                }
+            } catch (err) {
+                console.error("Failed to load audit history:", err);
+                const tbody = document.getElementById("audit-table-body");
+                if (tbody) {
+                    tbody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-red-400 font-bold">Failed to load security audit trail history.</td></tr>`;
                 }
             }
         }

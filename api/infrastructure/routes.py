@@ -890,107 +890,53 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
 @router.get("/report/{report_id}/pdf")
 def serve_report_pdf(report_id: int, version: Optional[int] = Query(None), current_user: User = Depends(get_current_user)):
     """Streams the compiled PDF document directly to clients with ownership validation."""
-    from pathlib import Path
+    from clinical_reporting.application.services import (
+        ReportService, ReportNotFoundException, VersionNotFoundException,
+        PathTraversalException, IntegrityFailureException
+    )
     import logging
     logger = logging.getLogger("api.routes.serve_report_pdf")
-
     logger.info(f"API request received for PDF. Report ID: {report_id}, User: {current_user.email}, Version: {version}")
 
-    if current_user.role == Role.PATIENT:
-        conn = sqlite3.connect(DEFAULT_DB_PATH)
-        conn.row_factory = sqlite3.Row
-        try:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT p.patient_id, p.name as patient_name
-                FROM clinical_reports cr
-                JOIN predictions pr ON cr.prediction_id = pr.id
-                JOIN mri_scans s ON pr.scan_id = s.id
-                JOIN patients p ON s.patient_id = p.patient_id
-                WHERE cr.id = ?;
-                """,
-                (report_id,)
-            )
-            row = cursor.fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Report not found.")
-            if row["patient_name"].lower() != current_user.full_name.lower() and row["patient_id"].lower() != current_user.uuid.lower():
-                logger.warning(f"Access denied to patient report PDF for report_id: {report_id}, User: {current_user.email}")
-                raise HTTPException(status_code=403, detail="Access denied to patient report PDF.")
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            logger.error(f"Database error during patient access check: {e}")
-            raise HTTPException(status_code=500, detail="Database access error during validation")
-        finally:
-            conn.close()
+    service = ReportService(db_path=DEFAULT_DB_PATH)
 
+    # 1. Enforce access check
+    access_status = service.check_report_access(report_id, current_user)
+    if access_status == "NOT_FOUND":
+        service.log_report_access_event("REPORT_NOT_FOUND", current_user, report_id, "FAILED", "Requested nonexistent report.")
+        raise HTTPException(status_code=404, detail="Report not found.")
+    elif access_status == "UNAUTHORIZED":
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    elif access_status == "FORBIDDEN":
+        service.log_report_access_event("REPORT_ACCESS_DENIED", current_user, report_id, "FAILED", "Access denied to patient report.")
+        raise HTTPException(status_code=403, detail="Access denied to patient report.")
+
+    # 2. Resolve PDF path with security checks and integrity verification
     try:
-        if version is not None:
-            conn = sqlite3.connect(DEFAULT_DB_PATH)
-            conn.row_factory = sqlite3.Row
-            try:
-                row = conn.execute(
-                    "SELECT pdf_path, json_path FROM report_versions WHERE report_id = ? AND version_number = ?;",
-                    (report_id, version)
-                ).fetchone()
-                if not row:
-                    return JSONResponse(status_code=404, content={"error": f"Version {version} not found for report {report_id}."})
-                pdf_path = row["pdf_path"]
-                json_path = row["json_path"]
-
-                # Regenerate if missing on disk
-                if not pdf_path or not os.path.exists(pdf_path):
-                    from clinical_reporting.application.services import ReportService
-                    service = ReportService(db_path=DEFAULT_DB_PATH)
-                    service._regenerate_pdf_internal(conn, report_id, version)
-            finally:
-                conn.close()
-        else:
-            from clinical_reporting.infrastructure.pdf_generator import load_or_regenerate_pdf
-            pdf_path = load_or_regenerate_pdf(report_id, DEFAULT_DB_PATH)
-
-        if not pdf_path:
-            logger.error(f"load_or_regenerate_pdf returned None for report_id: {report_id}")
-            return JSONResponse(
-                status_code=404,
-                content={
-                    "error": "PDF path could not be resolved from database",
-                    "reason": f"No report with ID {report_id} or pdf_path is null in the database."
-                }
-            )
-
-        pdf_path_obj = Path(pdf_path).resolve()
-        output_dir = pdf_path_obj.parent
-        filename = pdf_path_obj.name
-
-        logger.info(f"Resolving PDF path. Directory: {output_dir}, Filename: {filename}")
-
-        # File exists check
-        if not pdf_path_obj.is_file():
-            logger.error(f"PDF file does not exist on disk at: {pdf_path_obj}")
-            return JSONResponse(
-                status_code=404,
-                content={
-                    "error": "PDF report file not found on server disk",
-                    "reason": "The file does not exist at the resolved absolute path.",
-                    "path": str(pdf_path_obj)
-                }
-            )
-
-        logger.info(f"PDF file verified. Serving PDF from: {pdf_path_obj}")
-        return FileResponse(str(pdf_path_obj), media_type="application/pdf", filename=filename)
-
+        pdf_path = service.resolve_secure_pdf_path(report_id, version)
+    except (ReportNotFoundException, VersionNotFoundException):
+        service.log_report_access_event("REPORT_NOT_FOUND", current_user, report_id, "FAILED", f"Report version {version if version is not None else 'latest'} not found.")
+        raise HTTPException(status_code=404, detail="Report not found.")
+    except PathTraversalException as pte:
+        service.log_report_access_event("REPORT_ACCESS_DENIED", current_user, report_id, "FAILED", f"Path traversal attempt: {pte}")
+        raise HTTPException(status_code=400, detail="Invalid report path.")
+    except IntegrityFailureException as ife:
+        service.log_report_access_event("REPORT_ACCESS_DENIED", current_user, report_id, "FAILED", f"Integrity failure: {ife}")
+        raise HTTPException(status_code=422, detail="Report integrity verification failed.")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="PDF report file not found on server disk.")
     except Exception as e:
-        logger.exception(f"Unexpected error in serve_report_pdf endpoint: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": "Internal server error occurred while retrieving PDF",
-                "reason": str(e)
-            }
-        )
+        logger.error(f"Error resolving PDF path: {e}")
+        raise HTTPException(status_code=500, detail="Internal error resolving PDF report.")
+
+    # 3. Log download success and serve
+    service.log_report_access_event("REPORT_DOWNLOADED", current_user, report_id, "SUCCESS", f"Downloaded report version {version if version is not None else 'latest'}")
+    filename = os.path.basename(pdf_path)
+    headers = {
+        "Content-Disposition": f"attachment; filename={filename}",
+        "X-Content-Type-Options": "nosniff"
+    }
+    return FileResponse(pdf_path, media_type="application/pdf", filename=filename, headers=headers)
 
 
 @router.get("/report/{report_id}/visuals/{visual_type}")
@@ -1145,30 +1091,25 @@ class StatusUpdateRequest(BaseModel):
 def get_report_metadata_api(report_id: int, current_user: User = Depends(get_current_user)):
     """Fetches Report metadata by ID, enforcing patient tenant boundaries."""
     service = ReportService(db_path=DEFAULT_DB_PATH)
+
+    access_status = service.check_report_access(report_id, current_user)
+    if access_status == "NOT_FOUND":
+        service.log_report_access_event("REPORT_NOT_FOUND", current_user, report_id, "FAILED", "Requested nonexistent report metadata.")
+        raise HTTPException(status_code=404, detail="Report not found.")
+    elif access_status == "UNAUTHORIZED":
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    elif access_status == "FORBIDDEN":
+        service.log_report_access_event("REPORT_ACCESS_DENIED", current_user, report_id, "FAILED", "Access denied to patient report metadata.")
+        raise HTTPException(status_code=403, detail="Access denied to patient report.")
+
     try:
         report = service.get_report(report_id)
-
-        # Enforce patient boundaries
-        if current_user.role == Role.PATIENT:
-            conn = sqlite3.connect(DEFAULT_DB_PATH)
-            conn.row_factory = sqlite3.Row
-            try:
-                row = conn.execute(
-                    "SELECT p.patient_id, p.name as patient_name FROM patients p WHERE p.patient_id = ?;",
-                    (report.patient_id,)
-                ).fetchone()
-                if not row or (row["patient_name"].lower() != current_user.full_name.lower() and row["patient_id"].lower() != current_user.uuid.lower()):
-                    raise HTTPException(status_code=403, detail="Access denied to patient report.")
-            finally:
-                conn.close()
-
         versions = service.get_report_versions(report_id)
         res = report.to_dict()
         res["versions"] = [v.to_dict() for v in versions]
+        service.log_report_access_event("REPORT_VIEWED", current_user, report_id, "SUCCESS", "Viewed report metadata.")
         return res
     except Exception as e:
-        if isinstance(e, HTTPException):
-            raise e
         logger.error(f"Error fetching report metadata: {e}")
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -1177,28 +1118,22 @@ def get_report_metadata_api(report_id: int, current_user: User = Depends(get_cur
 def get_report_versions_api(report_id: int, current_user: User = Depends(get_current_user)):
     """Fetches Report version history list, enforcing patient boundaries."""
     service = ReportService(db_path=DEFAULT_DB_PATH)
+
+    access_status = service.check_report_access(report_id, current_user)
+    if access_status == "NOT_FOUND":
+        service.log_report_access_event("REPORT_NOT_FOUND", current_user, report_id, "FAILED", "Requested version list for nonexistent report.")
+        raise HTTPException(status_code=404, detail="Report not found.")
+    elif access_status == "UNAUTHORIZED":
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    elif access_status == "FORBIDDEN":
+        service.log_report_access_event("REPORT_ACCESS_DENIED", current_user, report_id, "FAILED", "Access denied to patient report versions.")
+        raise HTTPException(status_code=403, detail="Access denied to patient report.")
+
     try:
-        report = service.get_report(report_id)
-
-        # Enforce patient boundaries
-        if current_user.role == Role.PATIENT:
-            conn = sqlite3.connect(DEFAULT_DB_PATH)
-            conn.row_factory = sqlite3.Row
-            try:
-                row = conn.execute(
-                    "SELECT p.patient_id, p.name as patient_name FROM patients p WHERE p.patient_id = ?;",
-                    (report.patient_id,)
-                ).fetchone()
-                if not row or (row["patient_name"].lower() != current_user.full_name.lower() and row["patient_id"].lower() != current_user.uuid.lower()):
-                    raise HTTPException(status_code=403, detail="Access denied to patient report.")
-            finally:
-                conn.close()
-
         versions = service.get_report_versions(report_id)
+        service.log_report_access_event("REPORT_VIEWED", current_user, report_id, "SUCCESS", "Viewed report versions list.")
         return [v.to_dict() for v in versions]
     except Exception as e:
-        if isinstance(e, HTTPException):
-            raise e
         logger.error(f"Error fetching report versions: {e}")
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -1265,33 +1200,40 @@ def patch_report_status_api(
 def get_report_version_details_api(report_id: int, version_id: int, current_user: User = Depends(get_current_user)):
     """Fetches details of a specific report version, enforcing patient boundaries."""
     service = ReportService(db_path=DEFAULT_DB_PATH)
+
+    access_status = service.check_report_access(report_id, current_user)
+    if access_status == "NOT_FOUND":
+        service.log_report_access_event("REPORT_NOT_FOUND", current_user, report_id, "FAILED", f"Requested version details for nonexistent report.")
+        raise HTTPException(status_code=404, detail="Report not found.")
+    elif access_status == "UNAUTHORIZED":
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    elif access_status == "FORBIDDEN":
+        service.log_report_access_event("REPORT_ACCESS_DENIED", current_user, report_id, "FAILED", f"Access denied to patient version details.")
+        raise HTTPException(status_code=403, detail="Access denied to patient report.")
+
     try:
-        report = service.get_report(report_id)
-
-        # Enforce patient boundaries
-        if current_user.role == Role.PATIENT:
-            conn = sqlite3.connect(DEFAULT_DB_PATH)
-            conn.row_factory = sqlite3.Row
-            try:
-                row = conn.execute(
-                    "SELECT p.patient_id, p.name as patient_name FROM patients p WHERE p.patient_id = ?;",
-                    (report.patient_id,)
-                ).fetchone()
-                if not row or (row["patient_name"].lower() != current_user.full_name.lower() and row["patient_id"].lower() != current_user.uuid.lower()):
-                    raise HTTPException(status_code=403, detail="Access denied to patient report.")
-            finally:
-                conn.close()
-
         versions = service.get_report_versions(report_id)
         target_version = next((v for v in versions if v.version_id == version_id), None)
         if not target_version:
             raise HTTPException(status_code=404, detail=f"Version ID {version_id} not found for report {report_id}.")
+        service.log_report_access_event("REPORT_VIEWED", current_user, report_id, "SUCCESS", f"Viewed version details for version: {target_version.version_number}")
         return target_version.to_dict()
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
         logger.error(f"Error fetching version details: {e}")
         raise HTTPException(status_code=404, detail=str(e))
+
+@router.get("/reports/audit-history")
+def get_reports_audit_history_api(current_user: User = Depends(get_current_user)):
+    """Retrieves report access history logs filtered according to user roles."""
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        logs = service.get_report_audit_history(current_user)
+        return logs
+    except Exception as e:
+        logger.error(f"Error fetching audit history: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error fetching audit history.")
 
 
 @router.get("/reports/verify/{token}")

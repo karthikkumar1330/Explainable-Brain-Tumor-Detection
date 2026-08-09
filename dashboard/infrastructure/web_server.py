@@ -891,6 +891,18 @@ def create_app(db_path: str) -> Flask:
     def get_report_details(current_user: User, report_id: int):
         from clinical_reporting.application.services import ReportService
         service = ReportService(db_path=app.config["DB_PATH"])
+
+        # Enforce report access check
+        access_status = service.check_report_access(report_id, current_user)
+        if access_status == "NOT_FOUND":
+            service.log_report_access_event("REPORT_NOT_FOUND", current_user, report_id, "FAILED", "Requested nonexistent report details.")
+            return jsonify({"error": "Report not found"}), 404
+        elif access_status == "UNAUTHORIZED":
+            return jsonify({"error": "Authentication required"}), 401
+        elif access_status == "FORBIDDEN":
+            service.log_report_access_event("REPORT_ACCESS_DENIED", current_user, report_id, "FAILED", "Access denied to patient report details.")
+            return jsonify({"error": "Access denied to patient report"}), 403
+
         try:
             # 1. Fetch current active report details
             conn = sqlite3.connect(app.config["DB_PATH"])
@@ -914,11 +926,6 @@ def create_app(db_path: str) -> Flask:
             finally:
                 conn.close()
 
-            # Enforce patient boundaries
-            if current_user.role == Role.PATIENT:
-                if report_dict["patient_name"].lower() != current_user.full_name.lower() and report_dict["patient_id"].lower() != current_user.uuid.lower():
-                    return jsonify({"error": "Access denied to patient report"}), 403
-
             # 2. Enrich with ReportService metadata & versions
             report = service.get_report(report_id)
             versions = service.get_report_versions(report_id)
@@ -929,6 +936,7 @@ def create_app(db_path: str) -> Flask:
             report_dict["updated_at"] = report.updated_at
             report_dict["versions"] = [v.to_dict() for v in versions]
 
+            service.log_report_access_event("REPORT_VIEWED", current_user, report_id, "SUCCESS", "Viewed report details.")
             return jsonify(report_dict)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -1005,7 +1013,6 @@ def create_app(db_path: str) -> Flask:
     @login_required
     def get_pdf(current_user: User, report_id: int):
         import logging
-        from pathlib import Path
         logger = logging.getLogger("dashboard.web_server.get_pdf")
 
         version_str = request.args.get("version")
@@ -1018,84 +1025,60 @@ def create_app(db_path: str) -> Flask:
 
         logger.info(f"Flask API request received for PDF. Report ID: {report_id}, User: {current_user.email}, Version: {version}")
 
-        if current_user.role == Role.PATIENT:
-            conn = sqlite3.connect(app.config["DB_PATH"])
-            conn.row_factory = sqlite3.Row
-            try:
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    SELECT p.patient_id, p.name as patient_name
-                    FROM clinical_reports cr
-                    JOIN predictions pr ON cr.prediction_id = pr.id
-                    JOIN mri_scans s ON pr.scan_id = s.id
-                    JOIN patients p ON s.patient_id = p.patient_id
-                    WHERE cr.id = ?;
-                    """,
-                    (report_id,)
-                )
-                row = cursor.fetchone()
-                if not row:
-                    logger.warning(f"Report ID {report_id} not found in database for patient check.")
-                    return jsonify({"error": "Report not found"}), 404
-                if row["patient_name"].lower() != current_user.full_name.lower() and row["patient_id"].lower() != current_user.uuid.lower():
-                    logger.warning(f"Access denied to patient report PDF for report_id: {report_id}, User: {current_user.email}")
-                    return jsonify({"error": "Access denied to patient report PDF"}), 403
-            except Exception as e:
-                logger.error(f"Database error during patient access check: {e}")
-                return jsonify({"error": "Database access error during validation"}), 500
-            finally:
-                conn.close()
+        from clinical_reporting.application.services import (
+            ReportService, ReportNotFoundException, VersionNotFoundException,
+            PathTraversalException, IntegrityFailureException
+        )
+        service = ReportService(db_path=app.config["DB_PATH"])
 
+        # 1. Enforce access check
+        access_status = service.check_report_access(report_id, current_user)
+        if access_status == "NOT_FOUND":
+            service.log_report_access_event("REPORT_NOT_FOUND", current_user, report_id, "FAILED", "Requested nonexistent report.")
+            return jsonify({"error": "Report not found"}), 404
+        elif access_status == "UNAUTHORIZED":
+            return jsonify({"error": "Authentication required"}), 401
+        elif access_status == "FORBIDDEN":
+            service.log_report_access_event("REPORT_ACCESS_DENIED", current_user, report_id, "FAILED", "Access denied to patient report.")
+            return jsonify({"error": "Access denied to patient report"}), 403
+
+        # 2. Resolve PDF path with security checks and integrity verification
         try:
-            if version is not None:
-                conn = sqlite3.connect(app.config["DB_PATH"])
-                conn.row_factory = sqlite3.Row
-                try:
-                    row = conn.execute(
-                        "SELECT pdf_path FROM report_versions WHERE report_id = ? AND version_number = ?;",
-                        (report_id, version)
-                    ).fetchone()
-                    if not row:
-                        return jsonify({"error": f"Version {version} not found for report {report_id}."}), 404
-                    pdf_path = row["pdf_path"]
-                finally:
-                    conn.close()
-            else:
-                from clinical_reporting.infrastructure.pdf_generator import load_or_regenerate_pdf
-                pdf_path = load_or_regenerate_pdf(report_id, app.config["DB_PATH"])
-
-            if not pdf_path:
-                logger.error(f"load_or_regenerate_pdf returned None for report_id: {report_id}")
-                return jsonify({
-                    "error": "PDF path could not be resolved from database",
-                    "reason": f"No report with ID {report_id} or pdf_path is null in the database."
-                }), 404
-
-            pdf_path_obj = Path(pdf_path).resolve()
-            output_dir = pdf_path_obj.parent
-            filename = pdf_path_obj.name
-
-            logger.info(f"Resolving PDF path. Directory: {output_dir}, Filename: {filename}")
-
-            # File exists check
-            if not pdf_path_obj.is_file():
-                logger.error(f"PDF file does not exist on disk at: {pdf_path_obj}")
-                return jsonify({
-                    "error": "PDF report file not found on server disk",
-                    "reason": "The file does not exist at the resolved absolute path.",
-                    "path": str(pdf_path_obj)
-                }), 404
-
-            logger.info(f"PDF file verified. Serving PDF from: {pdf_path_obj}")
-            return send_file(str(pdf_path_obj), mimetype="application/pdf")
-
+            pdf_path = service.resolve_secure_pdf_path(report_id, version)
+        except (ReportNotFoundException, VersionNotFoundException):
+            service.log_report_access_event("REPORT_NOT_FOUND", current_user, report_id, "FAILED", f"Report version {version if version is not None else 'latest'} not found.")
+            return jsonify({"error": "Report not found"}), 404
+        except PathTraversalException as pte:
+            service.log_report_access_event("REPORT_ACCESS_DENIED", current_user, report_id, "FAILED", f"Path traversal attempt: {pte}")
+            return jsonify({"error": "Invalid report path"}), 400
+        except IntegrityFailureException as ife:
+            service.log_report_access_event("REPORT_ACCESS_DENIED", current_user, report_id, "FAILED", f"Integrity failure: {ife}")
+            return jsonify({"error": "Report integrity verification failed."}), 422
+        except FileNotFoundError:
+            return jsonify({"error": "PDF report file not found on server disk"}), 404
         except Exception as e:
-            logger.exception(f"Unexpected error in get_pdf endpoint: {e}")
-            return jsonify({
-                "error": "Internal server error occurred while retrieving PDF",
-                "reason": str(e)
-            }), 500
+            logger.error(f"Error resolving PDF path: {e}")
+            return jsonify({"error": "Internal error resolving PDF report."}), 500
+
+        # 3. Log download success and serve
+        service.log_report_access_event("REPORT_DOWNLOADED", current_user, report_id, "SUCCESS", f"Downloaded report version {version if version is not None else 'latest'}")
+        filename = os.path.basename(pdf_path)
+
+        response = send_file(pdf_path, mimetype="application/pdf", download_name=filename, as_attachment=True)
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
+    @app.route("/api/reports/audit-history", methods=["GET"])
+    @login_required
+    def get_report_audit_history_flask(current_user: User):
+        from clinical_reporting.application.services import ReportService
+        service = ReportService(db_path=app.config["DB_PATH"])
+        try:
+            logs = service.get_report_audit_history(current_user)
+            return jsonify(logs)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
     @app.route("/api/report/<int:report_id>/visuals/<image_type>")
     @roles_accepted(Role.ADMIN, Role.DOCTOR)
