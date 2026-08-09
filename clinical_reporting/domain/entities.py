@@ -334,3 +334,31 @@ class ReportComparison:
     summary_status: str  # "STABLE", "MEASUREMENTS_INCREASED", "MEASUREMENTS_DECREASED", "CLASSIFICATION_CHANGED", "MULTIPLE_CHANGES"
     summary_text: str
     disclaimer: str
+
+
+@dataclass(frozen=True)
+class FollowUpComparisonMetric:
+    name: str
+    previous_value: Any
+    current_value: Any
+    absolute_change: Optional[float] = None
+    percentage_change: Optional[float] = None
+    status: str = "UNAVAILABLE"  # "INCREASED", "DECREASED", "STABLE", "UNAVAILABLE"
+
+
+@dataclass(frozen=True)
+class FollowUpComparison:
+    comparison_id: str
+    patient_id: str
+    previous_report_id: int
+    current_report_id: int
+    previous_version: int
+    current_version: int
+    previous_scan_date: Optional[str]
+    current_scan_date: Optional[str]
+    created_at: str
+    created_by: str
+    metrics: List[FollowUpComparisonMetric]
+    summary_status: str
+    summary_text: str
+    disclaimer: str

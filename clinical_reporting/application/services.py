@@ -8,7 +8,7 @@ import logging
 import hashlib
 from typing import List, Optional, Tuple, Dict, Any
 
-from clinical_reporting.domain.entities import Report, ReportVersion, ReportStatus, can_transition, PatientMismatchException, ComparisonMetric, ReportComparison
+from clinical_reporting.domain.entities import Report, ReportVersion, ReportStatus, can_transition, PatientMismatchException, ComparisonMetric, ReportComparison, FollowUpComparisonMetric, FollowUpComparison
 
 
 class ReportServiceException(Exception):
@@ -1344,16 +1344,362 @@ class ReportService:
 
         return sanitize_non_finite_values(res_dict)
 
+    FOLLOWUP_TOLERANCES = {
+        "confidence": 0.01,
+        "tumor_area_mm2": 0.1,
+        "tumor_percentage_brain": 0.0001,
+        "perimeter": 0.1,
+        "bbox_w_mm": 0.1,
+        "bbox_h_mm": 0.1,
+        "solidity": 0.01,
+        "circularity": 0.01,
+        "eccentricity": 0.01,
+        "orientation": 1.0
+    }
+
+    def compare_followup_reports(
+        self,
+        previous_report_id: int,
+        current_report_id: int,
+        previous_version: Optional[int] = None,
+        current_version: Optional[int] = None,
+        actor: Optional[Any] = None,
+        tolerances: Optional[Dict[str, float]] = None
+    ) -> Dict[str, Any]:
+        """Compares two report versions longitudinally, quantifying changes for follow-up evaluation."""
+        self.logger.info(
+            f"Comparing follow-up reports: Prev ID={previous_report_id} (v={previous_version}) "
+            f"vs Curr ID={current_report_id} (v={current_version}) by actor={actor}"
+        )
+
+        # 1. Enforce RBAC access check on both reports
+        status_prev = self.check_report_access(previous_report_id, actor)
+        if status_prev == "NOT_FOUND":
+            self.log_report_access_event("REPORT_NOT_FOUND", actor, previous_report_id, "FAILED", "Requested nonexistent previous report for follow-up comparison.")
+            raise ReportNotFoundException(f"Previous report with ID {previous_report_id} not found.")
+        elif status_prev == "UNAUTHORIZED":
+            raise ReportServiceException("Authentication required.")
+        elif status_prev == "FORBIDDEN":
+            self.log_report_access_event("REPORT_ACCESS_DENIED", actor, previous_report_id, "FAILED", "Access denied to previous report for follow-up comparison.")
+            raise ReportServiceException("Access denied to previous report.")
+
+        status_curr = self.check_report_access(current_report_id, actor)
+        if status_curr == "NOT_FOUND":
+            self.log_report_access_event("REPORT_NOT_FOUND", actor, current_report_id, "FAILED", "Requested nonexistent current report for follow-up comparison.")
+            raise ReportNotFoundException(f"Current report with ID {current_report_id} not found.")
+        elif status_curr == "UNAUTHORIZED":
+            raise ReportServiceException("Authentication required.")
+        elif status_curr == "FORBIDDEN":
+            self.log_report_access_event("REPORT_ACCESS_DENIED", actor, current_report_id, "FAILED", "Access denied to current report for follow-up comparison.")
+            raise ReportServiceException("Access denied to current report.")
+
+        # 2. Fetch both report versions details
+        conn = self._get_connection()
+        try:
+            prev_data = self._fetch_report_version_data(conn, previous_report_id, previous_version)
+            curr_data = self._fetch_report_version_data(conn, current_report_id, current_version)
+        finally:
+            conn.close()
+
+        # 3. Validate same patient
+        if str(prev_data["patient_id"]).lower() != str(curr_data["patient_id"]).lower():
+            raise PatientMismatchException("Cannot compare reports belonging to different patients.")
+
+        # Resolve tolerances
+        tols = dict(self.FOLLOWUP_TOLERANCES)
+        if tolerances:
+            tols.update(tolerances)
+
+        import math
+
+        def safe_float(val: Any) -> Optional[float]:
+            if val is None:
+                return None
+            try:
+                f = float(val)
+                if not math.isfinite(f):
+                    return None
+                return f
+            except (ValueError, TypeError):
+                return None
+
+        def compare_numeric(name: str, prev_val: Any, curr_val: Any) -> FollowUpComparisonMetric:
+            p_f = safe_float(prev_val)
+            c_f = safe_float(curr_val)
+            if p_f is None or c_f is None:
+                return FollowUpComparisonMetric(
+                    name=name,
+                    previous_value=p_f,
+                    current_value=c_f,
+                    absolute_change=None,
+                    percentage_change=None,
+                    status="UNAVAILABLE"
+                )
+            tol = tols.get(name, 1e-4)
+            abs_change = c_f - p_f
+            if abs(abs_change) <= tol:
+                status = "STABLE"
+            elif abs_change > 0:
+                status = "INCREASED"
+            else:
+                status = "DECREASED"
+
+            if p_f == 0.0:
+                pct_change = None
+            else:
+                pct_change = (abs_change / abs(p_f)) * 100.0
+
+            return FollowUpComparisonMetric(
+                name=name,
+                previous_value=p_f,
+                current_value=c_f,
+                absolute_change=round(abs_change, 5),
+                percentage_change=round(pct_change, 4) if pct_change is not None else None,
+                status=status
+            )
+
+        metrics = []
+
+        # Classification
+        prev_cls = prev_data.get("classification")
+        curr_cls = curr_data.get("classification")
+        if prev_cls is None or curr_cls is None:
+            cls_status = "UNAVAILABLE"
+        elif prev_cls == curr_cls:
+            cls_status = "STABLE"
+        elif prev_cls == "No Tumor":
+            cls_status = "INCREASED"
+        elif curr_cls == "No Tumor":
+            cls_status = "DECREASED"
+        else:
+            cls_status = "INCREASED"
+
+        metrics.append(FollowUpComparisonMetric(
+            name="classification",
+            previous_value=prev_cls,
+            current_value=curr_cls,
+            absolute_change=None,
+            percentage_change=None,
+            status=cls_status
+        ))
+
+        # Confidence
+        metrics.append(compare_numeric("confidence", prev_data.get("confidence"), curr_data.get("confidence")))
+
+        # Tumor area
+        area_metric = compare_numeric("tumor_area_mm2", prev_data.get("tumor_area_mm2"), curr_data.get("tumor_area_mm2"))
+        metrics.append(area_metric)
+
+        # Brain occupancy percentage
+        metrics.append(compare_numeric("tumor_percentage_brain", prev_data.get("tumor_percentage_brain"), curr_data.get("tumor_percentage_brain")))
+
+        # Severity
+        prev_sev = str(prev_data.get("severity", "LOW")).upper()
+        curr_sev = str(curr_data.get("severity", "LOW")).upper()
+        severity_order = {"NORMAL": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4, "NORMAL/NO TUMOR": 0, "LOW SEVERITY": 1, "MEDIUM SEVERITY": 2, "HIGH SEVERITY": 3, "CRITICAL SEVERITY": 4}
+        prev_idx = severity_order.get(prev_sev, -1)
+        curr_idx = severity_order.get(curr_sev, -1)
+        if prev_idx != -1 and curr_idx != -1:
+            if curr_idx > prev_idx:
+                sev_status = "INCREASED"
+            elif curr_idx < prev_idx:
+                sev_status = "DECREASED"
+            else:
+                sev_status = "STABLE"
+        else:
+            sev_status = "UNAVAILABLE"
+
+        metrics.append(FollowUpComparisonMetric(
+            name="severity",
+            previous_value=prev_sev,
+            current_value=curr_sev,
+            absolute_change=None,
+            percentage_change=None,
+            status=sev_status
+        ))
+
+        # Perimeter
+        prev_p = prev_data.get("morphology", {}).get("perimeter_mm")
+        if prev_p is None:
+            prev_p = prev_data.get("morphology", {}).get("perimeter")
+        curr_p = curr_data.get("morphology", {}).get("perimeter_mm")
+        if curr_p is None:
+            curr_p = curr_data.get("morphology", {}).get("perimeter")
+        metrics.append(compare_numeric("perimeter", prev_p, curr_p))
+
+        # Bounding box dimensions
+        prev_bw = prev_data.get("morphology", {}).get("bbox_w_mm")
+        curr_bw = curr_data.get("morphology", {}).get("bbox_w_mm")
+        metrics.append(compare_numeric("bbox_w_mm", prev_bw, curr_bw))
+
+        prev_bh = prev_data.get("morphology", {}).get("bbox_h_mm")
+        curr_bh = curr_data.get("morphology", {}).get("bbox_h_mm")
+        metrics.append(compare_numeric("bbox_h_mm", prev_bh, curr_bh))
+
+        # Solidity
+        prev_sol = prev_data.get("morphology", {}).get("solidity")
+        if prev_sol is None:
+            prev_sol = prev_data.get("morphology", {}).get("compactness")
+        curr_sol = curr_data.get("morphology", {}).get("solidity")
+        if curr_sol is None:
+            curr_sol = curr_data.get("morphology", {}).get("compactness")
+        metrics.append(compare_numeric("solidity", prev_sol, curr_sol))
+
+        # Circularity
+        prev_circ = prev_data.get("morphology", {}).get("circularity")
+        curr_circ = curr_data.get("morphology", {}).get("circularity")
+        metrics.append(compare_numeric("circularity", prev_circ, curr_circ))
+
+        # Eccentricity
+        prev_ecc = prev_data.get("morphology", {}).get("eccentricity")
+        curr_ecc = curr_data.get("morphology", {}).get("eccentricity")
+        metrics.append(compare_numeric("eccentricity", prev_ecc, curr_ecc))
+
+        # Orientation
+        prev_ori = prev_data.get("morphology", {}).get("orientation_deg")
+        if prev_ori is None:
+            prev_ori = prev_data.get("morphology", {}).get("orientation")
+        curr_ori = curr_data.get("morphology", {}).get("orientation_deg")
+        if curr_ori is None:
+            curr_ori = curr_data.get("morphology", {}).get("orientation")
+        metrics.append(compare_numeric("orientation", prev_ori, curr_ori))
+
+        # Clinical findings
+        prev_find = prev_data.get("clinical_findings")
+        curr_find = curr_data.get("clinical_findings")
+        find_status = "UNAVAILABLE"
+        if prev_find is not None and curr_find is not None:
+            find_status = "STABLE" if prev_find == curr_find else "STABLE"
+
+        metrics.append(FollowUpComparisonMetric(
+            name="clinical_findings",
+            previous_value=prev_find,
+            current_value=curr_find,
+            absolute_change=None,
+            percentage_change=None,
+            status=find_status
+        ))
+
+        # 4. Generate deterministic comparison summary based ONLY on actual measured values
+        if area_metric.status == "INCREASED":
+            if area_metric.percentage_change is not None:
+                summary_text = f"Tumor area increased by {area_metric.percentage_change:.1f}%"
+            else:
+                summary_text = f"Tumor area increased by {area_metric.absolute_change:.2f} mm²"
+            summary_status = "MEASUREMENTS_INCREASED"
+        elif area_metric.status == "DECREASED":
+            if area_metric.percentage_change is not None:
+                summary_text = f"Tumor area decreased by {abs(area_metric.percentage_change):.1f}%"
+            else:
+                summary_text = f"Tumor area decreased by {abs(area_metric.absolute_change):.2f} mm²"
+            summary_status = "MEASUREMENTS_DECREASED"
+        elif area_metric.status == "STABLE":
+            summary_text = "Tumor area remained stable"
+            summary_status = "STABLE"
+        else:
+            summary_text = "Comparison unavailable because previous measurement is missing"
+            summary_status = "UNAVAILABLE"
+
+        import secrets
+        comparison_id = f"CMP-{secrets.token_hex(8).upper()}"
+        created_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        created_by_str = actor.email if (actor and hasattr(actor, "email")) else (str(actor) if actor else "System")
+
+        disclaimer = (
+            "This comparison summarizes differences between stored AI-derived report measurements. "
+            "It is not a medical diagnosis and should be interpreted by a qualified healthcare professional."
+        )
+
+        comparison = FollowUpComparison(
+            comparison_id=comparison_id,
+            patient_id=prev_data["patient_id"],
+            previous_report_id=previous_report_id,
+            current_report_id=current_report_id,
+            previous_version=prev_data["version_number"],
+            current_version=curr_data["version_number"],
+            previous_scan_date=prev_data.get("scan_date"),
+            current_scan_date=curr_data.get("scan_date"),
+            created_at=created_at,
+            created_by=created_by_str,
+            metrics=metrics,
+            summary_status=summary_status,
+            summary_text=summary_text,
+            disclaimer=disclaimer
+        )
+
+        # Log comparison event in security audit log
+        conn = self._get_connection()
+        try:
+            self._log_security_audit_event(
+                conn,
+                "REPORT_COMPARED",
+                actor,
+                previous_report_id,
+                "SUCCESS",
+                f"Compared follow-up with current report ID: {current_report_id}. Summary status: {summary_status}"
+            )
+            conn.commit()
+        except Exception as audit_err:
+            self.logger.warning(f"Failed to log follow-up comparison security event: {audit_err}")
+        finally:
+            conn.close()
+
+        # Convert back to dict
+        res_dict = {
+            "comparison_id": comparison.comparison_id,
+            "patient_id": comparison.patient_id,
+            "previous_report": {
+                "report_id": comparison.previous_report_id,
+                "version": comparison.previous_version,
+                "scan_date": comparison.previous_scan_date
+            },
+            "current_report": {
+                "report_id": comparison.current_report_id,
+                "version": comparison.current_version,
+                "scan_date": comparison.current_scan_date
+            },
+            "metrics": [
+                {
+                    "name": m.name,
+                    "previous_value": m.previous_value,
+                    "current_value": m.current_value,
+                    "absolute_change": m.absolute_change,
+                    "percentage_change": m.percentage_change,
+                    "status": m.status
+                } for m in comparison.metrics
+            ],
+            "summary": {
+                "status": comparison.summary_status,
+                "text": comparison.summary_text
+            },
+            "disclaimer": comparison.disclaimer
+        }
+
+        def sanitize_non_finite_values(val: Any) -> Any:
+            if isinstance(val, dict):
+                return {k: sanitize_non_finite_values(v) for k, v in val.items()}
+            elif isinstance(val, list):
+                return [sanitize_non_finite_values(v) for v in val]
+            elif isinstance(val, float):
+                if math.isnan(val) or math.isinf(val):
+                    return None
+                return val
+            return val
+
+        return sanitize_non_finite_values(res_dict)
+
     def _fetch_report_version_data(self, conn: sqlite3.Connection, report_id: int, version: Optional[int]) -> Dict[str, Any]:
         """Helper to fetch a specific or latest version and prediction parameters, falling back to JSON file on disk."""
         if version is not None:
             query = """
                 SELECT rv.version_number, rv.json_path, rv.prediction_id, r.patient_id, r.report_number,
                        p.predicted_class, p.confidence_score, p.tumor_area_mm2, p.tumor_percentage_brain,
-                       p.rule_based_severity, p.severity_rule_description
+                       p.rule_based_severity, p.severity_rule_description,
+                       ms.scan_date
                 FROM report_versions rv
                 JOIN reports r ON rv.report_id = r.report_id
                 LEFT JOIN predictions p ON rv.prediction_id = p.id
+                LEFT JOIN mri_scans ms ON p.scan_id = ms.id
                 WHERE rv.report_id = ? AND rv.version_number = ?;
             """
             row = conn.execute(query, (report_id, version)).fetchone()
@@ -1363,10 +1709,12 @@ class ReportService:
             query = """
                 SELECT rv.version_number, rv.json_path, rv.prediction_id, r.patient_id, r.report_number,
                        p.predicted_class, p.confidence_score, p.tumor_area_mm2, p.tumor_percentage_brain,
-                       p.rule_based_severity, p.severity_rule_description
+                       p.rule_based_severity, p.severity_rule_description,
+                       ms.scan_date
                 FROM report_versions rv
                 JOIN reports r ON rv.report_id = r.report_id
                 LEFT JOIN predictions p ON rv.prediction_id = p.id
+                LEFT JOIN mri_scans ms ON p.scan_id = ms.id
                 WHERE rv.report_id = ? AND rv.version_number = r.current_version;
             """
             row = conn.execute(query, (report_id,)).fetchone()
@@ -1378,6 +1726,7 @@ class ReportService:
             "version_number": row["version_number"],
             "patient_id": row["patient_id"],
             "report_number": row["report_number"],
+            "scan_date": row["scan_date"],
             "classification": row["predicted_class"] or "No Tumor",
             "confidence": row["confidence_score"] or 0.0,
             "tumor_area_mm2": row["tumor_area_mm2"] or 0.0,
@@ -1398,6 +1747,7 @@ class ReportService:
                 # Enrich patient
                 if "patient" in data:
                     res["patient_id"] = data["patient"].get("patient_id", res["patient_id"])
+                    res["scan_date"] = data["patient"].get("scan_date", res["scan_date"])
 
                 # Enrich classification
                 if "classification" in data:
