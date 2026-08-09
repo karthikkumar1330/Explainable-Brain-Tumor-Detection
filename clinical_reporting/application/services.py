@@ -2278,12 +2278,131 @@ class ReportService:
             )
 
             # 5. Progression status distribution for all patients in the system
+            def clean_float(val: Any) -> Optional[float]:
+                if val is None:
+                    return None
+                try:
+                    f = float(val)
+                    if math.isnan(f) or math.isinf(f):
+                        return None
+                    return f
+                except (ValueError, TypeError):
+                    if isinstance(val, str):
+                        if val.lower().strip() in ("nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity"):
+                            return None
+                    return None
+
             progression_distribution = {}
-            rows_patients = conn.execute("SELECT patient_id FROM patients;").fetchall()
+            rows_patients = conn.execute("SELECT patient_id, name FROM patients;").fetchall()
+
+            # Execute a single set-based query to retrieve report version metadata and predictions for all patients
+            query_all_timelines = """
+                SELECT rv.report_id, rv.version_number, rv.prediction_id, rv.json_path, rv.status as version_status,
+                       r.patient_id, r.report_number, r.status as report_status,
+                       p.predicted_class, p.confidence_score, p.tumor_area_mm2, p.tumor_percentage_brain,
+                       p.rule_based_severity,
+                       ms.id as scan_id, ms.scan_date
+                FROM report_versions rv
+                JOIN reports r ON rv.report_id = r.report_id
+                LEFT JOIN predictions p ON rv.prediction_id = p.id
+                LEFT JOIN mri_scans ms ON p.scan_id = ms.id
+                WHERE rv.version_number = r.current_version;
+            """
+            all_rows = conn.execute(query_all_timelines).fetchall()
+
+            # Group rows by patient_id
+            from collections import defaultdict
+            patient_timeline_rows = defaultdict(list)
+            for row in all_rows:
+                pat_id_key = str(row["patient_id"]).strip().lower()
+                patient_timeline_rows[pat_id_key].append(row)
+
             for row_pat in rows_patients:
                 pat_id = row_pat["patient_id"]
+                pat_name = row_pat["name"]
+                stripped_id = str(pat_id).strip()
+                lookup_key = stripped_id.lower()
+
                 try:
-                    timeline = self.get_patient_longitudinal_timeline(patient_id=pat_id, actor=actor)
+                    # Enforce name length and traversal checks (matching timeline domain constraints)
+                    if not stripped_id or len(stripped_id) > 64:
+                        raise ReportServiceException("Patient ID too long or malformed.")
+                    if "/" in stripped_id or "\\" in stripped_id or ".." in stripped_id:
+                        raise ReportServiceException("Malformed patient ID.")
+
+                    events = []
+                    for row in patient_timeline_rows[lookup_key]:
+                        report_id = row["report_id"]
+                        scan_id = row["scan_id"]
+                        scan_date = row["scan_date"]
+                        classification = row["predicted_class"]
+                        confidence = clean_float(row["confidence_score"])
+                        tumor_area = clean_float(row["tumor_area_mm2"])
+                        tumor_percentage = clean_float(row["tumor_percentage_brain"])
+                        severity = row["rule_based_severity"]
+                        report_status = row["report_status"]
+
+                        # JSON file enrichment exactly as get_patient_longitudinal_timeline
+                        json_path = row["json_path"]
+                        if json_path and os.path.exists(json_path):
+                            try:
+                                import json
+                                with open(json_path, "r", encoding="utf-8") as f:
+                                    data = json.load(f)
+
+                                # Report-level Security: Verify Patient ID in JSON matches expected patient_id
+                                if "patient" in data:
+                                    file_patient_id = data["patient"].get("patient_id")
+                                    if file_patient_id and str(file_patient_id).strip() != str(stripped_id).strip():
+                                        data = {}
+
+                                    if data:
+                                        scan_date = data["patient"].get("scan_date", scan_date)
+                                if "classification" in data:
+                                    c = data["classification"]
+                                    classification = c.get("predicted_class", classification)
+                                    confidence = clean_float(c.get("confidence_score", confidence))
+                                if "segmentation" in data:
+                                    s = data["segmentation"]
+                                    tumor_area = clean_float(s.get("tumor_area_mm2", tumor_area))
+                                    tumor_percentage = clean_float(s.get("tumor_percentage_brain", tumor_percentage))
+                                if "severity" in data:
+                                    severity = data["severity"].get("category", severity)
+                            except Exception:
+                                pass
+
+                        severity_score = None
+                        if severity:
+                            sev_upper = str(severity).upper()
+                            if sev_upper in ("LOW", "MEDIUM", "HIGH"):
+                                if sev_upper == "LOW":
+                                    severity_score = 0.33
+                                elif sev_upper == "MEDIUM":
+                                    severity_score = 0.66
+                                elif sev_upper == "HIGH":
+                                    severity_score = 1.0
+
+                        event = LongitudinalTimelineEvent(
+                            report_id=report_id,
+                            scan_id=scan_id,
+                            patient_id=stripped_id,
+                            scan_date=scan_date,
+                            classification=classification,
+                            confidence=confidence,
+                            tumor_area=tumor_area,
+                            tumor_percentage=tumor_percentage,
+                            severity=severity,
+                            severity_score=severity_score,
+                            report_status=report_status
+                        )
+                        events.append(event)
+
+                    # Build domain timeline (automatically sorts and populates trends)
+                    timeline = LongitudinalPatientTimeline(
+                        patient_id=stripped_id,
+                        patient_name=pat_name,
+                        events=events
+                    )
                     status = timeline.timeline_status
                     progression_distribution[status] = progression_distribution.get(status, 0) + 1
                 except Exception:

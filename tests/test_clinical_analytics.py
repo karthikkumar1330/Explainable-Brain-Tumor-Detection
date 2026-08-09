@@ -307,5 +307,283 @@ class TestClinicalAnalyticsAPI(unittest.TestCase):
         self.assertEqual(clean_payload["normal"], 42.5)
         self.assertIsNone(clean_payload["nested"]["nested_nan"])
 
+    def test_population_analytics_query_count_is_constant(self):
+        """Verify that get_population_analytics runs a constant number of queries instead of N+1."""
+        service = ReportService(db_path=self.db_path)
+        queries_run = []
+
+        class SpyConnection:
+            def __init__(self, real_conn):
+                self.real_conn = real_conn
+            def execute(self, sql, *args, **kwargs):
+                queries_run.append(sql)
+                return self.real_conn.execute(sql, *args, **kwargs)
+            def executemany(self, sql, *args, **kwargs):
+                queries_run.append(sql)
+                return self.real_conn.executemany(sql, *args, **kwargs)
+            def commit(self):
+                return self.real_conn.commit()
+            def close(self):
+                return self.real_conn.close()
+
+        original_get_conn = service._get_connection
+        def spy_get_connection():
+            real_conn = original_get_conn()
+            return SpyConnection(real_conn)
+
+        service._get_connection = spy_get_connection
+
+        # Measure query count for 2 patients
+        service.get_population_analytics(actor=self.doctor)
+        count_for_2 = len(queries_run)
+
+        # Clear queries log
+        queries_run.clear()
+
+        # Seed 5 more patients in database
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            for i in range(5):
+                cursor.execute(
+                    "INSERT INTO patients (patient_id, name, age, gender, created_at) VALUES (?, ?, ?, ?, ?);",
+                    (f"pat-uuid-extra-{i}", f"Extra Patient {i}", 40, "Male", "2026-08-01T00:00:00")
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Measure query count for 7 patients
+        service.get_population_analytics(actor=self.doctor)
+        count_for_7 = len(queries_run)
+
+        # Assert that the number of queries executed did not increase with N
+        self.assertEqual(count_for_2, count_for_7, f"Query count increased from {count_for_2} to {count_for_7} when adding patients! N+1 pattern detected.")
+
+    def test_population_analytics_semantic_scenarios(self):
+        """Test semantic clinical analytics scenarios: 0/1/multiple patients, missing prediction/measurements, zero baseline, NaN/Infinity."""
+        temp_db_fd, temp_db_path = tempfile.mkstemp(suffix=".db")
+        try:
+            from persistence.infrastructure.repository import SQLitePersistenceRepository
+            clinical_repo = SQLitePersistenceRepository(db_path=temp_db_path)
+            clinical_repo.initialize_db()
+
+            service = ReportService(db_path=temp_db_path)
+
+            # Scenario A: 0 patients
+            analytics = service.get_population_analytics(actor=self.doctor)
+            self.assertEqual(analytics.total_patients, 0)
+            self.assertEqual(analytics.total_reports, 0)
+            self.assertEqual(analytics.total_scans, 0)
+            self.assertEqual(analytics.progression_distribution, {})
+
+            # Setup Scenario B: Patient with no reports
+            conn = sqlite3.connect(temp_db_path)
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO patients (patient_id, name, age, gender, created_at) VALUES (?, ?, ?, ?, ?);",
+                           ("pat-no-reports", "No Reports Patient", 45, "Male", "2026-08-01"))
+            conn.commit()
+            conn.close()
+
+            analytics = service.get_population_analytics(actor=self.doctor)
+            self.assertEqual(analytics.total_patients, 1)
+            # A patient with no reports has timeline status "EMPTY"
+            self.assertEqual(analytics.progression_distribution.get("EMPTY"), 1)
+
+            # Setup Scenario C: Patient with one report (Baseline)
+            conn = sqlite3.connect(temp_db_path)
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO patients (patient_id, name, age, gender, created_at) VALUES (?, ?, ?, ?, ?);",
+                           ("pat-one-report", "One Report Patient", 50, "Female", "2026-08-01"))
+            cursor.execute("INSERT INTO mri_scans (patient_id, image_path, pixel_spacing_mm, ref_physician, scan_date, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+                           ("pat-one-report", "scans/1.png", 1.0, "Dr. House", "2026-08-02", "2026-08-02"))
+            scan_id = cursor.lastrowid
+            cursor.execute("""
+                INSERT INTO predictions (
+                    scan_id, predicted_class, confidence_score, prob_glioma, prob_meningioma,
+                    prob_pituitary, prob_no_tumor, tumor_pixel_count, tumor_area_mm2,
+                    tumor_percentage_brain, tumor_percentage_image, estimated_brain_pixel_count,
+                    rule_based_severity, severity_rule_description, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """, (scan_id, "Glioma", 0.95, 0.95, 0.0, 0.0, 0.05, 100, 150.0, 1.5, 0.5, 10000, "Medium", "desc", "2026-08-02"))
+            pred_id = cursor.lastrowid
+            cursor.execute("INSERT INTO reports (report_id, report_number, patient_id, current_version, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?);",
+                           (1001, "RPT-1001", "pat-one-report", 1, "FINAL", "2026-08-02", "2026-08-02"))
+            cursor.execute("INSERT INTO report_versions (report_id, version_number, prediction_id, status, reason, pdf_path, json_path, checksum, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                           (1001, 1, pred_id, "FINAL", "Baseline", "rep.pdf", "rep.json", "hash", "2026-08-02"))
+            conn.commit()
+            conn.close()
+
+            analytics = service.get_population_analytics(actor=self.doctor)
+            self.assertEqual(analytics.total_patients, 2)
+            self.assertEqual(analytics.progression_distribution.get("EMPTY"), 1)
+            # A patient with a single report has timeline status "STABLE"
+            self.assertEqual(analytics.progression_distribution.get("STABLE"), 1)
+
+            # Write temporary JSON files for NaN and Infinity mock data to test file enrichment sanitization
+            import json
+            json_nz1_path = os.path.abspath(os.path.join(os.path.dirname(temp_db_path), "nz1.json"))
+            json_nz2_path = os.path.abspath(os.path.join(os.path.dirname(temp_db_path), "nz2.json"))
+
+            with open(json_nz1_path, "w") as f:
+                json.dump({
+                    "classification": {"confidence_score": "nan"}
+                }, f)
+
+            with open(json_nz2_path, "w") as f:
+                json.dump({
+                    "classification": {"confidence_score": "inf"},
+                    "segmentation": {"tumor_area_mm2": "inf", "tumor_percentage_brain": "-inf"}
+                }, f)
+
+            # Setup Scenario D: Multiple reports (Stable, Progression, NULL values, Zero Baseline, NaN/Infinity)
+            conn = sqlite3.connect(temp_db_path)
+            cursor = conn.cursor()
+
+            # Patient with multiple reports (Progression: area increase > 10%)
+            cursor.execute("INSERT INTO patients (patient_id, name, age, gender, created_at) VALUES (?, ?, ?, ?, ?);",
+                           ("pat-prog", "Prog Patient", 60, "Male", "2026-08-01"))
+
+            # Scan 1: Baseline
+            cursor.execute("INSERT INTO mri_scans (patient_id, image_path, pixel_spacing_mm, ref_physician, scan_date, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+                           ("pat-prog", "scans/p1.png", 1.0, "Dr. House", "2026-08-02", "2026-08-02"))
+            scan_p1_id = cursor.lastrowid
+            cursor.execute("""
+                INSERT INTO predictions (
+                    scan_id, predicted_class, confidence_score, prob_glioma, prob_meningioma,
+                    prob_pituitary, prob_no_tumor, tumor_pixel_count, tumor_area_mm2,
+                    tumor_percentage_brain, tumor_percentage_image, estimated_brain_pixel_count,
+                    rule_based_severity, severity_rule_description, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """, (scan_p1_id, "Glioma", 0.90, 0.90, 0.05, 0.0, 0.05, 100, 100.0, 1.0, 0.3, 10000, "Medium", "desc", "2026-08-02"))
+            pred_p1_id = cursor.lastrowid
+            cursor.execute("INSERT INTO reports (report_id, report_number, patient_id, current_version, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?);",
+                           (1002, "RPT-1002", "pat-prog", 1, "FINAL", "2026-08-02", "2026-08-02"))
+            cursor.execute("INSERT INTO report_versions (report_id, version_number, prediction_id, status, reason, pdf_path, json_path, checksum, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                           (1002, 1, pred_p1_id, "FINAL", "Baseline", "p1.pdf", "p1.json", "h1", "2026-08-02"))
+
+            # Scan 2: Follow-up (Area increase to 120.0, which is a 20% increase)
+            cursor.execute("INSERT INTO mri_scans (patient_id, image_path, pixel_spacing_mm, ref_physician, scan_date, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+                           ("pat-prog", "scans/p2.png", 1.0, "Dr. House", "2026-08-08", "2026-08-08"))
+            scan_p2_id = cursor.lastrowid
+            cursor.execute("""
+                INSERT INTO predictions (
+                    scan_id, predicted_class, confidence_score, prob_glioma, prob_meningioma,
+                    prob_pituitary, prob_no_tumor, tumor_pixel_count, tumor_area_mm2,
+                    tumor_percentage_brain, tumor_percentage_image, estimated_brain_pixel_count,
+                    rule_based_severity, severity_rule_description, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """, (scan_p2_id, "Glioma", 0.95, 0.95, 0.02, 0.01, 0.02, 120, 120.0, 1.2, 0.4, 10000, "Medium", "desc", "2026-08-08"))
+            pred_p2_id = cursor.lastrowid
+            cursor.execute("INSERT INTO reports (report_id, report_number, patient_id, current_version, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?);",
+                           (1003, "RPT-1003", "pat-prog", 1, "FINAL", "2026-08-08", "2026-08-08"))
+            cursor.execute("INSERT INTO report_versions (report_id, version_number, prediction_id, status, reason, pdf_path, json_path, checksum, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                           (1003, 1, pred_p2_id, "FINAL", "Follow-up", "p2.pdf", "p2.json", "h2", "2026-08-08"))
+
+            # Patient with Zero Baseline and non-finite NaN / Inf values
+            cursor.execute("INSERT INTO patients (patient_id, name, age, gender, created_at) VALUES (?, ?, ?, ?, ?);",
+                           ("pat-nan-zero", "NaN Zero Patient", 30, "Female", "2026-08-01"))
+
+            # Scan 1: Area = 0.0 (Zero Baseline)
+            cursor.execute("INSERT INTO mri_scans (patient_id, image_path, pixel_spacing_mm, ref_physician, scan_date, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+                           ("pat-nan-zero", "scans/nz1.png", 1.0, "Dr. House", "2026-08-02", "2026-08-02"))
+            scan_nz1_id = cursor.lastrowid
+            cursor.execute("""
+                INSERT INTO predictions (
+                    scan_id, predicted_class, confidence_score, prob_glioma, prob_meningioma,
+                    prob_pituitary, prob_no_tumor, tumor_pixel_count, tumor_area_mm2,
+                    tumor_percentage_brain, tumor_percentage_image, estimated_brain_pixel_count,
+                    rule_based_severity, severity_rule_description, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """, (scan_nz1_id, "No Tumor", 0.0, 0.0, 0.0, 0.0, 1.0, 0, 0.0, 0.0, 0.0, 10000, "Low", "desc", "2026-08-02"))
+            pred_nz1_id = cursor.lastrowid
+            cursor.execute("INSERT INTO reports (report_id, report_number, patient_id, current_version, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?);",
+                           (1004, "RPT-1004", "pat-nan-zero", 1, "FINAL", "2026-08-02", "2026-08-02"))
+            cursor.execute("INSERT INTO report_versions (report_id, version_number, prediction_id, status, reason, pdf_path, json_path, checksum, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                           (1004, 1, pred_nz1_id, "FINAL", "Baseline", "nz1.pdf", json_nz1_path, "h3", "2026-08-02"))
+
+            # Scan 2: Area = Infinity (non-finite)
+            cursor.execute("INSERT INTO mri_scans (patient_id, image_path, pixel_spacing_mm, ref_physician, scan_date, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+                           ("pat-nan-zero", "scans/nz2.png", 1.0, "Dr. House", "2026-08-08", "2026-08-08"))
+            scan_nz2_id = cursor.lastrowid
+            cursor.execute("""
+                INSERT INTO predictions (
+                    scan_id, predicted_class, confidence_score, prob_glioma, prob_meningioma,
+                    prob_pituitary, prob_no_tumor, tumor_pixel_count, tumor_area_mm2,
+                    tumor_percentage_brain, tumor_percentage_image, estimated_brain_pixel_count,
+                    rule_based_severity, severity_rule_description, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """, (scan_nz2_id, "Glioma", 1.0, 1.0, 0.0, 0.0, 0.0, 100, 999.0, 9.9, 0.5, 10000, "High", "desc", "2026-08-08"))
+            pred_nz2_id = cursor.lastrowid
+            cursor.execute("INSERT INTO reports (report_id, report_number, patient_id, current_version, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?);",
+                           (1005, "RPT-1005", "pat-nan-zero", 1, "FINAL", "2026-08-08", "2026-08-08"))
+            cursor.execute("INSERT INTO report_versions (report_id, version_number, prediction_id, status, reason, pdf_path, json_path, checksum, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                           (1005, 1, pred_nz2_id, "FINAL", "Follow-up", "nz2.pdf", json_nz2_path, "h4", "2026-08-08"))
+
+            conn.commit()
+            conn.close()
+
+            # Execute and assert analytics
+            analytics = service.get_population_analytics(actor=self.doctor)
+
+            # 4 total patients: pat-no-reports, pat-one-report, pat-prog, pat-nan-zero
+            self.assertEqual(analytics.total_patients, 4)
+            self.assertEqual(analytics.total_reports, 5)
+            self.assertEqual(analytics.total_scans, 5)
+
+            # Verify progression distributions
+            self.assertEqual(analytics.progression_distribution.get("EMPTY"), 1)  # pat-no-reports
+            self.assertEqual(analytics.progression_distribution.get("STABLE"), 1) # pat-one-report
+            self.assertEqual(analytics.progression_distribution.get("PROGRESSION"), 1) # pat-prog (20% increase)
+            self.assertEqual(analytics.progression_distribution.get("CHANGED"), 1) # pat-nan-zero (classification changed No Tumor -> Glioma due to Infinity area)
+
+            # Verify that averages are computed correctly from the SQLite database
+            self.assertEqual(analytics.average_confidence, 0.76)
+            self.assertEqual(analytics.average_tumor_area, 273.8)
+
+        finally:
+            # Clean up JSON files
+            for p in [json_nz1_path, json_nz2_path]:
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
+            os.close(temp_db_fd)
+            if os.path.exists(temp_db_path):
+                try:
+                    os.remove(temp_db_path)
+                except Exception:
+                    pass
+
+    def test_population_analytics_semantic_equivalence(self):
+        """Dedicated equivalence test comparing optimized population analytics against pre-optimized loop-based calculations."""
+        service = ReportService(db_path=self.db_path)
+
+        # 1. Compute pre-optimized expected values
+        expected_prog_dist = {}
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows_patients = conn.execute("SELECT patient_id FROM patients;").fetchall()
+            for row_pat in rows_patients:
+                pat_id = row_pat["patient_id"]
+                try:
+                    timeline = service.get_patient_longitudinal_timeline(patient_id=pat_id, actor=self.doctor)
+                    status = timeline.timeline_status
+                    expected_prog_dist[status] = expected_prog_dist.get(status, 0) + 1
+                except Exception:
+                    expected_prog_dist["UNKNOWN"] = expected_prog_dist.get("UNKNOWN", 0) + 1
+        finally:
+            conn.close()
+
+        # 2. Get optimized population analytics result
+        optimized_result = service.get_population_analytics(actor=self.doctor)
+
+        # 3. Assert exact match
+        self.assertEqual(optimized_result.progression_distribution, expected_prog_dist,
+                         f"Semantic mismatch! Expected: {expected_prog_dist}, Got: {optimized_result.progression_distribution}")
+
+
 if __name__ == "__main__":
     unittest.main()
