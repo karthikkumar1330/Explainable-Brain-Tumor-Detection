@@ -2689,22 +2689,79 @@ class ReportService:
             if not recipient_user:
                 raise PermissionError("Recipient must be a registered user on the AuraScan platform.")
 
-        # Create Initial EmailDelivery record with 'SENDING' status
+        # 4. Resolve the version number if None
         import datetime
+        conn = self._get_connection()
+        try:
+            if version is None:
+                r_row = conn.execute("SELECT current_version FROM reports WHERE report_id = ?;", (report_id,)).fetchone()
+                if not r_row:
+                    raise ReportNotFoundException(f"Report with ID {report_id} not found.")
+                version = r_row["current_version"]
+        finally:
+            conn.close()
+
+        # Resolve config settings for retry limits
+        from clinical_reporting.infrastructure.email_config import EmailConfig
+        config = EmailConfig()
+        max_attempts = config.email_max_attempts
+
+        # Create Initial EmailDelivery record with 'SENDING' status
         attempted_at = datetime.datetime.utcnow().isoformat()
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO email_deliveries (report_id, actor_user_id, recipient_email, status, attempted_at, created_at, updated_at)
-                VALUES (?, ?, ?, 'SENDING', ?, ?, ?);
-            """, (report_id, actor.id, recipient_email, attempted_at, attempted_at, attempted_at))
+                INSERT INTO email_deliveries (
+                    report_id, actor_user_id, recipient_email, status, attempted_at, created_at, updated_at,
+                    attempt_count, max_attempts, report_version
+                )
+                VALUES (?, ?, ?, 'SENDING', ?, ?, ?, 0, ?, ?);
+            """, (report_id, actor.id, recipient_email, attempted_at, attempted_at, attempted_at, max_attempts, version))
             conn.commit()
             delivery_id = cursor.lastrowid
         finally:
             conn.close()
 
-        # 4. Resolve the version number if None
+        # 5. Execute the email delivery flow
+        return self.execute_email_delivery(
+            delivery_id=delivery_id,
+            report_id=report_id,
+            actor_user_id=actor.id,
+            recipient_email=recipient_email,
+            version=version,
+            attempt_count=0,
+            max_attempts=max_attempts
+        )
+
+    def execute_email_delivery(
+        self,
+        delivery_id: int,
+        report_id: int,
+        actor_user_id: int,
+        recipient_email: str,
+        version: Optional[int],
+        attempt_count: int,
+        max_attempts: int
+    ) -> Dict[str, Any]:
+        """Performs the email send operation for an existing or retried email delivery record."""
+        import datetime
+        # 1. Fetch actor
+        from security.infrastructure.repository import SQLiteUserRepository
+        user_repo = SQLiteUserRepository(db_path=self.db_path)
+        actor = user_repo.get_by_id(actor_user_id)
+        if not actor:
+            self._mark_delivery_failed(
+                delivery_id=delivery_id,
+                reason="INVALID_RECIPIENT",
+                actor=None,
+                report_id=report_id,
+                recipient_email=recipient_email,
+                error_msg="Actor user not found"
+            )
+            return {"success": False, "message": "Actor user not found"}
+
+        # 2. Resolve version details
         conn = self._get_connection()
         try:
             if version is None:
@@ -2713,7 +2770,10 @@ class ReportService:
                     raise ReportNotFoundException(f"Report with ID {report_id} not found.")
                 version = r_row["current_version"]
 
-            # Get report and patient details
+            # Save version to DB if not set
+            conn.execute("UPDATE email_deliveries SET report_version = ? WHERE id = ? AND report_version IS NULL;", (version, delivery_id))
+            conn.commit()
+
             query = """
                 SELECT r.report_number, rv.version_number, p.patient_id, p.name as patient_name, rv.created_at
                 FROM report_versions rv
@@ -2730,56 +2790,93 @@ class ReportService:
             patient_id = row["patient_id"]
             patient_name = row["patient_name"]
             report_date = row["created_at"]
+        except Exception as e:
+            self._mark_delivery_failed(
+                delivery_id=delivery_id,
+                reason="INVALID_REPORT",
+                actor=actor,
+                report_id=report_id,
+                recipient_email=recipient_email,
+                error_msg=str(e)
+            )
+            raise e
         finally:
             conn.close()
 
-        # 5. Resolve secure PDF path (this runs integrity and traversal checks)
-        pdf_path = self.resolve_secure_pdf_path(report_id, version)
-        if not os.path.exists(pdf_path):
-            raise FileNotFoundError(f"PDF file not found at {pdf_path}")
+        # Update attempt info in DB prior to send
+        now = datetime.datetime.utcnow().isoformat()
+        conn = self._get_connection()
+        try:
+            conn.execute("""
+                UPDATE email_deliveries
+                SET attempt_count = ?, last_attempt_at = ?, updated_at = ?
+                WHERE id = ?;
+            """, (attempt_count + 1, now, now, delivery_id))
+            conn.commit()
+        finally:
+            conn.close()
 
-        # Verify file size
-        if os.path.getsize(pdf_path) > 10 * 1024 * 1024:  # 10MB limit
-            raise ValueError("Report PDF size exceeds the limit.")
+        # Resolve secure PDF path (runs integrity and traversal checks)
+        try:
+            pdf_path = self.resolve_secure_pdf_path(report_id, version)
+            if not os.path.exists(pdf_path):
+                raise FileNotFoundError(f"PDF file not found at {pdf_path}")
+            if os.path.getsize(pdf_path) > 10 * 1024 * 1024:
+                raise ValueError("Report PDF size exceeds the limit.")
+        except Exception as e:
+            self._mark_delivery_failed(
+                delivery_id=delivery_id,
+                reason="MISSING_PDF" if isinstance(e, FileNotFoundError) else "INVALID_REPORT",
+                actor=actor,
+                report_id=report_id,
+                recipient_email=recipient_email,
+                error_msg=str(e)
+            )
+            raise e
 
-        # 6. Build secure email context and render templates (redacting patient medical info)
-        from clinical_reporting.presentation.email_templates import EmailTemplateRenderer
+        # 3. Render secure email context and templates
+        try:
+            from clinical_reporting.presentation.email_templates import EmailTemplateRenderer
+            redacted_patient_id = patient_id[:4] + "****" if len(patient_id) > 4 else "****"
 
-        # Redact Patient ID for HIPAA security
-        redacted_patient_id = patient_id[:4] + "****" if len(patient_id) > 4 else "****"
+            subject = f"AuraScan Clinical Report Notification: {report_number}"
+            title = f"Clinical Report: {report_number}"
+            message_body = (
+                f"Dear user,\n\n"
+                f"The clinical report version {version_number} has been generated and is attached to this notification."
+            )
 
-        subject = f"AuraScan Clinical Report Notification: {report_number}"
-        title = f"Clinical Report: {report_number}"
-        message_body = (
-            f"Dear user,\n\n"
-            f"The clinical report version {version_number} has been generated and is attached to this notification."
-        )
+            card_items = [
+                ("Report Number", report_number),
+                ("Version", str(version_number)),
+                ("Patient Identifier", redacted_patient_id),
+                ("Generated Date", report_date.split("T")[0] if "T" in report_date else report_date)
+            ]
 
-        card_items = [
-            ("Report Number", report_number),
-            ("Version", str(version_number)),
-            ("Patient Identifier", redacted_patient_id),
-            ("Generated Date", report_date.split("T")[0] if "T" in report_date else report_date)
-        ]
+            html_body, text_body = EmailTemplateRenderer.render_generic_notification(
+                subject=subject,
+                title=title,
+                message_body=message_body,
+                cta_text="Access AuraScan Dashboard",
+                cta_url="https://portal.aurascan.ai/dashboard",
+                card_items=card_items,
+                badge_label="Clinical PDF Attached",
+                badge_type="info"
+            )
+        except Exception as e:
+            self._mark_delivery_failed(
+                delivery_id=delivery_id,
+                reason="TEMPLATE_RENDER_FAILURE",
+                actor=actor,
+                report_id=report_id,
+                recipient_email=recipient_email,
+                error_msg=str(e)
+            )
+            raise e
 
-        html_body, text_body = EmailTemplateRenderer.render_generic_notification(
-            subject=subject,
-            title=title,
-            message_body=message_body,
-            cta_text="Access AuraScan Dashboard",
-            cta_url="https://portal.aurascan.ai/dashboard",
-            card_items=card_items,
-            badge_label="Clinical PDF Attached",
-            badge_type="info"
-        )
-
-        # 7. Dispatch email via EmailService
+        # 4. Dispatch email via EmailService
         from clinical_reporting.infrastructure.email_service import EmailService
-
-        # Instantiate EmailService (resolves config automatically from environment)
         email_svc = EmailService()
-
-        # Connect and Send
         try:
             email_svc.send(
                 to_email=recipient_email,
@@ -2794,7 +2891,7 @@ class ReportService:
             try:
                 conn.execute("""
                     UPDATE email_deliveries
-                    SET status = 'SENT', sent_at = ?, updated_at = ?
+                    SET status = 'SENT', sent_at = ?, next_retry_at = NULL, updated_at = ?
                     WHERE id = ?;
                 """, (now, now, delivery_id))
                 conn.commit()
@@ -2811,27 +2908,163 @@ class ReportService:
             )
             return {"success": True, "message": "Report email sent successfully"}
         except Exception as e:
-            # Normalize failure reason
-            err_msg = str(e).lower()
-            if "timeout" in err_msg:
-                reason = "SMTP_TIMEOUT"
-            elif "auth" in err_msg or "credential" in err_msg:
-                reason = "SMTP_AUTH_FAILED"
-            elif "connection" in err_msg or "refused" in err_msg or "socket" in err_msg:
-                reason = "SMTP_CONNECTION_FAILED"
-            elif "format" in err_msg or "invalid recipient" in err_msg:
-                reason = "INVALID_RECIPIENT"
-            else:
-                reason = "EMAIL_SEND_FAILED"
+            # Handle failure with classification and retry check
+            self._handle_delivery_failure(
+                delivery_id=delivery_id,
+                exception=e,
+                actor=actor,
+                report_id=report_id,
+                recipient_email=recipient_email,
+                attempt_count=attempt_count + 1,
+                max_attempts=max_attempts
+            )
+            raise ReportServiceException(f"Failed to send email: {e}")
 
-            now = datetime.datetime.utcnow().isoformat()
+    def classify_email_error(self, exception: Exception) -> tuple[str, bool]:
+        """Classifies an email exception to standardized failure code and retry status.
+
+        Returns:
+            Tuple[str, bool]: (reason_code, is_retryable)
+        """
+        from clinical_reporting.infrastructure.email_service import (
+            InvalidAddressException,
+            ConfigurationException,
+            AuthenticationException,
+            AttachmentException,
+            ConnectionException
+        )
+
+        err_msg = str(exception).lower()
+
+        # 1. Match specific clean architecture exceptions
+        if isinstance(exception, InvalidAddressException):
+            return "INVALID_RECIPIENT", False
+        if isinstance(exception, ConfigurationException):
+            return "INVALID_CONFIGURATION", False
+        if isinstance(exception, AuthenticationException):
+            return "SMTP_AUTH_FAILED", False
+        if isinstance(exception, AttachmentException):
+            if "not found" in err_msg or "does not exist" in err_msg:
+                return "MISSING_PDF", False
+            return "INVALID_REPORT", False
+        if isinstance(exception, ConnectionException):
+            if "timeout" in err_msg:
+                return "SMTP_TIMEOUT", True
+            return "SMTP_CONNECTION_FAILED", True
+        if isinstance(exception, PermissionError):
+            return "UNAUTHORIZED_RECIPIENT", False
+        if isinstance(exception, (ReportNotFoundException, VersionNotFoundException)):
+            return "INVALID_REPORT", False
+
+        # 2. Fallback to parsing error messages
+        if "timeout" in err_msg:
+            return "SMTP_TIMEOUT", True
+        if "auth" in err_msg or "credential" in err_msg or "login" in err_msg:
+            return "SMTP_AUTH_FAILED", False
+        if "connection" in err_msg or "refused" in err_msg or "socket" in err_msg or "unreachable" in err_msg:
+            return "SMTP_CONNECTION_FAILED", True
+        if "temporary" in err_msg or "421" in err_msg or "450" in err_msg or "451" in err_msg or "452" in err_msg:
+            return "SMTP_TEMPORARY_UNAVAILABLE", True
+        if "recipient" in err_msg or "address" in err_msg or "550" in err_msg or "553" in err_msg:
+            return "INVALID_RECIPIENT", False
+        if "pdf" in err_msg or "file not found" in err_msg:
+            return "MISSING_PDF", False
+        if "template" in err_msg or "render" in err_msg:
+            return "TEMPLATE_RENDER_FAILURE", False
+
+        # Default fallback
+        return "EMAIL_SEND_FAILED", False
+
+    def _mark_delivery_failed(
+        self,
+        delivery_id: int,
+        reason: str,
+        actor: Optional[Any],
+        report_id: int,
+        recipient_email: str,
+        error_msg: str
+    ) -> None:
+        import datetime
+        now = datetime.datetime.utcnow().isoformat()
+        conn = self._get_connection()
+        try:
+            conn.execute("""
+                UPDATE email_deliveries
+                SET status = 'FAILED', failure_reason = ?, last_failure_code = ?, retryable = 0, next_retry_at = NULL, updated_at = ?
+                WHERE id = ?;
+            """, (reason, reason, now, delivery_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+        self.log_report_access_event(
+            "REPORT_EMAIL_FAILED",
+            actor,
+            report_id,
+            "FAILED",
+            f"Failed to email clinical report to {recipient_email} (Permanent: {reason}). Error: {error_msg}"
+        )
+
+    def _handle_delivery_failure(
+        self,
+        delivery_id: int,
+        exception: Exception,
+        actor: Optional[Any],
+        report_id: int,
+        recipient_email: str,
+        attempt_count: int,
+        max_attempts: int
+    ) -> None:
+        import datetime
+        import random
+        from clinical_reporting.infrastructure.email_config import EmailConfig
+        config = EmailConfig()
+
+        reason, is_transient = self.classify_email_error(exception)
+        now = datetime.datetime.utcnow().isoformat()
+
+        if is_transient and config.email_retry_enabled and attempt_count < max_attempts:
+            # Exponential Backoff with upper bound
+            base_delay = config.email_retry_base_delay
+            max_delay = config.email_retry_max_delay
+
+            exponent = min(attempt_count - 1, 30)
+            delay = base_delay * (2 ** exponent)
+            delay = min(delay, max_delay)
+
+            # Small bounded jitter
+            jitter = random.uniform(0.0, min(5.0, delay * 0.1))
+            total_delay = delay + jitter
+
+            next_retry_dt = datetime.datetime.utcnow() + datetime.timedelta(seconds=total_delay)
+            next_retry_at = next_retry_dt.isoformat()
+
             conn = self._get_connection()
             try:
                 conn.execute("""
                     UPDATE email_deliveries
-                    SET status = 'FAILED', failure_reason = ?, updated_at = ?
+                    SET status = 'RETRY_PENDING', failure_reason = ?, last_failure_code = ?, retryable = 1, next_retry_at = ?, updated_at = ?
                     WHERE id = ?;
-                """, (reason, now, delivery_id))
+                """, (reason, reason, next_retry_at, now, delivery_id))
+                conn.commit()
+            finally:
+                conn.close()
+
+            self.log_report_access_event(
+                "REPORT_EMAIL_RETRY_SCHEDULED",
+                actor,
+                report_id,
+                "FAILED",
+                f"Failed to email clinical report to {recipient_email} (Transient: {reason}). Scheduled retry {attempt_count + 1}/{max_attempts} at {next_retry_at}. Error: {exception}"
+            )
+        else:
+            conn = self._get_connection()
+            try:
+                conn.execute("""
+                    UPDATE email_deliveries
+                    SET status = 'FAILED', failure_reason = ?, last_failure_code = ?, retryable = 0, next_retry_at = NULL, updated_at = ?
+                    WHERE id = ?;
+                """, (reason, reason, now, delivery_id))
                 conn.commit()
             finally:
                 conn.close()
@@ -2841,9 +3074,8 @@ class ReportService:
                 actor,
                 report_id,
                 "FAILED",
-                f"Failed to email clinical report to {recipient_email}. Error: {e}"
+                f"Failed to email clinical report to {recipient_email} (Permanent or Max Attempts Reached). Error: {exception}"
             )
-            raise ReportServiceException(f"Failed to send email: {e}")
 
     def get_email_history(
         self,

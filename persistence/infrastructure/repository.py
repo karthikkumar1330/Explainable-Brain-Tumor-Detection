@@ -208,6 +208,13 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             failure_reason TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            max_attempts INTEGER NOT NULL DEFAULT 3,
+            next_retry_at TEXT,
+            last_attempt_at TEXT,
+            last_failure_code TEXT,
+            retryable INTEGER NOT NULL DEFAULT 1,
+            report_version INTEGER DEFAULT NULL,
             FOREIGN KEY (report_id) REFERENCES reports(report_id) ON DELETE CASCADE,
             FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE CASCADE
         );
@@ -315,6 +322,25 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                         """)
                 except Exception as backfill_err:
                     self.logger.warning(f"Failed to backfill F2.2 columns: {backfill_err}")
+
+                # Migrate email_deliveries to support G6 retry fields
+                for col, col_type, col_default in [
+                    ("attempt_count", "INTEGER", "0"),
+                    ("max_attempts", "INTEGER", "3"),
+                    ("next_retry_at", "TEXT", "NULL"),
+                    ("last_attempt_at", "TEXT", "NULL"),
+                    ("last_failure_code", "TEXT", "NULL"),
+                    ("retryable", "INTEGER", "1"),
+                    ("report_version", "INTEGER", "NULL")
+                ]:
+                    try:
+                        conn.execute(f"SELECT {col} FROM email_deliveries LIMIT 1;")
+                    except sqlite3.OperationalError:
+                        try:
+                            conn.execute(f"ALTER TABLE email_deliveries ADD COLUMN {col} {col_type} DEFAULT {col_default};")
+                            self.logger.info(f"Added column {col} to table email_deliveries")
+                        except Exception as alt_err:
+                            self.logger.warning(f"Could not migrate email_deliveries column {col}: {alt_err}")
 
             self.logger.info("Database schema and analytics indices verified successfully.")
         except Exception as e:

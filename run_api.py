@@ -86,6 +86,27 @@ def on_startup() -> None:
 
     initialize_api_models()
 
+    # Start Email Retry Scheduler (Phase G6)
+    try:
+        from clinical_reporting.application.scheduler import EmailRetryScheduler
+        scheduler = EmailRetryScheduler(db_path=db_path)
+        scheduler.start()
+        logger.info("Email Retry Scheduler started successfully on API startup.")
+    except Exception as se:
+        logger.error(f"Failed to start Email Retry Scheduler on API startup: {se}")
+
+
+@app.on_event("shutdown")
+def on_shutdown() -> None:
+    """Safely shuts down background components."""
+    try:
+        from clinical_reporting.application.scheduler import EmailRetryScheduler
+        scheduler = EmailRetryScheduler()
+        scheduler.stop()
+        logger.info("Email Retry Scheduler stopped successfully on API shutdown.")
+    except Exception as se:
+        logger.error(f"Failed to stop Email Retry Scheduler on API shutdown: {se}")
+
 
 def main() -> None:
     args = parse_args()

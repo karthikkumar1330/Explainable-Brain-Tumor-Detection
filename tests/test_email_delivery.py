@@ -335,6 +335,7 @@ class TestEmailDelivery(unittest.TestCase):
         finally:
             conn.close()
 
+    @patch.dict(os.environ, {"EMAIL_RETRY_ENABLED": "False"})
     @patch("clinical_reporting.infrastructure.email_service.EmailService.send")
     def test_13_email_history_record_created_on_failure(self, mock_send) -> None:
         """Verify that a failed send attempt logs status 'FAILED' and normalizes failure reason."""

@@ -54,6 +54,21 @@ class EmailConfig:
         else:
             self.use_ssl = False
 
+        # Resolve Retry settings
+        self.email_retry_enabled = os.environ.get("EMAIL_RETRY_ENABLED", "true").lower() in ("true", "1", "yes")
+        try:
+            self.email_max_attempts = int(os.environ.get("EMAIL_MAX_ATTEMPTS", "3"))
+        except ValueError:
+            raise EmailConfigException(f"Invalid EMAIL_MAX_ATTEMPTS value: {os.environ.get('EMAIL_MAX_ATTEMPTS')}")
+        try:
+            self.email_retry_base_delay = float(os.environ.get("EMAIL_RETRY_BASE_DELAY", "30"))
+        except ValueError:
+            raise EmailConfigException(f"Invalid EMAIL_RETRY_BASE_DELAY value: {os.environ.get('EMAIL_RETRY_BASE_DELAY')}")
+        try:
+            self.email_retry_max_delay = float(os.environ.get("EMAIL_RETRY_MAX_DELAY", "600"))
+        except ValueError:
+            raise EmailConfigException(f"Invalid EMAIL_RETRY_MAX_DELAY value: {os.environ.get('EMAIL_RETRY_MAX_DELAY')}")
+
     def validate(self, active: bool = False) -> None:
         """Validates loaded parameters strictly. Skipped if not active and SMTP_HOST is empty."""
         if not active and not self.smtp_host:
@@ -99,6 +114,14 @@ class EmailConfig:
                     "Insecure SMTP configuration rejected: SSL/TLS or STARTTLS (port 587) is required in production."
                 )
 
+        # Validate retry settings
+        if self.email_max_attempts <= 0:
+            raise EmailConfigException("EMAIL_MAX_ATTEMPTS must be a positive integer.")
+        if self.email_retry_base_delay <= 0:
+            raise EmailConfigException("EMAIL_RETRY_BASE_DELAY must be a positive number of seconds.")
+        if self.email_retry_max_delay < self.email_retry_base_delay:
+            raise EmailConfigException("EMAIL_RETRY_MAX_DELAY must be greater than or equal to EMAIL_RETRY_BASE_DELAY.")
+
     def get_non_secret_settings(self) -> dict:
         """Returns non-sensitive configuration settings for logging and diagnosis."""
         return {
@@ -109,5 +132,9 @@ class EmailConfig:
             "email_from": self.email_from,
             "email_reply_to": self.email_reply_to,
             "email_timeout": self.email_timeout,
-            "use_ssl": self.use_ssl
+            "use_ssl": self.use_ssl,
+            "email_retry_enabled": self.email_retry_enabled,
+            "email_max_attempts": self.email_max_attempts,
+            "email_retry_base_delay": self.email_retry_base_delay,
+            "email_retry_max_delay": self.email_retry_max_delay
         }
