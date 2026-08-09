@@ -1083,6 +1083,8 @@ def create_app(db_path: str) -> Flask:
     @app.route("/api/report/<int:report_id>/visuals/<image_type>")
     @roles_accepted(Role.ADMIN, Role.DOCTOR)
     def get_visual_scan(current_user: User, report_id: int, image_type: str):
+        from clinical_reporting.application.services import ReportService
+        service = ReportService(db_path=app.config["DB_PATH"])
         conn = sqlite3.connect(app.config["DB_PATH"])
         conn.row_factory = sqlite3.Row
         try:
@@ -1098,6 +1100,29 @@ def create_app(db_path: str) -> Flask:
                 (report_id,)
             )
             row = cursor.fetchone()
+            if not row:
+                try:
+                    service.log_report_access_event(
+                        "REPORT_NOT_FOUND",
+                        current_user,
+                        report_id,
+                        "FAILED",
+                        f"Report not found for visual fetch: {image_type}"
+                    )
+                except Exception as e:
+                    app.logger.error(f"Audit log failed: {e}")
+            else:
+                try:
+                    service.log_report_access_event(
+                        "REPORT_VIEWED",
+                        current_user,
+                        report_id,
+                        "SUCCESS",
+                        f"Viewed report visual: {image_type}"
+                    )
+                except Exception as e:
+                    app.logger.error(f"Audit log failed: {e}")
+
             img_path = None
 
             if row:

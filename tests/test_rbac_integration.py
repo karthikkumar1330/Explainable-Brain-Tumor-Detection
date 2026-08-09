@@ -136,10 +136,25 @@ class TestRBACIntegration(unittest.TestCase):
             # 4. Insert report (id = 1)
             cursor.execute(
                 """
-                INSERT INTO clinical_reports (prediction_id, markdown_path, json_path, pdf_path, overlay_path, heatmap_path, mask_path, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                INSERT INTO clinical_reports (id, prediction_id, markdown_path, json_path, pdf_path, overlay_path, heatmap_path, mask_path, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
-                (pred_id, "outputs/reports/rep.md", "outputs/reports/rep.json", "outputs/reports/rep.pdf", "outputs/reports/rep_overlay.png", "outputs/reports/rep_heatmap.png", "outputs/reports/rep_mask.png", "2026-08-06T00:00:00")
+                (1, pred_id, "outputs/clinical_reports/rep.md", "outputs/clinical_reports/rep.json", "outputs/clinical_reports/rep.pdf", "outputs/clinical_reports/rep_overlay.png", "outputs/clinical_reports/rep_heatmap.png", "outputs/clinical_reports/rep_mask.png", "2026-08-06T00:00:00")
+            )
+            # 5. Insert corresponding reports and report_versions rows
+            cursor.execute(
+                """
+                INSERT INTO reports (report_id, report_number, patient_id, current_version, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?);
+                """,
+                (1, "REP-2026-0001", "pat-uuid-222", 1, "FINALIZED", "2026-08-06T00:00:00", "2026-08-06T00:00:00")
+            )
+            cursor.execute(
+                """
+                INSERT INTO report_versions (report_id, version_number, pdf_path, json_path, checksum, status, integrity_hash, verification_token, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (1, 1, "outputs/clinical_reports/rep.pdf", "outputs/clinical_reports/rep.json", "dummy_checksum", "FINALIZED", "dummy_hash", "dummy_token", "2026-08-06T00:00:00")
             )
             conn.commit()
         finally:

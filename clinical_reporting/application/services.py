@@ -1026,7 +1026,7 @@ class ReportService:
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT timestamp, event_type, email, status, details
+                SELECT timestamp, event_type, user_id, email, status, details
                 FROM security_audit_logs
                 WHERE event_type IN (
                     'REPORT_VIEWED', 'REPORT_DOWNLOADED',
@@ -1061,9 +1061,27 @@ class ReportService:
                 for r in cursor.fetchall():
                     permitted_ids.add(r["report_id"])
 
+                user_email = None
+                user_id_val = None
+                if user:
+                    if isinstance(user, dict):
+                        user_email = user.get("email")
+                        user_id_val = user.get("id")
+                    else:
+                        user_email = getattr(user, "email", None)
+                        user_id_val = getattr(user, "id", None)
+
                 import re
                 filtered = []
                 for log in logs:
+                    # Let patient see their own actions
+                    if user_email and log.get("email") == user_email:
+                        filtered.append(log)
+                        continue
+                    if user_id_val is not None and log.get("user_id") == user_id_val:
+                        filtered.append(log)
+                        continue
+
                     details = log.get("details", "")
                     m = re.search(r"Report ID:\s*(\d+)", details)
                     if m:

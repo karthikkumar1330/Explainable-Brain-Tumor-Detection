@@ -802,6 +802,20 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
         db_repo.initialize_db()
         report_db_id = db_repo.save_report(clinical_report, output_dir=OUTPUT_REPORTS_DIR)
 
+        # Record Security Audit Log for report creation (F2.4)
+        try:
+            from clinical_reporting.application.services import ReportService
+            service = ReportService(db_path=DEFAULT_DB_PATH)
+            service.log_report_access_event(
+                "REPORT_LIFECYCLE_CHANGE",
+                current_user,
+                report_db_id,
+                "SUCCESS",
+                "Action: CREATE_REPORT, Prev Status: NONE, New Status: GENERATED"
+            )
+        except Exception as audit_err:
+            logger.error(f"Failed to record Report Creation Security Audit Log: {audit_err}")
+
         timeline["Database"] = time.time() - t_endpoint_start
         timeline["Completed"] = time.time() - t_endpoint_start
 
@@ -942,6 +956,8 @@ def serve_report_pdf(report_id: int, version: Optional[int] = Query(None), curre
 @router.get("/report/{report_id}/visuals/{visual_type}")
 def serve_report_visual(report_id: int, visual_type: str, current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))):
     """Streams diagnostic visual maps (heatmap, overlay, mask, or raw). Only allowed for Admins and Doctors."""
+    from clinical_reporting.application.services import ReportService
+    service = ReportService(db_path=DEFAULT_DB_PATH)
     conn = sqlite3.connect(DEFAULT_DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
@@ -957,6 +973,29 @@ def serve_report_visual(report_id: int, visual_type: str, current_user: User = D
             (report_id,)
         )
         row = cursor.fetchone()
+        if not row:
+            try:
+                service.log_report_access_event(
+                    "REPORT_NOT_FOUND",
+                    current_user,
+                    report_id,
+                    "FAILED",
+                    f"Report not found for visual fetch: {visual_type}"
+                )
+            except Exception as e:
+                logger.error(f"Audit log failed: {e}")
+        else:
+            try:
+                service.log_report_access_event(
+                    "REPORT_VIEWED",
+                    current_user,
+                    report_id,
+                    "SUCCESS",
+                    f"Viewed report visual: {visual_type}"
+                )
+            except Exception as e:
+                logger.error(f"Audit log failed: {e}")
+
         img_path = None
         if row:
             if visual_type == "overlay":
@@ -1085,6 +1124,18 @@ class VersionCreateRequest(BaseModel):
 
 class StatusUpdateRequest(BaseModel):
     status: str
+
+
+@router.get("/reports/audit-history")
+def get_reports_audit_history_api(current_user: User = Depends(get_current_user)):
+    """Retrieves report access history logs filtered according to user roles."""
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        logs = service.get_report_audit_history(current_user)
+        return logs
+    except Exception as e:
+        logger.error(f"Error fetching audit history: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error fetching audit history.")
 
 
 @router.get("/reports/{report_id}")
@@ -1224,16 +1275,6 @@ def get_report_version_details_api(report_id: int, version_id: int, current_user
         logger.error(f"Error fetching version details: {e}")
         raise HTTPException(status_code=404, detail=str(e))
 
-@router.get("/reports/audit-history")
-def get_reports_audit_history_api(current_user: User = Depends(get_current_user)):
-    """Retrieves report access history logs filtered according to user roles."""
-    service = ReportService(db_path=DEFAULT_DB_PATH)
-    try:
-        logs = service.get_report_audit_history(current_user)
-        return logs
-    except Exception as e:
-        logger.error(f"Error fetching audit history: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error fetching audit history.")
 
 
 @router.get("/reports/verify/{token}")
