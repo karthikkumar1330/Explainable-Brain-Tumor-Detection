@@ -434,6 +434,11 @@
             }
         }
     </style>
+    <!-- PDF.js library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+    </script>
 </head>
 <body class="text-slate-100 min-h-screen flex flex-col md:flex-row overflow-x-hidden">
 
@@ -1691,10 +1696,77 @@
                 <div id="modal-actions-container" class="flex flex-wrap items-center gap-2">
                     <!-- populated dynamically -->
                 </div>
-                <div>
+                <div class="flex items-center gap-2">
+                    <button onclick="openReportPreview(currentSelectedReportId)" class="btn-secondary text-xs flex items-center gap-2 border border-slate-700 cursor-pointer">
+                        <i class="fa-solid fa-eye text-sky-400"></i> Preview
+                    </button>
                     <a id="modal-pdf-link" href="#" target="_blank" class="btn-primary text-xs flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500">
                         <i class="fa-solid fa-file-pdf"></i> Download PDF Clinical Report
                     </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- REPORT PREVIEW MODAL -->
+    <div id="report-preview-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4" aria-modal="true" role="dialog" aria-labelledby="preview-modal-title">
+        <div class="glass-panel w-full max-w-4xl rounded-3xl p-6 md:p-8 shadow-2xl relative max-h-[90vh] overflow-y-auto border border-slate-700 flex flex-col">
+            <button onclick="closeReportPreview()" aria-label="Close report preview" class="absolute top-5 right-5 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 h-9 w-9 rounded-full flex items-center justify-center transition cursor-pointer">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+
+            <h3 id="preview-modal-title" class="font-extrabold text-2xl text-slate-100 mb-2">Report Document Preview</h3>
+            <p id="preview-modal-subtitle" class="text-xs text-slate-400 mb-4">Report ID: - | Version: -</p>
+
+            <!-- Loading and Error Indicators -->
+            <div id="preview-loading" class="flex flex-col items-center justify-center py-20 space-y-4">
+                <i class="fa-solid fa-circle-notch fa-spin text-4xl text-sky-400"></i>
+                <p class="text-xs text-slate-400">Loading and rendering report PDF page...</p>
+            </div>
+
+            <div id="preview-error" class="hidden flex flex-col items-center justify-center py-20 text-center space-y-3">
+                <i class="fa-solid fa-circle-exclamation text-4xl text-rose-500"></i>
+                <h4 class="font-bold text-slate-200">Failed to Load Report Preview</h4>
+                <p id="preview-error-msg" class="text-xs text-slate-400 max-w-md">An unexpected error occurred while fetching or rendering the PDF.</p>
+            </div>
+
+            <!-- PDF Viewer Canvas Container -->
+            <div id="preview-container" class="hidden flex-1 overflow-auto bg-slate-950 rounded-2xl border border-slate-850 p-4 flex justify-center items-center min-h-[400px] max-h-[60vh]">
+                <canvas id="preview-canvas" class="shadow-xl bg-white border border-slate-800"></canvas>
+            </div>
+
+            <!-- Controls Panel -->
+            <div id="preview-controls" class="hidden flex flex-col md:flex-row justify-between items-center gap-4 mt-6 border-t border-slate-850 pt-4">
+                <!-- Page Navigation -->
+                <div class="flex items-center space-x-2">
+                    <button id="preview-prev-btn" onclick="prevPreviewPage()" aria-label="Previous page" class="btn-secondary text-xs h-9 px-3 flex items-center gap-1 cursor-pointer">
+                        <i class="fa-solid fa-chevron-left"></i> Previous
+                    </button>
+                    <span class="text-xs text-slate-350 font-bold" id="preview-page-indicator">Page 1 / 1</span>
+                    <button id="preview-next-btn" onclick="nextPreviewPage()" aria-label="Next page" class="btn-secondary text-xs h-9 px-3 flex items-center gap-1 cursor-pointer">
+                        Next <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+                </div>
+
+                <!-- Zoom Controls -->
+                <div class="flex items-center space-x-2">
+                    <button id="preview-zoom-out-btn" onclick="zoomPreview(0.8)" aria-label="Zoom out" class="btn-secondary text-xs h-9 px-3 cursor-pointer">
+                        <i class="fa-solid fa-minus"></i>
+                    </button>
+                    <span class="text-xs text-slate-300 font-bold" id="preview-zoom-indicator">100%</span>
+                    <button id="preview-zoom-in-btn" onclick="zoomPreview(1.2)" aria-label="Zoom in" class="btn-secondary text-xs h-9 px-3 cursor-pointer">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                    <button id="preview-zoom-reset-btn" onclick="resetPreviewZoom()" aria-label="Reset zoom" class="btn-secondary text-xs h-9 px-3 cursor-pointer">
+                        Reset
+                    </button>
+                </div>
+
+                <!-- Actions (Print) -->
+                <div>
+                    <button id="preview-print-btn" onclick="printPreviewReport()" aria-label="Print report" class="btn-primary text-xs h-9 px-4 flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500 cursor-pointer">
+                        <i class="fa-solid fa-print"></i> Print Report
+                    </button>
                 </div>
             </div>
         </div>
@@ -1717,6 +1789,225 @@
         // Cache flags to prevent redundant API polling and page flickering
         let dashboardDataLoaded = false;
         let settingsDataLoaded = false;
+
+        // Report In-App Preview Globals (F2.1 - F2.12)
+        let currentSelectedReportId = null;
+        let currentPdfDoc = null;
+        let currentPreviewPageNum = 1;
+        let currentPreviewZoom = 1.0;
+        let currentPdfBlob = null;
+        let previewAbortController = null;
+
+        async function openReportPreview(reportId, versionId = null) {
+            if (!reportId || isNaN(reportId)) {
+                alert("Invalid report ID provided.");
+                return;
+            }
+
+            if (previewAbortController) {
+                previewAbortController.abort();
+            }
+            previewAbortController = new AbortController();
+
+            if (currentPdfDoc) {
+                try {
+                    await currentPdfDoc.destroy();
+                } catch (e) {}
+                currentPdfDoc = null;
+            }
+            currentPreviewPageNum = 1;
+            currentPreviewZoom = 1.0;
+            currentPdfBlob = null;
+
+            document.getElementById("preview-modal-subtitle").innerText = `Report ID: #${reportId} ${versionId ? `| Version: v${versionId}` : ''}`;
+            document.getElementById("preview-loading").classList.remove("hidden");
+            document.getElementById("preview-error").classList.add("hidden");
+            document.getElementById("preview-container").classList.add("hidden");
+            document.getElementById("preview-controls").classList.add("hidden");
+
+            openModal("report-preview-modal");
+
+            let url = `/api/report/${reportId}/pdf`;
+            if (versionId) {
+                url += `?version=${versionId}`;
+            }
+
+            try {
+                const response = await fetchWithAuth(url, { signal: previewAbortController.signal });
+                if (response.status === 401) {
+                    throw new Error("Authentication required (401).");
+                } else if (response.status === 403) {
+                    throw new Error("Access denied to this report (403).");
+                } else if (response.status === 404) {
+                    throw new Error("Report not found (404).");
+                } else if (!response.ok) {
+                    throw new Error(`Server returned HTTP status ${response.status}`);
+                }
+
+                const blob = await response.blob();
+                if (blob.type !== "application/pdf" && blob.size < 100) {
+                    throw new Error("Invalid PDF content received from server.");
+                }
+                currentPdfBlob = blob;
+
+                const arrayBuffer = await blob.arrayBuffer();
+                const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+                currentPdfDoc = await loadingTask.promise;
+
+                document.getElementById("preview-page-indicator").innerText = `Page 1 / ${currentPdfDoc.numPages}`;
+                await renderPreviewPage(1);
+
+                document.getElementById("preview-loading").classList.add("hidden");
+                document.getElementById("preview-container").classList.remove("hidden");
+                document.getElementById("preview-controls").classList.remove("hidden");
+
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    console.log("PDF preview fetch aborted.");
+                    return;
+                }
+                console.error("Preview error:", err);
+                document.getElementById("preview-loading").classList.add("hidden");
+                document.getElementById("preview-error").classList.remove("hidden");
+                document.getElementById("preview-error-msg").innerText = err.message || "An unexpected error occurred while rendering the PDF.";
+            }
+        }
+
+        async function renderPreviewPage(pageNum) {
+            if (!currentPdfDoc) return;
+
+            if (pageNum < 1) pageNum = 1;
+            if (pageNum > currentPdfDoc.numPages) pageNum = currentPdfDoc.numPages;
+
+            currentPreviewPageNum = pageNum;
+
+            document.getElementById("preview-prev-btn").disabled = (pageNum === 1);
+            document.getElementById("preview-next-btn").disabled = (pageNum === currentPdfDoc.numPages);
+            document.getElementById("preview-page-indicator").innerText = `Page ${pageNum} / ${currentPdfDoc.numPages}`;
+
+            try {
+                const page = await currentPdfDoc.getPage(pageNum);
+                const canvas = document.getElementById("preview-canvas");
+                const context = canvas.getContext("2d");
+
+                const viewport = page.getViewport({ scale: currentPreviewZoom });
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+
+                await page.render(renderContext).promise;
+                document.getElementById("preview-zoom-indicator").innerText = `${Math.round(currentPreviewZoom * 100)}%`;
+
+                document.getElementById("preview-zoom-in-btn").disabled = (currentPreviewZoom >= 2.0);
+                document.getElementById("preview-zoom-out-btn").disabled = (currentPreviewZoom <= 0.5);
+
+            } catch (e) {
+                console.error("Failed to render page:", e);
+            }
+        }
+
+        function prevPreviewPage() {
+            if (currentPreviewPageNum > 1) {
+                renderPreviewPage(currentPreviewPageNum - 1);
+            }
+        }
+
+        function nextPreviewPage() {
+            if (currentPdfDoc && currentPreviewPageNum < currentPdfDoc.numPages) {
+                renderPreviewPage(currentPreviewPageNum + 1);
+            }
+        }
+
+        function zoomPreview(factor) {
+            let newZoom = currentPreviewZoom;
+            if (factor > 1) {
+                newZoom = Math.min(2.0, currentPreviewZoom + 0.2);
+            } else {
+                newZoom = Math.max(0.5, currentPreviewZoom - 0.2);
+            }
+
+            if (newZoom !== currentPreviewZoom) {
+                currentPreviewZoom = newZoom;
+                renderPreviewPage(currentPreviewPageNum);
+            }
+        }
+
+        function resetPreviewZoom() {
+            if (currentPreviewZoom !== 1.0) {
+                currentPreviewZoom = 1.0;
+                renderPreviewPage(currentPreviewPageNum);
+            }
+        }
+
+        async function closeReportPreview() {
+            closeModal("report-preview-modal");
+
+            if (previewAbortController) {
+                previewAbortController.abort();
+                previewAbortController = null;
+            }
+
+            if (currentPdfDoc) {
+                try {
+                    await currentPdfDoc.destroy();
+                } catch (e) {}
+                currentPdfDoc = null;
+            }
+            currentPdfBlob = null;
+
+            const canvas = document.getElementById("preview-canvas");
+            if (canvas) {
+                const context = canvas.getContext("2d");
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                canvas.width = 0;
+                canvas.height = 0;
+            }
+        }
+
+        function printPreviewReport() {
+            if (!currentPdfBlob) return;
+            const blobUrl = URL.createObjectURL(currentPdfBlob);
+
+            let printIframe = document.getElementById("print-iframe");
+            if (!printIframe) {
+                printIframe = document.createElement("iframe");
+                printIframe.id = "print-iframe";
+                printIframe.style.position = "fixed";
+                printIframe.style.right = "0";
+                printIframe.style.bottom = "0";
+                printIframe.style.width = "0";
+                printIframe.style.height = "0";
+                printIframe.style.border = "0";
+                document.body.appendChild(printIframe);
+            }
+
+            printIframe.src = blobUrl;
+            printIframe.onload = function() {
+                try {
+                    printIframe.contentWindow.focus();
+                    printIframe.contentWindow.print();
+                } catch (e) {
+                    console.error("Failed to print PDF from iframe:", e);
+                    window.print();
+                }
+                setTimeout(() => {
+                    URL.revokeObjectURL(blobUrl);
+                }, 10000);
+            };
+        }
+
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") {
+                const previewModal = document.getElementById("report-preview-modal");
+                if (previewModal && !previewModal.classList.contains("hidden")) {
+                    closeReportPreview();
+                }
+            }
+        });
 
         // Registry Workstation State Globals
         let allScans = [];
@@ -2157,6 +2448,8 @@
                 const data = await res.json();
                 if (data.error) { alert("Report details could not be loaded: " + data.error); return; }
 
+                currentSelectedReportId = data.report_id;
+
                 document.getElementById("modal-title").innerText = `Diagnostic Report Details: #${data.report_id}`;
                 document.getElementById("modal-patient-meta").innerText = `Patient ID: ${data.patient_id} | Name: ${data.patient_name}`;
                 document.getElementById("modal-diag").innerText = data.predicted_class;
@@ -2197,6 +2490,9 @@
                                 <span class="text-[10px] text-slate-400 italic">${v.reason || 'No description'}</span>
                             </div>
                             <div class="flex items-center gap-1">
+                                <button onclick="openReportPreview(${data.report_id}, ${v.version_number})" class="btn-secondary text-[9px] h-6 px-2 flex items-center gap-1 cursor-pointer">
+                                    <i class="fa-solid fa-eye text-sky-400"></i> Preview
+                                </button>
                                 <a href="/api/report/${data.report_id}/pdf?version=${v.version_number}" target="_blank" class="btn-secondary text-[9px] h-6 px-2 flex items-center gap-1">
                                     <i class="fa-solid fa-file-pdf text-rose-400"></i> PDF
                                 </a>
@@ -2379,6 +2675,9 @@
                         <div class="flex items-center justify-center space-x-2">
                             <button onclick="viewDetails(${r.report_id})" class="btn-secondary text-[11px] h-8 px-2.5">
                                 <i class="fa-solid fa-eye text-sky-400"></i> Visuals
+                            </button>
+                            <button onclick="openReportPreview(${r.report_id})" class="btn-secondary text-[11px] h-8 px-2.5 cursor-pointer">
+                                <i class="fa-solid fa-eye text-sky-400"></i> Preview
                             </button>
                             <a href="/api/report/${r.report_id}/pdf" target="_blank" class="btn-primary text-[11px] h-8 px-2.5">
                                 <i class="fa-solid fa-file-pdf"></i> PDF
@@ -2915,6 +3214,9 @@
                             <div class="flex items-center justify-center space-x-2">
                                 <button onclick="viewDetails(${r.report_id})" class="btn-secondary text-[11px] h-8 px-2.5">
                                     <i class="fa-solid fa-eye text-sky-400"></i> Visuals
+                                </button>
+                                <button onclick="openReportPreview(${r.report_id})" class="btn-secondary text-[11px] h-8 px-2.5 cursor-pointer">
+                                    <i class="fa-solid fa-eye text-sky-400"></i> Preview
                                 </button>
                                 <a href="/api/report/${r.report_id}/pdf" target="_blank" class="btn-primary text-[11px] h-8 px-2.5">
                                     <i class="fa-solid fa-file-pdf"></i> PDF
