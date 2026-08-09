@@ -1129,9 +1129,14 @@
                 <button onclick="openReportPreview(currentSelectedReportId)" class="btn-secondary text-xs flex items-center gap-2 border border-slate-700 cursor-pointer">
                     <i class="fa-solid fa-eye text-emerald-400"></i> Preview
                 </button>
-                <a id="modal-pdf-link" href="#" target="_blank" class="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-extrabold text-xs px-6 py-3 rounded-xl transition shadow-lg flex items-center gap-2">
-                    <i class="fa-solid fa-file-pdf"></i> Download Official PDF Report
-                </a>
+                <div class="flex items-center gap-2">
+                    <a id="modal-json-link" href="#" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-4 py-3 rounded-xl transition shadow-lg flex items-center gap-2 border border-slate-700">
+                        <i class="fa-solid fa-file-code text-sky-400"></i> Export JSON
+                    </a>
+                    <a id="modal-pdf-link" href="#" target="_blank" class="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-extrabold text-xs px-6 py-3 rounded-xl transition shadow-lg flex items-center gap-2">
+                        <i class="fa-solid fa-file-pdf"></i> Download Official PDF Report
+                    </a>
+                </div>
             </div>
         </div>
     </div>
@@ -2006,6 +2011,7 @@
                 document.getElementById("modal-area").innerText = isSegFailed ? "N/A" : `${data.tumor_area_mm2.toFixed(2)} mm²`;
                 document.getElementById("modal-rule-desc").innerText = data.severity_rule_description;
                 document.getElementById("modal-pdf-link").href = `/api/report/${data.report_id}/pdf`;
+                document.getElementById("modal-json-link").href = `/api/report/${data.report_id}/json`;
 
                 // Populate new F2.1 Metadata fields
                 document.getElementById("modal-report-number").innerText = data.report_number || `RPT-2026-${String(data.report_id).padStart(6, '0')}`;
@@ -2034,6 +2040,9 @@
                                 <button onclick="openReportPreview(${data.report_id}, ${v.version_number})" class="btn-secondary text-[9px] h-6 px-2 flex items-center gap-1 cursor-pointer">
                                     <i class="fa-solid fa-eye text-sky-400"></i> Preview
                                 </button>
+                                <a href="/api/report/${data.report_id}/json?version=${v.version_number}" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-white font-bold text-[9px] h-6 px-2 rounded flex items-center gap-1 border border-slate-700">
+                                    <i class="fa-solid fa-file-code text-sky-400"></i> JSON
+                                </a>
                                 <a href="/api/report/${data.report_id}/pdf?version=${v.version_number}" target="_blank" class="bg-emerald-600 dark:bg-emerald-500 text-slate-950 font-bold text-[9px] h-6 px-2.5 rounded flex items-center gap-1">
                                     <i class="fa-solid fa-file-pdf"></i> PDF
                                 </a>
@@ -2082,9 +2091,12 @@
                             <button onclick="openReportPreview(${r.report_id})" class="btn-secondary text-[11px] h-8 px-2.5 cursor-pointer">
                                 <i class="fa-solid fa-eye text-emerald-400"></i> Preview
                             </button>
-                            <a href="/api/report/${r.report_id}/pdf" target="_blank" class="btn-primary text-[11px] h-8 px-2.5 bg-emerald-600 dark:bg-emerald-500">
-                                <i class="fa-solid fa-file-pdf"></i> Download PDF
-                            </a>
+                            <a href="/api/report/${r.report_id}/json" target="_blank" class="btn-secondary text-[11px] h-8 px-2.5 flex items-center gap-1 border border-slate-700">
+                                 <i class="fa-solid fa-file-code text-sky-400"></i> JSON
+                             </a>
+                             <a href="/api/report/${r.report_id}/pdf" target="_blank" class="btn-primary text-[11px] h-8 px-2.5 bg-emerald-600 dark:bg-emerald-500">
+                                 <i class="fa-solid fa-file-pdf"></i> Download PDF
+                             </a>
                         </div>
                     </td>
                 </tr>

@@ -1700,6 +1700,9 @@
                     <button onclick="openReportPreview(currentSelectedReportId)" class="btn-secondary text-xs flex items-center gap-2 border border-slate-700 cursor-pointer">
                         <i class="fa-solid fa-eye text-sky-400"></i> Preview
                     </button>
+                    <a id="modal-json-link" href="#" target="_blank" class="btn-secondary text-xs flex items-center gap-2 border border-slate-700 cursor-pointer">
+                        <i class="fa-solid fa-file-code text-amber-400"></i> Export JSON
+                    </a>
                     <a id="modal-pdf-link" href="#" target="_blank" class="btn-primary text-xs flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500">
                         <i class="fa-solid fa-file-pdf"></i> Download PDF Clinical Report
                     </a>
@@ -2465,6 +2468,7 @@
                 document.getElementById("modal-area").innerText = isSegFailed ? "N/A" : `${data.tumor_area_mm2.toFixed(2)} mm²`;
                 document.getElementById("modal-rule-desc").innerText = data.severity_rule_description;
                 document.getElementById("modal-pdf-link").href = `/api/report/${data.report_id}/pdf`;
+                document.getElementById("modal-json-link").href = `/api/report/${data.report_id}/json`;
 
                 // Populate new F2.1 Metadata fields
                 document.getElementById("modal-report-number").innerText = data.report_number || `RPT-2026-${String(data.report_id).padStart(6, '0')}`;
@@ -2493,6 +2497,9 @@
                                 <button onclick="openReportPreview(${data.report_id}, ${v.version_number})" class="btn-secondary text-[9px] h-6 px-2 flex items-center gap-1 cursor-pointer">
                                     <i class="fa-solid fa-eye text-sky-400"></i> Preview
                                 </button>
+                                <a href="/api/report/${data.report_id}/json?version=${v.version_number}" target="_blank" class="btn-secondary text-[9px] h-6 px-2 flex items-center gap-1">
+                                    <i class="fa-solid fa-file-code text-amber-400"></i> JSON
+                                </a>
                                 <a href="/api/report/${data.report_id}/pdf?version=${v.version_number}" target="_blank" class="btn-secondary text-[9px] h-6 px-2 flex items-center gap-1">
                                     <i class="fa-solid fa-file-pdf text-rose-400"></i> PDF
                                 </a>
@@ -2679,6 +2686,9 @@
                             <button onclick="openReportPreview(${r.report_id})" class="btn-secondary text-[11px] h-8 px-2.5 cursor-pointer">
                                 <i class="fa-solid fa-eye text-sky-400"></i> Preview
                             </button>
+                            <a href="/api/report/${r.report_id}/json" target="_blank" class="btn-secondary text-[11px] h-8 px-2.5 flex items-center gap-1 border border-slate-700">
+                                <i class="fa-solid fa-file-code text-amber-400"></i> JSON
+                            </a>
                             <a href="/api/report/${r.report_id}/pdf" target="_blank" class="btn-primary text-[11px] h-8 px-2.5">
                                 <i class="fa-solid fa-file-pdf"></i> PDF
                             </a>
@@ -3218,6 +3228,9 @@
                                 <button onclick="openReportPreview(${r.report_id})" class="btn-secondary text-[11px] h-8 px-2.5 cursor-pointer">
                                     <i class="fa-solid fa-eye text-sky-400"></i> Preview
                                 </button>
+                                <a href="/api/report/${r.report_id}/json" target="_blank" class="btn-secondary text-[11px] h-8 px-2.5 flex items-center gap-1 border border-slate-700">
+                                    <i class="fa-solid fa-file-code text-amber-400"></i> JSON
+                                </a>
                                 <a href="/api/report/${r.report_id}/pdf" target="_blank" class="btn-primary text-[11px] h-8 px-2.5">
                                     <i class="fa-solid fa-file-pdf"></i> PDF
                                 </a>

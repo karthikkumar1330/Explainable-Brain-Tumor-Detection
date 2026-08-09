@@ -953,6 +953,61 @@ def serve_report_pdf(report_id: int, version: Optional[int] = Query(None), curre
     return FileResponse(pdf_path, media_type="application/pdf", filename=filename, headers=headers)
 
 
+@router.get("/report/{report_id}/json")
+def serve_report_json(report_id: int, version: Optional[int] = Query(None), current_user: User = Depends(get_current_user)):
+    """Streams the compiled JSON document directly to clients with ownership validation."""
+    from clinical_reporting.application.services import (
+        ReportService, ReportNotFoundException, VersionNotFoundException,
+        PathTraversalException, IntegrityFailureException
+    )
+    import logging
+    logger = logging.getLogger("api.routes.serve_report_json")
+    logger.info(f"API request received for JSON. Report ID: {report_id}, User: {current_user.email}, Version: {version}")
+
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+
+    # 1. Enforce access check
+    access_status = service.check_report_access(report_id, current_user)
+    if access_status == "NOT_FOUND":
+        service.log_report_access_event("REPORT_NOT_FOUND", current_user, report_id, "FAILED", "Requested nonexistent report.")
+        raise HTTPException(status_code=404, detail="Report not found.")
+    elif access_status == "UNAUTHORIZED":
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    elif access_status == "FORBIDDEN":
+        service.log_report_access_event("REPORT_ACCESS_DENIED", current_user, report_id, "FAILED", "Access denied to patient report.")
+        raise HTTPException(status_code=403, detail="Access denied to patient report.")
+
+    # 2. Get and sanitize JSON payload
+    try:
+        sanitized_json = service.get_report_json_for_export(report_id, version, current_user)
+    except (ReportNotFoundException, VersionNotFoundException):
+        raise HTTPException(status_code=404, detail="Report not found.")
+    except PathTraversalException as pte:
+        raise HTTPException(status_code=400, detail="Invalid report path.")
+    except IntegrityFailureException as ife:
+        raise HTTPException(status_code=422, detail="Report integrity verification failed.")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="JSON report file not found on server disk.")
+    except Exception as e:
+        logger.error(f"Error exporting JSON report: {e}")
+        raise HTTPException(status_code=500, detail="Internal error exporting JSON report.")
+
+    resolved_version = version
+    if resolved_version is None:
+        try:
+            report = service.get_report(report_id)
+            resolved_version = report.current_version
+        except Exception:
+            resolved_version = 1
+
+    filename = f"report_{report_id}_v{resolved_version}.json"
+    headers = {
+        "Content-Disposition": f"attachment; filename={filename}",
+        "X-Content-Type-Options": "nosniff"
+    }
+    return JSONResponse(content=sanitized_json, headers=headers)
+
+
 @router.get("/report/{report_id}/visuals/{visual_type}")
 def serve_report_visual(report_id: int, visual_type: str, current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))):
     """Streams diagnostic visual maps (heatmap, overlay, mask, or raw). Only allowed for Admins and Doctors."""

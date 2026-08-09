@@ -1020,6 +1020,112 @@ class ReportService:
         finally:
             conn.close()
 
+    def _sanitize_json_floats(self, val: Any) -> Any:
+        """Recursively sanitizes NaN and Infinity float values to None (null in JSON)."""
+        import math
+        if isinstance(val, dict):
+            return {k: self._sanitize_json_floats(v) for k, v in val.items()}
+        elif isinstance(val, list):
+            return [self._sanitize_json_floats(x) for x in val]
+        elif isinstance(val, float):
+            if math.isnan(val) or math.isinf(val):
+                return None
+            return val
+        return val
+
+    def get_report_json_for_export(
+        self,
+        report_id: int,
+        version: Optional[int] = None,
+        actor: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Retrieves, checks boundaries, and sanitizes report JSON details for secure export."""
+        # 1. Enforce access check
+        access_status = self.check_report_access(report_id, actor)
+        if access_status == "NOT_FOUND":
+            self.log_report_access_event("REPORT_NOT_FOUND", actor, report_id, "FAILED", "Requested nonexistent report JSON.")
+            raise ReportNotFoundException(f"Report with ID {report_id} not found.")
+        elif access_status == "UNAUTHORIZED":
+            raise ReportServiceException("Authentication required.")
+        elif access_status == "FORBIDDEN":
+            self.log_report_access_event("REPORT_ACCESS_DENIED", actor, report_id, "FAILED", "Access denied to patient report JSON.")
+            raise ReportServiceException("Access denied to patient report JSON.")
+
+        # 2. Resolve database connection to find path & check boundary safety
+        conn = self._get_connection()
+        try:
+            if version is not None:
+                row = conn.execute("""
+                    SELECT rv.json_path, rv.version_number, rv.integrity_hash
+                    FROM report_versions rv
+                    JOIN reports r ON rv.report_id = r.report_id
+                    WHERE rv.report_id = ? AND rv.version_number = ?;
+                """, (report_id, version)).fetchone()
+                if not row:
+                    self._log_security_audit_event(conn, "REPORT_NOT_FOUND", actor, report_id, "FAILED", f"Report version {version} not found.")
+                    raise VersionNotFoundException(f"Version {version} not found for report {report_id}.")
+            else:
+                row = conn.execute("""
+                    SELECT rv.json_path, rv.version_number, rv.integrity_hash
+                    FROM report_versions rv
+                    JOIN reports r ON rv.report_id = r.report_id
+                    WHERE rv.report_id = ? AND rv.version_number = r.current_version;
+                """, (report_id,)).fetchone()
+                if not row:
+                    self._log_security_audit_event(conn, "REPORT_NOT_FOUND", actor, report_id, "FAILED", "Latest report version not found.")
+                    raise ReportNotFoundException(f"Report with ID {report_id} not found.")
+
+            json_path = row["json_path"]
+            version_number = row["version_number"]
+            stored_hash = row["integrity_hash"]
+
+            if not json_path:
+                raise FileNotFoundError("JSON path is empty in database.")
+
+            # Path traversal and boundary security check
+            trusted_dir = os.path.abspath("outputs/clinical_reports")
+            resolved_json = os.path.abspath(json_path)
+            if not resolved_json.startswith(trusted_dir + os.sep) and resolved_json != trusted_dir:
+                self._log_security_audit_event(conn, "REPORT_ACCESS_DENIED", actor, report_id, "FAILED", f"Path traversal attempt: {json_path}")
+                raise PathTraversalException("Path traversal or directory escape detected.")
+
+            # Missing-file check
+            if not os.path.exists(resolved_json):
+                # Try regenerating on the fly
+                try:
+                    self._regenerate_pdf_internal(conn, report_id, version_number)
+                except Exception:
+                    pass
+                if not os.path.exists(resolved_json):
+                    raise FileNotFoundError(f"JSON report file not found on server disk at {resolved_json}")
+
+            # Load the JSON
+            try:
+                import json
+                with open(resolved_json, "r", encoding="utf-8") as f:
+                    payload = json.load(f)
+            except Exception as e:
+                raise ValueError(f"Malformed or unreadable JSON file: {e}")
+
+            # Verify integrity if stored_hash is set
+            if stored_hash:
+                from clinical_reporting.domain.entities import generate_integrity_hash
+                calculated_hash = generate_integrity_hash(payload)
+                import secrets
+                if not secrets.compare_digest(calculated_hash, stored_hash):
+                    self._log_security_audit_event(conn, "REPORT_INTEGRITY_FAILED", actor, report_id, "FAILED", f"Report ID: {report_id}, Version: {version_number}, reason: hash mismatch")
+                    raise IntegrityFailureException("Report integrity verification failed.")
+
+            # Sanitize NaN/Infinity
+            sanitized = self._sanitize_json_floats(payload)
+
+            # Audit success log
+            self._log_security_audit_event(conn, "REPORT_JSON_EXPORTED", actor, report_id, "SUCCESS", f"Exported report JSON version {version_number}")
+            conn.commit()
+            return sanitized
+        finally:
+            conn.close()
+
     def get_report_audit_history(self, user: Any) -> List[Dict[str, Any]]:
         """Retrieves and filters access history logs according to RBAC."""
         conn = self._get_connection()
@@ -1031,7 +1137,8 @@ class ReportService:
                 WHERE event_type IN (
                     'REPORT_VIEWED', 'REPORT_DOWNLOADED',
                     'REPORT_ACCESS_DENIED', 'REPORT_NOT_FOUND',
-                    'REPORT_INTEGRITY_FAILED', 'REPORT_LIFECYCLE_CHANGE'
+                    'REPORT_INTEGRITY_FAILED', 'REPORT_LIFECYCLE_CHANGE',
+                    'REPORT_JSON_EXPORTED'
                 )
                 ORDER BY id DESC;
             """)

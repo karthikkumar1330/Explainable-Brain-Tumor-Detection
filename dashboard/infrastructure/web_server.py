@@ -1274,6 +1274,69 @@ def create_app(db_path: str) -> Flask:
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
+    @app.route("/api/report/<int:report_id>/json")
+    @login_required
+    def get_json_report(current_user: User, report_id: int):
+        import logging
+        logger = logging.getLogger("dashboard.web_server.get_json_report")
+
+        version_str = request.args.get("version")
+        version = None
+        if version_str is not None and version_str != "":
+            try:
+                version = int(version_str)
+            except ValueError:
+                return jsonify({"error": "Invalid version parameter. Version must be a valid integer."}), 400
+
+        logger.info(f"Flask API request received for JSON. Report ID: {report_id}, User: {current_user.email}, Version: {version}")
+
+        from clinical_reporting.application.services import (
+            ReportService, ReportNotFoundException, VersionNotFoundException,
+            PathTraversalException, IntegrityFailureException
+        )
+        service = ReportService(db_path=app.config["DB_PATH"])
+
+        # 1. Enforce access check
+        access_status = service.check_report_access(report_id, current_user)
+        if access_status == "NOT_FOUND":
+            service.log_report_access_event("REPORT_NOT_FOUND", current_user, report_id, "FAILED", "Requested nonexistent report JSON.")
+            return jsonify({"error": "Report not found"}), 404
+        elif access_status == "UNAUTHORIZED":
+            return jsonify({"error": "Authentication required"}), 401
+        elif access_status == "FORBIDDEN":
+            service.log_report_access_event("REPORT_ACCESS_DENIED", current_user, report_id, "FAILED", "Access denied to patient report JSON.")
+            return jsonify({"error": "Access denied to patient report"}), 403
+
+        # 2. Get and sanitize JSON payload
+        try:
+            sanitized_json = service.get_report_json_for_export(report_id, version, current_user)
+        except (ReportNotFoundException, VersionNotFoundException):
+            return jsonify({"error": "Report not found"}), 404
+        except PathTraversalException as pte:
+            return jsonify({"error": "Invalid report path"}), 400
+        except IntegrityFailureException as ife:
+            return jsonify({"error": "Report integrity verification failed."}), 422
+        except FileNotFoundError:
+            return jsonify({"error": "JSON report file not found on server disk"}), 404
+        except Exception as e:
+            logger.error(f"Error exporting JSON report: {e}")
+            return jsonify({"error": "Internal error exporting JSON report."}), 500
+
+        resolved_version = version
+        if resolved_version is None:
+            try:
+                report = service.get_report(report_id)
+                resolved_version = report.current_version
+            except Exception:
+                resolved_version = 1
+
+        filename = f"report_{report_id}_v{resolved_version}.json"
+
+        response = jsonify(sanitized_json)
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
     @app.route("/api/reports/audit-history", methods=["GET"])
     @login_required
     def get_report_audit_history_flask(current_user: User):
