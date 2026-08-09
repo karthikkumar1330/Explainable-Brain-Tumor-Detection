@@ -8,7 +8,7 @@ import logging
 import hashlib
 from typing import List, Optional, Tuple, Dict, Any
 
-from clinical_reporting.domain.entities import Report, ReportVersion, ReportStatus, can_transition, PatientMismatchException, ComparisonMetric, ReportComparison, FollowUpComparisonMetric, FollowUpComparison
+from clinical_reporting.domain.entities import Report, ReportVersion, ReportStatus, can_transition, PatientMismatchException, ComparisonMetric, ReportComparison, FollowUpComparisonMetric, FollowUpComparison, LongitudinalTimelineEvent, LongitudinalPatientTimeline, LongitudinalTimelineMetric
 
 
 class ReportServiceException(Exception):
@@ -1903,3 +1903,204 @@ class ReportService:
         else:
             text = "AI-derived tumor measurements remain stable."
         return status, text
+
+    def get_patient_longitudinal_timeline(
+        self,
+        patient_id: str,
+        actor: Optional[Any] = None
+    ) -> LongitudinalPatientTimeline:
+        """Retrieves and constructs the chronological patient timeline with strict security checks."""
+        import math
+        import os
+        self.logger.info(f"Retrieving patient timeline for patient_id={patient_id} by actor={actor}")
+
+        # Helper to log audit events safely
+        def safe_log_audit(event_type: str, user: Optional[Any], status: str, details: str) -> None:
+            try:
+                conn_audit = self._get_connection()
+                try:
+                    self._log_security_audit_event(conn_audit, event_type, user, None, status, details)
+                    conn_audit.commit()
+                finally:
+                    conn_audit.close()
+            except Exception as audit_err:
+                self.logger.warning(f"Failed to log timeline security audit event: {audit_err}")
+
+        # 1. Input Validation for patient_id
+        if not patient_id or not isinstance(patient_id, str):
+            safe_log_audit("PATIENT_TIMELINE_ACCESSED", actor, "FAILED", "Timeline request rejected: Invalid patient ID format.")
+            raise ReportServiceException("Invalid patient ID format.")
+
+        stripped_id = patient_id.strip()
+        if not stripped_id:
+            safe_log_audit("PATIENT_TIMELINE_ACCESSED", actor, "FAILED", "Timeline request rejected: Patient ID cannot be empty.")
+            raise ReportServiceException("Invalid patient ID format.")
+
+        if len(stripped_id) > 100:
+            safe_log_audit("PATIENT_TIMELINE_ACCESSED", actor, "FAILED", f"Timeline request rejected: Patient ID is too long ({len(stripped_id)} chars).")
+            raise ReportServiceException("Patient ID is too long.")
+
+        if "/" in stripped_id or "\\" in stripped_id or ".." in stripped_id:
+            safe_log_audit("PATIENT_TIMELINE_ACCESSED", actor, "FAILED", "Timeline request rejected: Malformed path traversal characters in Patient ID.")
+            raise ReportServiceException("Malformed patient ID.")
+
+        # 2. Enforce security access check
+        if actor is None:
+            safe_log_audit("PATIENT_TIMELINE_ACCESSED", None, "FAILED", f"Access denied to patient timeline for ID: {stripped_id}. Authentication required.")
+            raise ReportServiceException("Authentication required.")
+
+        role_val = actor.role.value if hasattr(actor.role, 'value') else str(actor.role).lower()
+        if role_val not in ["admin", "doctor", "patient"]:
+            safe_log_audit("PATIENT_TIMELINE_ACCESSED", actor, "FAILED", f"Access denied to patient timeline for ID: {stripped_id}. Unauthorized role: {role_val}.")
+            raise ReportServiceException("Access denied.")
+
+        if role_val == "patient":
+            authorized = False
+            user_uuid = actor.uuid.lower() if actor.uuid else ""
+            user_name = actor.full_name.lower() if actor.full_name else ""
+
+            if stripped_id.lower() == user_uuid:
+                authorized = True
+            else:
+                conn = self._get_connection()
+                try:
+                    row_pat = conn.execute("SELECT name FROM patients WHERE patient_id = ?;", (stripped_id,)).fetchone()
+                    if row_pat:
+                        pat_name = row_pat["name"].lower()
+                        if pat_name == user_name:
+                            authorized = True
+                finally:
+                    conn.close()
+
+            if not authorized:
+                safe_log_audit("PATIENT_TIMELINE_ACCESSED", actor, "FAILED", f"Access denied to patient timeline for ID: {stripped_id}. Patient user mismatch (User uuid: {user_uuid}).")
+                raise ReportServiceException("Access denied to patient timeline.")
+
+        # 3. Fetch patient name and verify existence
+        conn = self._get_connection()
+        try:
+            row_pat = conn.execute("SELECT name FROM patients WHERE patient_id = ?;", (stripped_id,)).fetchone()
+            if not row_pat:
+                safe_log_audit("PATIENT_TIMELINE_ACCESSED", actor, "FAILED", f"Timeline request failed. Patient with ID {stripped_id} not found in database.")
+                raise ReportServiceException(f"Patient with ID {stripped_id} not found.")
+            patient_name = row_pat["name"]
+
+            # 4. Query all reports for patient
+            query = """
+                SELECT rv.report_id, rv.version_number, rv.prediction_id, rv.json_path, rv.status as version_status,
+                       r.report_number, r.status as report_status,
+                       p.predicted_class, p.confidence_score, p.tumor_area_mm2, p.tumor_percentage_brain,
+                       p.rule_based_severity,
+                       ms.id as scan_id, ms.scan_date
+                FROM report_versions rv
+                JOIN reports r ON rv.report_id = r.report_id
+                LEFT JOIN predictions p ON rv.prediction_id = p.id
+                LEFT JOIN mri_scans ms ON p.scan_id = ms.id
+                WHERE r.patient_id = ? AND rv.version_number = r.current_version;
+            """
+            rows = conn.execute(query, (stripped_id,)).fetchall()
+        finally:
+            conn.close()
+
+        def clean_float(val: Any) -> Optional[float]:
+            if val is None:
+                return None
+            try:
+                f = float(val)
+                if math.isnan(f) or math.isinf(f):
+                    return None
+                return f
+            except (ValueError, TypeError):
+                if isinstance(val, str):
+                    if val.lower().strip() in ("nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity"):
+                        return None
+                return None
+
+        events = []
+        for row in rows:
+            report_id = row["report_id"]
+            scan_id = row["scan_id"]
+            scan_date = row["scan_date"]
+            classification = row["predicted_class"]
+            confidence = clean_float(row["confidence_score"])
+            tumor_area = clean_float(row["tumor_area_mm2"])
+            tumor_percentage = clean_float(row["tumor_percentage_brain"])
+            severity = row["rule_based_severity"]
+            report_status = row["report_status"]
+
+            # Load and enrich from json file on disk if it exists
+            json_path = row["json_path"]
+            if json_path and os.path.exists(json_path):
+                try:
+                    import json
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+
+                    # Report-level Security: Verify Patient ID in JSON matches expected patient_id
+                    if "patient" in data:
+                        file_patient_id = data["patient"].get("patient_id")
+                        if file_patient_id and str(file_patient_id).strip() != str(stripped_id).strip():
+                            self.logger.warning(
+                                f"Report-level Security Violation: Patient ID mismatch in JSON file {json_path}. "
+                                f"Expected {stripped_id}, got {file_patient_id}."
+                            )
+                            # Ignore this JSON file completely to prevent information leakage, but keep DB details
+                            data = {}
+
+                        if data:
+                            scan_date = data["patient"].get("scan_date", scan_date)
+                    if "classification" in data:
+                        c = data["classification"]
+                        classification = c.get("predicted_class", classification)
+                        confidence = clean_float(c.get("confidence_score", confidence))
+                    if "segmentation" in data:
+                        s = data["segmentation"]
+                        tumor_area = clean_float(s.get("tumor_area_mm2", tumor_area))
+                        tumor_percentage = clean_float(s.get("tumor_percentage_brain", tumor_percentage))
+                    if "severity" in data:
+                        severity = data["severity"].get("category", severity)
+                except Exception as e:
+                    self.logger.warning(f"Could not load/enrich from JSON report file at {json_path}: {e}")
+
+            severity_score = None
+            if severity:
+                sev_upper = str(severity).upper()
+                if sev_upper in ("LOW", "MEDIUM", "HIGH"):
+                    if sev_upper == "LOW":
+                        severity_score = 0.33
+                    elif sev_upper == "MEDIUM":
+                        severity_score = 0.66
+                    elif sev_upper == "HIGH":
+                        severity_score = 1.0
+
+            event = LongitudinalTimelineEvent(
+                report_id=report_id,
+                scan_id=scan_id,
+                patient_id=stripped_id,
+                scan_date=scan_date,
+                classification=classification,
+                confidence=confidence,
+                tumor_area=tumor_area,
+                tumor_percentage=tumor_percentage,
+                severity=severity,
+                severity_score=severity_score,
+                report_status=report_status
+            )
+            events.append(event)
+
+        # Build domain timeline (automatically sorts and populates trends)
+        timeline = LongitudinalPatientTimeline(
+            patient_id=stripped_id,
+            patient_name=patient_name,
+            events=events
+        )
+
+        # Log success audit event
+        safe_log_audit(
+            "PATIENT_TIMELINE_ACCESSED",
+            actor,
+            "SUCCESS",
+            f"Longitudinal timeline for patient {stripped_id} successfully accessed by user {actor.email if hasattr(actor, 'email') else (actor.get('email') if isinstance(actor, dict) else 'unknown')} with role {role_val}."
+        )
+
+        return timeline

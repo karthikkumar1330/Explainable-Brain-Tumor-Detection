@@ -1039,6 +1039,33 @@ def create_app(db_path: str) -> Flask:
             app.logger.error(f"Error in Flask follow-up comparison API: {e}")
             return jsonify({"error": "Internal follow-up comparison engine error"}), 500
 
+    @app.route("/api/patients/<patient_id>/longitudinal-timeline")
+    @login_required
+    def get_patient_longitudinal_timeline_flask(current_user: User, patient_id: str):
+        """Flask Endpoint: Retrieves a patient's longitudinal timeline, enforcing authorization boundaries."""
+        from clinical_reporting.application.services import ReportService, ReportServiceException
+
+        service = ReportService(db_path=app.config["DB_PATH"])
+        try:
+            timeline = service.get_patient_longitudinal_timeline(
+                patient_id=patient_id,
+                actor=current_user
+            )
+            return jsonify(timeline.to_dict())
+        except ReportServiceException as rse:
+            err_msg = str(rse)
+            if "Access denied" in err_msg or "denied" in err_msg.lower():
+                return jsonify({"error": "Access denied to patient timeline."}), 403
+            elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
+                return jsonify({"error": err_msg}), 401
+            elif "not found" in err_msg.lower():
+                return jsonify({"error": err_msg}), 404
+            else:
+                return jsonify({"error": err_msg}), 422
+        except Exception as e:
+            app.logger.error(f"Error in Flask longitudinal timeline API: {e}")
+            return jsonify({"error": "Internal timeline engine error"}), 500
+
     @app.route("/api/report/<int:report_id>/status", methods=["PATCH"])
     @login_required
     def update_report_status(current_user: User, report_id: int):

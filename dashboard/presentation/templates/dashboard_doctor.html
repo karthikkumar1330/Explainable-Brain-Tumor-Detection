@@ -877,6 +877,134 @@
                     </div>
                 </div>
 
+                <!-- Patient Longitudinal Timeline Section -->
+                <div class="glass-panel p-6 rounded-3xl border border-slate-800 space-y-6 hidden" id="timeline-section" aria-labelledby="timeline-title">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-800/60 pb-4">
+                        <div>
+                            <h3 id="timeline-title" class="font-extrabold text-lg text-slate-100 flex items-center gap-2">
+                                <i class="fa-solid fa-timeline text-sky-400"></i>
+                                Longitudinal Patient Timeline
+                            </h3>
+                            <p class="text-xs text-slate-400 mt-1">Track clinical findings and tumor measurements across scans.</p>
+                        </div>
+                        <div class="text-xs text-slate-400 font-bold" id="timeline-patient-info">
+                            Patient: <span id="timeline-patient-name-header" class="text-slate-200"></span> (<span id="timeline-patient-id-header" class="text-sky-400 font-mono"></span>)
+                        </div>
+                    </div>
+
+                    <!-- LOADING SKELETON -->
+                    <div id="timeline-loading" class="space-y-6">
+                        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                            <div class="animate-pulse bg-slate-800/40 h-24 rounded-2xl border border-slate-750"></div>
+                            <div class="animate-pulse bg-slate-800/40 h-24 rounded-2xl border border-slate-750"></div>
+                            <div class="animate-pulse bg-slate-800/40 h-24 rounded-2xl border border-slate-750"></div>
+                            <div class="animate-pulse bg-slate-800/40 h-24 rounded-2xl border border-slate-750"></div>
+                        </div>
+                        <div class="animate-pulse bg-slate-800/30 h-16 rounded-xl border border-slate-750"></div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                            <div class="animate-pulse bg-slate-800/40 h-32 rounded-2xl border border-slate-750"></div>
+                            <div class="animate-pulse bg-slate-800/40 h-32 rounded-2xl border border-slate-750"></div>
+                            <div class="animate-pulse bg-slate-800/40 h-32 rounded-2xl border border-slate-750"></div>
+                            <div class="animate-pulse bg-slate-800/40 h-32 rounded-2xl border border-slate-750"></div>
+                            <div class="animate-pulse bg-slate-800/40 h-32 rounded-2xl border border-slate-750"></div>
+                        </div>
+                        <div class="space-y-4">
+                            <div class="flex gap-4 items-start">
+                                <div class="w-8 h-8 rounded-full bg-slate-800 animate-pulse"></div>
+                                <div class="flex-1 animate-pulse bg-slate-800/20 h-24 rounded-2xl border border-slate-750"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ERROR STATE -->
+                    <div id="timeline-error" class="hidden p-6 bg-red-950/20 border border-red-500/30 rounded-2xl text-center space-y-3">
+                        <i class="fa-solid fa-circle-exclamation text-red-500 text-3xl"></i>
+                        <h4 class="font-bold text-slate-100">Unable to Load Longitudinal Timeline</h4>
+                        <p id="timeline-error-msg" class="text-xs text-slate-400 max-w-md mx-auto">An error occurred while fetching timeline data.</p>
+                    </div>
+
+                    <!-- EMPTY STATE -->
+                    <div id="timeline-empty" class="hidden p-8 bg-slate-900/30 border border-slate-800 rounded-2xl text-center space-y-4">
+                        <div class="h-16 w-16 bg-slate-950 rounded-full flex items-center justify-center mx-auto border border-slate-800">
+                            <i class="fa-solid fa-timeline text-slate-500 text-2xl"></i>
+                        </div>
+                        <div class="space-y-1">
+                            <h4 class="font-extrabold text-slate-200">No longitudinal scan history available.</h4>
+                            <p class="text-xs text-slate-400 max-w-sm mx-auto">Longitudinal analysis will appear when clinical reports are available for this patient.</p>
+                        </div>
+                    </div>
+
+                    <!-- TIMELINE DATA CONTENT -->
+                    <div id="timeline-content" class="hidden space-y-6">
+                        <!-- Summary Cards -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" id="timeline-summary-cards">
+                            <div class="glass-panel p-5 rounded-2xl flex items-center justify-between border-t-2 border-t-sky-500 bg-slate-950/40">
+                                <div>
+                                    <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Total Scans</span>
+                                    <h4 id="timeline-total-scans" class="text-2xl font-extrabold mt-1 text-slate-100">-</h4>
+                                </div>
+                                <div class="h-10 w-10 rounded-xl bg-sky-500/10 text-sky-400 flex items-center justify-center text-base border border-sky-500/20">
+                                    <i class="fa-solid fa-layer-group"></i>
+                                </div>
+                            </div>
+                            <div class="glass-panel p-5 rounded-2xl flex items-center justify-between border-t-2 border-t-teal-500 bg-slate-950/40">
+                                <div>
+                                    <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">First Scan</span>
+                                    <h4 id="timeline-first-date" class="text-sm font-extrabold mt-2 text-slate-200">-</h4>
+                                </div>
+                                <div class="h-10 w-10 rounded-xl bg-teal-500/10 text-teal-400 flex items-center justify-center text-base border border-teal-500/20">
+                                    <i class="fa-solid fa-calendar-check"></i>
+                                </div>
+                            </div>
+                            <div class="glass-panel p-5 rounded-2xl flex items-center justify-between border-t-2 border-t-indigo-500 bg-slate-950/40">
+                                <div>
+                                    <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Latest Scan</span>
+                                    <h4 id="timeline-latest-date" class="text-sm font-extrabold mt-2 text-slate-200">-</h4>
+                                </div>
+                                <div class="h-10 w-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-base border border-indigo-500/20">
+                                    <i class="fa-solid fa-calendar-day"></i>
+                                </div>
+                            </div>
+                            <div class="glass-panel p-5 rounded-2xl flex items-center justify-between border-t-2 border-t-purple-500 bg-slate-950/40">
+                                <div>
+                                    <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Timeline Status</span>
+                                    <h4 id="timeline-status" class="text-sm font-extrabold mt-2 text-purple-400 uppercase">-</h4>
+                                </div>
+                                <div class="h-10 w-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center text-base border border-purple-500/20">
+                                    <i class="fa-solid fa-arrow-trend-up"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Trend Summary Narrative -->
+                        <div class="bg-slate-950/90 p-4 rounded-xl border border-slate-800 flex items-start gap-3 shadow-inner">
+                            <i class="fa-solid fa-comment-medical text-sky-400 text-base shrink-0 mt-0.5"></i>
+                            <div>
+                                <span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Longitudinal Trend Interpretation:</span>
+                                <p id="timeline-trend-summary" class="text-xs text-slate-200 font-medium italic mt-1">-</p>
+                            </div>
+                        </div>
+
+                        <!-- Metric Cards Section -->
+                        <div class="space-y-3">
+                            <h4 class="font-extrabold text-slate-200 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                                <i class="fa-solid fa-chart-line text-sky-400"></i> Key Change Metrics (Latest vs Previous Scan)
+                            </h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4" id="timeline-metrics-grid">
+                            </div>
+                        </div>
+
+                        <!-- Vertical Timeline Visualization -->
+                        <div class="space-y-4 pt-4 border-t border-slate-800/60">
+                            <h4 class="font-extrabold text-slate-200 text-xs uppercase tracking-wider flex items-center gap-1.5 mb-6">
+                                <i class="fa-solid fa-clock-rotate-left text-sky-400"></i> Chronological Timeline
+                            </h4>
+                            <div class="relative pl-6 md:pl-8 border-l-2 border-slate-800/80 ml-3 md:ml-4 space-y-8" id="timeline-visualization-list">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Recent Scan Reports Table -->
                 <div class="glass-panel rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
                     <div class="p-5 bg-slate-900/80 border-b border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2123,6 +2251,7 @@
         async function onComparePatientChange() {
             const pId = document.getElementById("compare-patient-select").value;
             populateCompareReports(pId);
+            await loadTimelineData(pId);
         }
 
         function populateCompareReports(patientId) {
@@ -3314,6 +3443,369 @@
                 const data = await res.json();
                 alert(data.message || "Your account has been deleted permanently.");
                 handleLogoutRedirect();
+            } catch (err) {
+                alert("Failed to delete account.");
+            }
+        }
+
+        // --- Longitudinal Patient Timeline for Doctors (Phase F3.3.6) ---
+        function formatTimelineValue(value, fallback = "N/A") {
+            if (value === null || value === undefined) {
+                return fallback;
+            }
+            if (typeof value === "string") {
+                const lower = value.toLowerCase().trim();
+                if (lower === "nan" || lower === "inf" || lower === "-inf") {
+                    return fallback;
+                }
+            }
+            if (typeof value === "number") {
+                if (Number.isNaN(value) || !Number.isFinite(value)) {
+                    return fallback;
+                }
+            }
+            return value;
+        }
+
+        let timelineAbortController = null;
+
+        async function loadTimelineData(patientId) {
+            if (timelineAbortController) {
+                timelineAbortController.abort();
+            }
+
+            if (!patientId) {
+                document.getElementById("timeline-section").classList.add("hidden");
+                clearTimelineData();
+                return;
+            }
+
+            document.getElementById("timeline-section").classList.remove("hidden");
+
+            const loading = document.getElementById("timeline-loading");
+            const content = document.getElementById("timeline-content");
+            const empty = document.getElementById("timeline-empty");
+            const error = document.getElementById("timeline-error");
+
+            if (loading) loading.classList.remove("hidden");
+            if (content) content.classList.add("hidden");
+            if (empty) empty.classList.add("hidden");
+            if (error) error.classList.add("hidden");
+
+            timelineAbortController = new AbortController();
+            const signal = timelineAbortController.signal;
+
+            try {
+                const res = await fetchWithAuth(`/api/patients/${patientId}/longitudinal-timeline`, { signal });
+                if (!res.ok) {
+                    if (res.status === 401 || res.status === 403 || res.status === 404 || res.status === 422) {
+                        showTimelineError(res.status);
+                        return;
+                    }
+                    throw new Error(`HTTP Error: ${res.status}`);
+                }
+                const data = await res.json();
+
+                if (data.error) {
+                    showTimelineError(400, data.error);
+                    return;
+                }
+
+                if (loading) loading.classList.add("hidden");
+
+                if (data.total_events === 0) {
+                    if (empty) empty.classList.remove("hidden");
+                    return;
+                }
+
+                document.getElementById("timeline-patient-name-header").innerText = formatTimelineValue(data.patient_name);
+                document.getElementById("timeline-patient-id-header").innerText = formatTimelineValue(data.patient_id);
+
+                document.getElementById("timeline-total-scans").innerText = formatTimelineValue(data.total_events);
+                document.getElementById("timeline-first-date").innerText = formatTimelineValue(data.first_scan_date);
+                document.getElementById("timeline-latest-date").innerText = formatTimelineValue(data.latest_scan_date);
+
+                const statusEl = document.getElementById("timeline-status");
+                const status = formatTimelineValue(data.timeline_status);
+                statusEl.innerText = status;
+
+                let statusColor = "text-slate-400 border-slate-700 bg-slate-900/30";
+                if (status === "PROGRESSION") {
+                    statusColor = "text-red-400 border-red-500/35 bg-red-500/10";
+                } else if (status === "REGRESSION") {
+                    statusColor = "text-blue-450 border-blue-500/35 bg-blue-500/10";
+                } else if (status === "STABLE") {
+                    statusColor = "text-emerald-450 border-emerald-500/35 bg-emerald-500/10";
+                } else if (status === "CHANGED") {
+                    statusColor = "text-amber-450 border-amber-500/35 bg-amber-500/10";
+                }
+                statusEl.className = `text-xs px-2.5 py-0.5 rounded font-extrabold uppercase border ${statusColor}`;
+
+                document.getElementById("timeline-trend-summary").innerText = formatTimelineValue(data.trend_summary);
+
+                const grid = document.getElementById("timeline-metrics-grid");
+                grid.innerHTML = "";
+                if (data.metrics) {
+                    const order = ["classification", "confidence", "tumor_area", "tumor_percentage", "severity"];
+                    order.forEach(k => {
+                        if (data.metrics[k]) {
+                            grid.appendChild(createMetricCard(k, data.metrics[k]));
+                        }
+                    });
+                }
+
+                renderVerticalTimeline(data.events);
+
+                if (content) content.classList.remove("hidden");
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    return;
+                }
+                console.error("Failed to load longitudinal timeline data:", err);
+                showTimelineError(500);
+            } finally {
+                if (timelineAbortController && timelineAbortController.signal === signal) {
+                    timelineAbortController = null;
+                }
+            }
+        }
+
+        function clearTimelineData() {
+            document.getElementById("timeline-patient-name-header").innerText = "";
+            document.getElementById("timeline-patient-id-header").innerText = "";
+            document.getElementById("timeline-total-scans").innerText = "-";
+            document.getElementById("timeline-first-date").innerText = "-";
+            document.getElementById("timeline-latest-date").innerText = "-";
+            document.getElementById("timeline-status").innerText = "-";
+            document.getElementById("timeline-trend-summary").innerText = "-";
+            const grid = document.getElementById("timeline-metrics-grid");
+            if (grid) grid.innerHTML = "";
+            const list = document.getElementById("timeline-visualization-list");
+            if (list) list.innerHTML = "";
+        }
+
+        function showTimelineError(code) {
+            const loading = document.getElementById("timeline-loading");
+            const content = document.getElementById("timeline-content");
+            const empty = document.getElementById("timeline-empty");
+            const error = document.getElementById("timeline-error");
+            const errorMsg = document.getElementById("timeline-error-msg");
+
+            if (loading) loading.classList.add("hidden");
+            if (content) content.classList.add("hidden");
+            if (empty) empty.classList.add("hidden");
+
+            let displayMsg = "An error occurred while fetching timeline data. Please try again later.";
+            if (code === 401) {
+                displayMsg = "Authentication required. Please log in again.";
+            } else if (code === 403) {
+                displayMsg = "Access denied to patient timeline resources.";
+            } else if (code === 404) {
+                displayMsg = "Patient timeline record not found.";
+            }
+            if (errorMsg) errorMsg.innerText = displayMsg;
+            if (error) error.classList.remove("hidden");
+        }
+
+        function createMetricCard(key, m) {
+            const isNumeric = key === "tumor_area" || key === "confidence" || key === "tumor_percentage" || key === "severity";
+            const name = m.metric_name;
+            const trend = formatTimelineValue(m.trend);
+
+            let currentVal = formatTimelineValue(m.current_value);
+            let prevVal = formatTimelineValue(m.previous_value);
+            let absChange = formatTimelineValue(m.absolute_change);
+            let pctChange = formatTimelineValue(m.percentage_change);
+
+            if (m.current_value !== null && m.current_value !== undefined) {
+                if (key === "tumor_area" && typeof m.current_value === "number") {
+                    currentVal = `${currentVal.toFixed(2)} mm²`;
+                } else if (key === "confidence" && typeof m.current_value === "number") {
+                    currentVal = `${(currentVal * 100).toFixed(2)}%`;
+                } else if (key === "tumor_percentage" && typeof m.current_value === "number") {
+                    currentVal = `${(currentVal * 100).toFixed(4)}%`;
+                } else if (key === "severity" && typeof m.current_value === "number") {
+                    currentVal = `${currentVal.toFixed(2)}`;
+                }
+            }
+            if (m.previous_value !== null && m.previous_value !== undefined) {
+                if (key === "tumor_area" && typeof m.previous_value === "number") {
+                    prevVal = `${prevVal.toFixed(2)} mm²`;
+                } else if (key === "confidence" && typeof m.previous_value === "number") {
+                    prevVal = `${(m.previous_value * 100).toFixed(2)}%`;
+                } else if (key === "tumor_percentage" && typeof m.previous_value === "number") {
+                    prevVal = `${(m.previous_value * 100).toFixed(4)}%`;
+                } else if (key === "severity" && typeof m.previous_value === "number") {
+                    prevVal = `${prevVal.toFixed(2)}`;
+                }
+            }
+            if (m.absolute_change !== null && m.absolute_change !== undefined && typeof m.absolute_change === "number") {
+                if (key === "tumor_area") {
+                    absChange = `${m.absolute_change > 0 ? '+' : ''}${absChange.toFixed(2)} mm²`;
+                } else if (key === "confidence") {
+                    absChange = `${m.absolute_change > 0 ? '+' : ''}${(m.absolute_change * 100).toFixed(2)} pp`;
+                } else if (key === "tumor_percentage") {
+                    absChange = `${m.absolute_change > 0 ? '+' : ''}${(m.absolute_change * 100).toFixed(4)} pp`;
+                } else if (key === "severity") {
+                    absChange = `${m.absolute_change > 0 ? '+' : ''}${absChange.toFixed(2)}`;
+                }
+            }
+            if (m.percentage_change !== null && m.percentage_change !== undefined && typeof m.percentage_change === "number") {
+                pctChange = `${m.percentage_change > 0 ? '+' : ''}${pctChange.toFixed(2)}%`;
+            }
+
+            let trendClass = "text-slate-400";
+            let trendIcon = "";
+            if (trend === "INCREASED") {
+                trendClass = "text-red-400 font-extrabold";
+                trendIcon = '<i class="fa-solid fa-arrow-trend-up"></i>';
+            } else if (trend === "DECREASED") {
+                trendClass = "text-blue-400 font-extrabold";
+                trendIcon = '<i class="fa-solid fa-arrow-trend-down"></i>';
+            } else if (trend === "CHANGED") {
+                trendClass = "text-amber-400 font-extrabold";
+                trendIcon = '<i class="fa-solid fa-arrows-left-right"></i>';
+            } else if (trend === "STABLE" || trend === "UNCHANGED") {
+                trendClass = "text-emerald-400 font-extrabold";
+                trendIcon = '<i class="fa-solid fa-minus"></i>';
+            }
+
+            const card = document.createElement("div");
+            card.className = "glass-panel p-4 rounded-xl border border-slate-800 bg-slate-900/40 space-y-3";
+            card.innerHTML = `
+                <div class="border-b border-slate-800 pb-2 flex justify-between items-start">
+                    <span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">${name}</span>
+                    <span class="text-[10px] px-2 py-0.5 rounded font-extrabold uppercase ${trendClass} flex items-center gap-1 border border-current bg-slate-950/20">
+                        ${trendIcon} ${trend}
+                    </span>
+                </div>
+                <div class="grid grid-cols-2 gap-x-2 gap-y-2 text-xs">
+                    <div>
+                        <span class="text-[9px] text-slate-500 uppercase font-bold block">Current</span>
+                        <span class="font-extrabold text-slate-200">${currentVal}</span>
+                    </div>
+                    <div>
+                        <span class="text-[9px] text-slate-500 uppercase font-bold block">Previous</span>
+                        <span class="font-medium text-slate-400">${prevVal}</span>
+                    </div>
+                    ${isNumeric ? `
+                    <div>
+                        <span class="text-[9px] text-slate-500 uppercase font-bold block">Change</span>
+                        <span class="font-bold ${trendClass}">${absChange}</span>
+                    </div>
+                    <div>
+                        <span class="text-[9px] text-slate-500 uppercase font-bold block">Percentage</span>
+                        <span class="font-bold ${trendClass}">${pctChange}</span>
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+            return card;
+        }
+
+        function renderVerticalTimeline(events) {
+            const list = document.getElementById("timeline-visualization-list");
+            if (!list) return;
+            list.innerHTML = "";
+
+            if (!events || events.length === 0) return;
+
+            events.forEach((ev, idx) => {
+                const date = formatTimelineValue(ev.scan_date, "Unknown Date");
+                const classification = formatTimelineValue(ev.classification);
+                let confidence = formatTimelineValue(ev.confidence);
+                let tumorArea = formatTimelineValue(ev.tumor_area);
+                let tumorPercentage = formatTimelineValue(ev.tumor_percentage);
+                const severity = formatTimelineValue(ev.severity);
+                let severityScore = formatTimelineValue(ev.severity_score);
+                const status = formatTimelineValue(ev.report_status, "N/A");
+
+                if (ev.confidence !== null && ev.confidence !== undefined && typeof ev.confidence === "number") {
+                    confidence = `${(ev.confidence * 100).toFixed(2)}%`;
+                }
+                if (ev.tumor_area !== null && ev.tumor_area !== undefined && typeof ev.tumor_area === "number") {
+                    tumorArea = `${ev.tumor_area.toFixed(2)} mm²`;
+                }
+                if (ev.tumor_percentage !== null && ev.tumor_percentage !== undefined && typeof ev.tumor_percentage === "number") {
+                    tumorPercentage = `${(ev.tumor_percentage * 100).toFixed(4)}%`;
+                }
+                if (ev.severity_score !== null && ev.severity_score !== undefined && typeof ev.severity_score === "number") {
+                    severityScore = `${ev.severity_score.toFixed(2)}`;
+                }
+
+                let severityColor = "text-slate-400";
+                if (severity.toLowerCase() === "high") {
+                    severityColor = "text-red-400 font-bold";
+                } else if (severity.toLowerCase() === "medium") {
+                    severityColor = "text-amber-400 font-bold";
+                } else if (severity.toLowerCase() === "low" || severity.toLowerCase() === "none") {
+                    severityColor = "text-emerald-400 font-bold";
+                }
+
+                const item = document.createElement("div");
+                item.className = "relative space-y-2";
+                item.innerHTML = `
+                    <div class="absolute -left-[31px] md:-left-[39px] mt-1.5 h-4 w-4 rounded-full bg-slate-950 border-2 border-sky-500 flex items-center justify-center z-10 shadow-lg shadow-sky-500/20">
+                        <span class="h-1.5 w-1.5 rounded-full bg-sky-400"></span>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-bold text-slate-100 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 shadow-sm">${date}</span>
+                        <span class="text-slate-400 text-[11px] font-mono">Report #${ev.report_id}</span>
+                        ${idx === events.length - 1 ? '<span class="px-1.5 py-0.5 bg-sky-500/10 text-sky-400 text-[9px] font-extrabold uppercase rounded border border-sky-500/20">Latest Scan</span>' : ''}
+                        ${idx === 0 ? '<span class="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 text-[9px] font-extrabold uppercase rounded border border-emerald-500/20">First Baseline Scan</span>' : ''}
+                    </div>
+
+                    <div class="bg-slate-900/30 border border-slate-800 p-4 rounded-2xl space-y-2 max-w-xl shadow-sm hover:border-slate-700 transition">
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-brain text-sky-400 w-4 text-center"></i>
+                                <div>
+                                    <span class="text-[9px] text-slate-500 uppercase font-bold block">Classification</span>
+                                    <span class="font-extrabold text-slate-200">${classification}</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-circle-check text-sky-400 w-4 text-center"></i>
+                                <div>
+                                    <span class="text-[9px] text-slate-500 uppercase font-bold block">Confidence</span>
+                                    <span class="font-extrabold text-slate-200">${confidence}</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-chart-area text-indigo-400 w-4 text-center"></i>
+                                <div>
+                                    <span class="text-[9px] text-slate-500 uppercase font-bold block">Tumor Area</span>
+                                    <span class="font-extrabold text-slate-200">${tumorArea}</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-percentage text-teal-400 w-4 text-center"></i>
+                                <div>
+                                    <span class="text-[9px] text-slate-500 uppercase font-bold block">Occupancy</span>
+                                    <span class="font-extrabold text-slate-200">${tumorPercentage}</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-circle-exclamation ${severityColor} w-4 text-center"></i>
+                                <div>
+                                    <span class="text-[9px] text-slate-500 uppercase font-bold block">Severity</span>
+                                    <span class="${severityColor}">${severity} (Score: ${severityScore})</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-circle-info text-slate-400 w-4 text-center"></i>
+                                <div>
+                                    <span class="text-[9px] text-slate-500 uppercase font-bold block">Status</span>
+                                    <span class="px-1.5 py-0.2 bg-slate-950 border border-slate-800 text-[10px] font-bold rounded text-slate-300 uppercase">${status}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+        }
             } catch (err) {
                 alert("Failed to delete account.");
             }
