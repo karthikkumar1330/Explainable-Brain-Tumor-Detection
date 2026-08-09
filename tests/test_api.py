@@ -20,13 +20,18 @@ class TestFastAPIRoutes(unittest.TestCase):
             except Exception:
                 pass
 
+        import api.infrastructure.routes as api_routes
+        import api.routes.auth_routes as auth_routes
+        api_routes.DEFAULT_DB_PATH = self.db_path
+        auth_routes.DEFAULT_DB_PATH = self.db_path
+
         from persistence.infrastructure.repository import SQLitePersistenceRepository
         persistence_repo = SQLitePersistenceRepository(db_path=self.db_path)
         persistence_repo.initialize_db()
 
         self.test_client_ctx = TestClient(app)
         self.client = self.test_client_ctx.__enter__()
-        
+
         repo = SQLiteUserRepository(db_path=self.db_path)
         repo.initialize_security_tables()
         admin = repo.bootstrap_admin()

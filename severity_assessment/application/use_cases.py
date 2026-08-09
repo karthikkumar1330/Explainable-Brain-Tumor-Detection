@@ -25,6 +25,7 @@ class AssessSeverityUseCase:
         tumor_type: str,
         tumor_area_mm2: float,
         tumor_percentage: float,
+        segmentation_failed: bool = False,
     ) -> SeverityAssessment:
         """Runs the severity assessment rules on the provided inputs.
 
@@ -32,13 +33,14 @@ class AssessSeverityUseCase:
             tumor_type: Classification category of the tumor (e.g. Glioma).
             tumor_area_mm2: Measured physical tumor area.
             tumor_percentage: Percentage of brain parenchyma occupied.
+            segmentation_failed: True if the segmentation model failed during inference.
 
         Returns:
             A SeverityAssessment containing the category, matched rules, and disclaimer.
         """
         self.logger.info(
             f"Evaluating severity for Type: {tumor_type}, "
-            f"Area: {tumor_area_mm2:.2f} mm², Percentage: {tumor_percentage:.4f}%"
+            f"Area: {tumor_area_mm2:.2f} mm², Percentage: {tumor_percentage:.4f}%, Seg Failed: {segmentation_failed}"
         )
 
         try:
@@ -46,6 +48,7 @@ class AssessSeverityUseCase:
                 tumor_type=tumor_type,
                 tumor_area_mm2=tumor_area_mm2,
                 tumor_percentage=tumor_percentage,
+                segmentation_failed=segmentation_failed,
             )
             self.logger.info(f"Severity assessment complete. Assigned Category: {assessment.category.value}")
             return assessment

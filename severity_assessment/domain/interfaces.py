@@ -11,6 +11,7 @@ class ISeverityClassifier(ABC):
         tumor_type: str,
         tumor_area_mm2: float,
         tumor_percentage: float,
+        segmentation_failed: bool = False,
     ) -> SeverityAssessment:
         """Classifies brain tumor severity based on type, area, and parenchymal percentage.
 

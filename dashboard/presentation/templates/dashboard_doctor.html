@@ -861,7 +861,7 @@
                             </select>
                         </div>
                     </div>
-                    
+
                     <div class="overflow-x-auto">
                         <table class="w-full text-left text-sm">
                             <thead class="bg-slate-950 text-slate-400 text-xs uppercase font-bold tracking-wider border-b border-slate-800">
@@ -1180,7 +1180,7 @@
             <div class="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sky-400 mb-6"></div>
             <h3 class="font-extrabold text-lg text-slate-100 mb-2">Executing AI Diagnostic Pipeline</h3>
             <p class="text-xs text-slate-400 mb-6">Processing brain MRI slice through classification & segmentation layers...</p>
-            
+
             <div class="text-left space-y-3 max-w-xs mx-auto text-xs text-slate-300 bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
                 <div class="flex items-center justify-between" id="step-upload">
                     <span><i class="fa-solid fa-spinner animate-spin text-sky-400 mr-2"></i> Ingesting MRI Slice</span>
@@ -1216,12 +1216,21 @@
             </button>
             <h3 id="modal-title" class="font-extrabold text-2xl text-slate-100">Diagnostic Report Details</h3>
             <p id="modal-patient-meta" class="text-xs text-slate-400 mb-6">Patient ID: - | Name: -</p>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-950/90 rounded-2xl border border-slate-800/80 mb-6 text-xs shadow-inner">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-950/90 rounded-2xl border border-slate-800/80 mb-4 text-xs shadow-inner">
                 <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Class</span><span id="modal-diag" class="font-extrabold text-slate-100 text-sm">-</span></div>
                 <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Severity</span><span id="modal-severity" class="font-extrabold text-sm">-</span></div>
                 <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Confidence</span><span id="modal-conf" class="font-extrabold text-slate-100 text-sm">-</span></div>
                 <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Tumor Area</span><span id="modal-area" class="font-extrabold text-slate-100 text-sm">-</span></div>
             </div>
+
+            <!-- Report Metadata Details (F2.1) -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-900/40 rounded-2xl border border-slate-800/50 mb-6 text-xs shadow-inner">
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Report Number</span><span id="modal-report-number" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Status</span><span id="modal-report-status" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Current Version</span><span id="modal-report-version" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Updated At</span><span id="modal-report-updated" class="font-extrabold text-slate-100 text-sm">-</span></div>
+            </div>
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <!-- Grad-CAM Blended View -->
                 <div class="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 flex flex-col justify-between">
@@ -1257,14 +1266,30 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Report Versions List (F2.1) -->
+            <div class="bg-slate-950 p-4 rounded-2xl border border-slate-850 text-xs text-slate-300 mb-6">
+                <span class="font-bold text-slate-400 block mb-2 uppercase tracking-wider text-[10px]">Report Version History:</span>
+                <div id="modal-versions-list" class="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                    <!-- populated dynamically -->
+                </div>
+            </div>
+
             <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs text-slate-300 mb-6">
                 <span class="font-bold text-slate-400 block mb-1 uppercase tracking-wider text-[10px]">Clinical Findings & Matched Rule Trace:</span>
                 <p id="modal-rule-desc" class="italic text-slate-200 text-sm">-</p>
             </div>
-            <div class="flex justify-end">
-                <a id="modal-pdf-link" href="#" target="_blank" class="btn-primary text-xs flex items-center gap-2">
-                    <i class="fa-solid fa-file-pdf"></i> Download PDF Clinical Report
-                </a>
+
+            <!-- Dynamic Actions Container (F2.1) -->
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-slate-800 pt-4">
+                <div id="modal-actions-container" class="flex flex-wrap items-center gap-2">
+                    <!-- populated dynamically -->
+                </div>
+                <div>
+                    <a id="modal-pdf-link" href="#" target="_blank" class="btn-primary text-xs flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500">
+                        <i class="fa-solid fa-file-pdf"></i> Download PDF Clinical Report
+                    </a>
+                </div>
             </div>
         </div>
     </div>
@@ -1354,7 +1379,7 @@
             const body = document.body;
             const icon = document.getElementById("desktop-collapse-icon");
             const collapsed = body.classList.toggle("sidebar-collapsed");
-            
+
             if (collapsed) {
                 icon.className = "fa-solid fa-chevron-right text-xs";
             } else {
@@ -1395,7 +1420,7 @@
                     btn.className = "w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm transition-all duration-200 sidebar-nav-btn";
                 }
             });
-            
+
             const activeEl = document.getElementById(`tab-${tabName}`);
             if (activeEl) activeEl.classList.remove('hidden');
             const activeBtn = document.getElementById(`nav-${tabName}`);
@@ -1541,14 +1566,14 @@
                 if (!stats.error && !telemetry.error) {
                     document.getElementById("stat-patients").innerText = stats.total_patients || 0;
                     document.getElementById("stat-scans").innerText = stats.total_scans || 0;
-                    
+
                     const classDist = stats.classification_distribution || {};
                     let activeTumors = (classDist["Glioma"] || 0) + (classDist["Meningioma"] || 0) + (classDist["Pituitary"] || 0);
                     document.getElementById("stat-tumors").innerText = activeTumors;
-                    
+
                     let tumorRate = stats.total_scans > 0 ? ((activeTumors / stats.total_scans) * 100).toFixed(1) : 0;
                     document.getElementById("stat-tumor-rate").innerText = `Detection Rate: ${tumorRate}%`;
-                    
+
                     const sevDist = stats.severity_distribution || {};
                     let critical = (sevDist["Medium"] || 0) + (sevDist["High"] || 0);
                     document.getElementById("stat-critical").innerText = critical;
@@ -1557,7 +1582,7 @@
                     document.getElementById("stat-avg-confidence").innerText = `${(telemetry.avg_confidence * 100).toFixed(1)}%`;
                     document.getElementById("stat-latency").innerText = `${telemetry.avg_runtime.toFixed(3)}s`;
                     document.getElementById("stat-duplicates").innerText = telemetry.duplicate_uploads || 0;
-                    
+
                     const dbStatus = document.getElementById("stat-db-health");
                     if (telemetry.db_healthy) {
                         dbStatus.innerHTML = `<span class="status-dot status-dot-active"></span> Online`;
@@ -1580,10 +1605,10 @@
                 if (Array.isArray(allScans)) {
                     // Render recent scans table (first 5 records)
                     populateTable("history-table-body", allScans.slice(0, 5));
-                    
+
                     // Render Scatter correlation chart
                     drawScatterChart(allScans);
-                    
+
                     // Populate registry table
                     updateRegistryView();
                 }
@@ -1609,25 +1634,139 @@
                 const res = await fetchWithAuth(`/api/report/${reportId}`);
                 const data = await res.json();
                 if (data.error) { alert("Report details could not be loaded: " + data.error); return; }
-                
+
                 document.getElementById("modal-title").innerText = `Diagnostic Report Details: #${data.report_id}`;
                 document.getElementById("modal-patient-meta").innerText = `Patient ID: ${data.patient_id} | Name: ${data.patient_name}`;
                 document.getElementById("modal-diag").innerText = data.predicted_class;
                 document.getElementById("modal-conf").innerText = `${(data.confidence_score * 100).toFixed(2)}%`;
-                
+
                 const elSev = document.getElementById("modal-severity");
                 elSev.innerText = data.rule_based_severity;
                 elSev.className = data.rule_based_severity.toLowerCase() === 'high' ? 'font-extrabold text-red-400 text-sm' :
                                   data.rule_based_severity.toLowerCase() === 'medium' ? 'font-extrabold text-amber-400 text-sm' :
                                   'font-extrabold text-emerald-400 text-sm';
-                                  
-                document.getElementById("modal-area").innerText = `${data.tumor_area_mm2.toFixed(2)} mm²`;
+
+                const isSegFailed = data.predicted_class !== "No Tumor" && data.tumor_area_mm2 <= 0;
+                document.getElementById("modal-area").innerText = isSegFailed ? "N/A" : `${data.tumor_area_mm2.toFixed(2)} mm²`;
                 document.getElementById("modal-rule-desc").innerText = data.severity_rule_description;
                 document.getElementById("modal-pdf-link").href = `/api/report/${data.report_id}/pdf`;
-                
+
+                // Populate new F2.1 Metadata fields
+                document.getElementById("modal-report-number").innerText = data.report_number || `RPT-2026-${String(data.report_id).padStart(6, '0')}`;
+                document.getElementById("modal-report-status").innerText = data.status || "GENERATED";
+                document.getElementById("modal-report-version").innerText = `v${data.current_version || 1}`;
+                document.getElementById("modal-report-updated").innerText = data.updated_at || data.created_at;
+
+                // Populate Versions list
+                const versionsList = document.getElementById("modal-versions-list");
+                versionsList.innerHTML = "";
+                if (data.versions && data.versions.length > 0) {
+                    data.versions.forEach(v => {
+                        const isCurrent = v.version_number === data.current_version;
+                        const vItem = document.createElement("div");
+                        vItem.className = `flex justify-between items-center p-2 rounded mb-1.5 ${isCurrent ? 'bg-slate-900 border border-sky-500/40' : 'bg-slate-950/40 hover:bg-slate-900/40'}`;
+                        vItem.innerHTML = `
+                            <div class="flex flex-col">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-bold text-xs ${isCurrent ? 'text-sky-400' : 'text-slate-300'}">Version ${v.version_number}</span>
+                                    <span class="text-[9px] text-slate-500">${v.created_at}</span>
+                                    <span class="px-1.5 py-0.5 rounded text-[8px] font-bold ${v.status === 'FINAL' ? 'bg-emerald-950 text-emerald-400 border border-emerald-900' : v.status === 'ARCHIVED' ? 'bg-slate-900 text-slate-500' : 'bg-sky-950 text-sky-400 border border-sky-900'}">${v.status}</span>
+                                </div>
+                                <span class="text-[10px] text-slate-400 italic">${v.reason || 'No description'}</span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <a href="/api/report/${data.report_id}/pdf?version=${v.version_number}" target="_blank" class="btn-secondary text-[9px] h-6 px-2 flex items-center gap-1">
+                                    <i class="fa-solid fa-file-pdf text-rose-400"></i> PDF
+                                </a>
+                            </div>
+                        `;
+                        versionsList.appendChild(vItem);
+                    });
+                } else {
+                    versionsList.innerHTML = `<p class="text-slate-500 italic text-center text-[11px] py-2">No version history found.</p>`;
+                }
+
+                // Render Action buttons for state transitions & new version creation
+                const actionsContainer = document.getElementById("modal-actions-container");
+                actionsContainer.innerHTML = "";
+
+                const currentStatus = data.status || "GENERATED";
+
+                // Transition buttons mapping
+                const nextTransitions = {
+                    "DRAFT": "GENERATED",
+                    "GENERATED": "REVIEWED",
+                    "REVIEWED": "FINAL",
+                    "FINAL": "ARCHIVED"
+                };
+
+                const nextStatus = nextTransitions[currentStatus];
+                if (nextStatus) {
+                    const btnColor = nextStatus === 'FINAL' ? 'bg-emerald-600 hover:bg-emerald-500 border border-emerald-500 text-white' :
+                                     nextStatus === 'ARCHIVED' ? 'bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300' :
+                                     'bg-sky-600 hover:bg-sky-500 border border-sky-500 text-white';
+
+                    const transBtn = document.createElement("button");
+                    transBtn.className = `${btnColor} px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer`;
+                    transBtn.innerHTML = `<i class="fa-solid fa-rotate"></i> Promote to ${nextStatus}`;
+                    transBtn.onclick = async () => {
+                        if (confirm(`Are you sure you want to transition this report status to ${nextStatus}?`)) {
+                            try {
+                                const trRes = await fetchWithAuth(`/api/report/${data.report_id}/status`, {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ status: nextStatus })
+                                });
+                                const trData = await trRes.json();
+                                if (trData.error) {
+                                    alert("Transition failed: " + trData.error);
+                                } else {
+                                    alert(`Report successfully transitioned to ${nextStatus}`);
+                                    viewDetails(data.report_id);
+                                    if (typeof loadRegistryData === 'function') loadRegistryData();
+                                }
+                            } catch (e) {
+                                alert("Failed to transition report status.");
+                            }
+                        }
+                    };
+                    actionsContainer.appendChild(transBtn);
+                }
+
+                // "Create New Version" button (disallowed only if archived)
+                if (currentStatus !== "ARCHIVED") {
+                    const vBtn = document.createElement("button");
+                    vBtn.className = "bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer";
+                    vBtn.innerHTML = `<i class="fa-solid fa-code-branch"></i> Create Version`;
+                    vBtn.onclick = async () => {
+                        const reason = prompt("Enter the reason / clinical comments for this new version:");
+                        if (reason === null) return;
+                        if (!reason.trim()) { alert("Version reason is required."); return; }
+
+                        try {
+                            const vRes = await fetchWithAuth(`/api/report/${data.report_id}/versions`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ reason: reason.trim(), status: 'DRAFT' })
+                            });
+                            const vData = await vRes.json();
+                            if (vData.error) {
+                                alert("Failed to create version: " + vData.error);
+                            } else {
+                                alert(`New Version ${vData.version_number} successfully created as DRAFT.`);
+                                viewDetails(data.report_id);
+                                if (typeof loadRegistryData === 'function') loadRegistryData();
+                            }
+                        } catch (e) {
+                            alert("Failed to create version.");
+                        }
+                    };
+                    actionsContainer.appendChild(vBtn);
+                }
+
                 // Opacity workstations resource ingestion
                 const rawUrl = `/api/report/${data.report_id}/visuals/raw`;
-                
+
                 const setImgSrc = (imgId, src) => {
                     const img = document.getElementById(imgId);
                     if (img) {
@@ -1641,26 +1780,26 @@
 
                 setImgSrc("modal-heatmap-raw", rawUrl);
                 setImgSrc("modal-mask-raw", rawUrl);
-                
+
                 const overlayImg = document.getElementById("modal-overlay-img");
                 if (overlayImg) overlayImg.style.opacity = 0.70;
                 setImgSrc("modal-overlay-img", `/api/report/${data.report_id}/visuals/overlay`);
-                
+
                 const maskImg = document.getElementById("modal-mask-img");
                 if (maskImg) maskImg.style.opacity = 0.70;
                 setImgSrc("modal-mask-img", `/api/report/${data.report_id}/visuals/mask`);
-                
+
                 // Reset Opacity elements
                 document.getElementById("label-overlay-opacity").innerText = "Opacity: 70%";
                 document.getElementById("label-mask-opacity").innerText = "Opacity: 70%";
-                
+
                 // Reset sliders inputs
                 const sliders = document.querySelectorAll("#details-modal input[type='range']");
                 sliders.forEach(s => s.value = 70);
 
                 openModal("details-modal");
-            } catch (err) { 
-                alert("Failed to load clinical report overlays."); 
+            } catch (err) {
+                alert("Failed to load clinical report overlays.");
             }
         }
 
@@ -1676,7 +1815,7 @@
                 const severityStyle = r.rule_based_severity.toLowerCase() === 'high' ? 'badge badge-error' :
                                       r.rule_based_severity.toLowerCase() === 'medium' ? 'badge badge-warning' :
                                       'badge badge-success';
-                
+
                 const nameParts = (r.patient_name || 'Patient').split(' ');
                 const initials = nameParts.length >= 2 ? (nameParts[0][0] + nameParts[nameParts.length-1][0]).toUpperCase() : (r.patient_name || 'PT').substring(0,2).toUpperCase();
 
@@ -1765,7 +1904,7 @@
 
         function getFilteredRecords() {
             if (!Array.isArray(allScans)) return [];
-            
+
             const searchVal = document.getElementById("registry-search").value.trim().toLowerCase();
             const classVal = document.getElementById("registry-class").value;
             const severityVal = document.getElementById("registry-severity").value;
@@ -1850,7 +1989,7 @@
                     const severityStyle = r.rule_based_severity.toLowerCase() === 'high' ? 'badge badge-error' :
                                           r.rule_based_severity.toLowerCase() === 'medium' ? 'badge badge-warning' :
                                           'badge badge-success';
-                    
+
                     const nameParts = (r.patient_name || 'Patient').split(' ');
                     const initials = nameParts.length >= 2 ? (nameParts[0][0] + nameParts[nameParts.length-1][0]).toUpperCase() : (r.patient_name || 'PT').substring(0,2).toUpperCase();
 
@@ -1904,7 +2043,7 @@
             }
 
             // Update Pagination display
-            document.getElementById("registry-pagination-info").innerText = 
+            document.getElementById("registry-pagination-info").innerText =
                 totalRecords > 0 ? `Showing ${startIndex + 1} to ${endIndex} of ${totalRecords} records` : "Showing 0 to 0 of 0 records";
 
             document.getElementById("registry-prev-btn").disabled = (registryPage === 1);
@@ -1995,7 +2134,7 @@
         // Form Submission report generation
         async function handleGenerateReport(e) {
             e.preventDefault();
-            
+
             const fileInput = document.getElementById("gen-file");
             if (!fileInput.files || fileInput.files.length === 0) {
                 alert("Please select a brain MRI scan image.");
@@ -2052,7 +2191,7 @@
                     body: formData
                 });
                 const data = await res.json();
-                
+
                 clearInterval(progressInterval);
 
                 if (data.error) {
@@ -2072,7 +2211,7 @@
                     // Reset form
                     document.getElementById("gen-file").value = "";
                     document.getElementById("file-upload-label").innerText = "Drag and drop Patient Brain MRI image, or click to browse";
-                    
+
                     // Switch back to analytics and reload
                     dashboardDataLoaded = false;
                     switchTab("analytics");
@@ -2102,7 +2241,7 @@
             if (!container) return;
             const textNode = container.querySelector("span");
             const statusNode = container.querySelectorAll("span")[1];
-            
+
             if (state === "pending") {
                 textNode.innerHTML = `<i class="fa-solid fa-circle-notch text-slate-700 mr-2"></i> ${textNode.innerText.split(' ').slice(1).join(' ')}`;
                 statusNode.className = "text-[10px] text-slate-500 font-semibold";
@@ -2248,7 +2387,7 @@
             // Prepare scatter data grouping by predicted class
             const classes = ["Glioma", "Meningioma", "Pituitary", "No Tumor"];
             const colors = ['#38bdf8', '#818cf8', '#f59e0b', '#10b981'];
-            
+
             const datasets = classes.map((cls, idx) => {
                 const points = scans
                     .filter(s => s.predicted_class === cls)
@@ -2347,7 +2486,7 @@
                         const typeIcon = s.event_type.includes("GOOGLE") ? "fa-brands fa-google text-amber-400" : "fa-solid fa-shield-halved text-indigo-400";
                         const locationStr = s.location ? ` • ${s.location}` : "";
                         const browserStr = s.browser && s.device ? `${s.browser} (${s.device})` : "Unknown Browser/Device";
-                        
+
                         let activeStatus = "Active Session";
                         let activeColor = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
                         if (s.event_type === "LOGOUT" || s.event_type === "REVOKE_ALL_SESSIONS") {
@@ -2360,7 +2499,7 @@
                             activeStatus = `Ended: ${new Date(s.logout_time).toLocaleTimeString()}`;
                             activeColor = "bg-slate-850 text-slate-400";
                         }
-                        
+
                         listContainer.innerHTML += `
                             <div class="flex items-center justify-between p-2.5 bg-slate-900/40 rounded-xl border border-slate-800/40 text-[11px]">
                                 <div class="flex items-center gap-2.5">
@@ -2404,10 +2543,10 @@
                 const data = await res.json();
                 statusDiv.classList.add("hidden");
                 if (data.error) { alert(data.error); return; }
-                
+
                 document.getElementById("settings-avatar-img").src = data.avatar_url;
                 currentUser.google_profile_pic = data.avatar_url;
-                
+
                 const avatarBtn = document.getElementById("profile-avatar-btn");
                 if (avatarBtn) {
                     avatarBtn.innerHTML = `<img src="${data.avatar_url}" class="h-full w-full rounded-xl object-cover">`;
@@ -2426,7 +2565,7 @@
             const email = document.getElementById("settings-email").value;
             const successDiv = document.getElementById("settings-profile-success");
             const errorDiv = document.getElementById("settings-profile-error");
-            
+
             successDiv.classList.add("hidden");
             errorDiv.classList.add("hidden");
 
@@ -2450,7 +2589,7 @@
                 }
                 const headerName = document.getElementById("header-user-name");
                 if (headerName) headerName.innerText = name;
-                
+
                 settingsDataLoaded = false;
                 await loadSettingsData();
             } catch (err) {
@@ -2571,10 +2710,10 @@
                 const res = await fetchWithAuth("/api/auth/profile/logout-other-devices", { method: "POST" });
                 const data = await res.json();
                 if (data.error) { alert(data.error); return; }
-                
+
                 authToken = data.access_token;
                 localStorage.setItem("auth_token", authToken);
-                
+
                 alert("Successfully logged out of all other devices.");
                 await loadSettingsData();
             } catch (err) {

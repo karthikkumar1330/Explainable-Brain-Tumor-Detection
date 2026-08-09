@@ -24,10 +24,10 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         """Creates a database connection with foreign keys and performance pragmas enabled."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        
+
         # Enforce foreign keys
         conn.execute("PRAGMA foreign_keys = ON;")
-        
+
         # Optimize writes and read-concurrency using WAL mode
         try:
             conn.execute("PRAGMA journal_mode = WAL;")
@@ -36,13 +36,13 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             conn.execute("PRAGMA temp_store = MEMORY;")
         except Exception:
             pass
-            
+
         return conn
 
     def initialize_db(self) -> None:
         """Initializes the database schema tables and optimization indices."""
         self.logger.info(f"Initializing SQLite database at: {self.db_path}")
-        
+
         create_patients_sql = """
         CREATE TABLE IF NOT EXISTS patients (
             patient_id TEXT PRIMARY KEY,
@@ -147,6 +147,51 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         );
         """
 
+        create_reports_table_sql = """
+        CREATE TABLE IF NOT EXISTS reports (
+            report_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_number TEXT UNIQUE NOT NULL,
+            patient_id TEXT NOT NULL,
+            created_by TEXT,
+            report_type TEXT,
+            current_version INTEGER NOT NULL DEFAULT 1,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            finalized_at TEXT,
+            archived_at TEXT,
+            pdf_path TEXT,
+            json_path TEXT,
+            checksum TEXT,
+            FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE
+        );
+        """
+
+        create_report_versions_table_sql = """
+        CREATE TABLE IF NOT EXISTS report_versions (
+            version_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_id INTEGER NOT NULL,
+            version_number INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            created_by TEXT,
+            reason TEXT,
+            pdf_path TEXT NOT NULL,
+            json_path TEXT NOT NULL,
+            checksum TEXT NOT NULL,
+            status TEXT NOT NULL,
+            prediction_id INTEGER,
+            FOREIGN KEY (report_id) REFERENCES reports(report_id) ON DELETE CASCADE,
+            FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE SET NULL
+        );
+        """
+
+        create_report_sequence_table_sql = """
+        CREATE TABLE IF NOT EXISTS report_sequence (
+            year INTEGER PRIMARY KEY,
+            current_val INTEGER NOT NULL DEFAULT 0
+        );
+        """
+
         # Analytics Indices
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_patients_age_gender ON patients(age, gender);",
@@ -155,7 +200,12 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             "CREATE INDEX IF NOT EXISTS idx_predictions_area ON predictions(tumor_area_mm2);",
             "CREATE INDEX IF NOT EXISTS idx_mri_scan_validation_hash ON mri_scan_validation(file_hash, p_hash);",
             "CREATE INDEX IF NOT EXISTS idx_ai_audit_logs_timestamp ON ai_audit_logs(timestamp);",
-            "CREATE INDEX IF NOT EXISTS idx_ai_audit_logs_patient ON ai_audit_logs(patient_id);"
+            "CREATE INDEX IF NOT EXISTS idx_ai_audit_logs_patient ON ai_audit_logs(patient_id);",
+            "CREATE INDEX IF NOT EXISTS idx_reports_patient_id ON reports(patient_id);",
+            "CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at);",
+            "CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);",
+            "CREATE INDEX IF NOT EXISTS idx_versions_version_number ON report_versions(version_number);",
+            "CREATE INDEX IF NOT EXISTS idx_versions_report_id ON report_versions(report_id);"
         ]
 
         conn = self._get_connection()
@@ -168,9 +218,12 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 conn.execute(create_validation_sql)
                 conn.execute(create_audit_logs_sql)
                 conn.execute(create_timeline_traces_sql)
+                conn.execute(create_reports_table_sql)
+                conn.execute(create_report_versions_table_sql)
+                conn.execute(create_report_sequence_table_sql)
                 for idx_sql in indices:
                     conn.execute(idx_sql)
-                
+
                 # Check and migrate existing clinical_reports schema
                 try:
                     conn.execute("SELECT xai_method FROM clinical_reports LIMIT 1;")
@@ -180,6 +233,9 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                         conn.execute("ALTER TABLE clinical_reports ADD COLUMN xai_overlap_percentage REAL;")
                     except Exception as alt_err:
                         self.logger.warning(f"Could not migrate clinical_reports schema: {alt_err}")
+
+                # Run legacy reports migration
+                self._migrate_legacy_reports(conn)
             self.logger.info("Database schema and analytics indices verified successfully.")
         except Exception as e:
             self.logger.error(f"Failed to initialize SQLite database: {e}")
@@ -289,6 +345,8 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 ))
                 pred_id = cursor.lastrowid
 
+                pred_id = cursor.lastrowid
+
                 # 5. Insert Report Record
                 report_sql = """
                 INSERT INTO clinical_reports (
@@ -317,7 +375,44 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                     now_str
                 ))
                 report_id = cursor.lastrowid
-                
+
+                # 6. Insert Report Metadata into reports & report_versions tables
+                import hashlib
+
+                def calculate_sha256(filepath: str) -> str:
+                    if not filepath or not os.path.exists(filepath):
+                        return "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+                    sha256_hash = hashlib.sha256()
+                    try:
+                        with open(filepath, "rb") as f:
+                            for byte_block in iter(lambda: f.read(4096), b""):
+                                sha256_hash.update(byte_block)
+                        return sha256_hash.hexdigest()
+                    except Exception:
+                        return "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+
+                report_number = self._generate_report_number(conn)
+                checksum = calculate_sha256(pdf_p)
+
+                conn.execute("""
+                    INSERT INTO reports (
+                        report_id, report_number, patient_id, created_by, report_type,
+                        current_version, status, created_at, updated_at, pdf_path, json_path, checksum
+                    ) VALUES (?, ?, ?, ?, 'MRI Brain Scan', 1, 'GENERATED', ?, ?, ?, ?, ?);
+                """, (
+                    report_id, report_number, report.patient_info.patient_id,
+                    report.patient_info.ref_physician, now_str, now_str, pdf_p, js_p, checksum
+                ))
+
+                conn.execute("""
+                    INSERT INTO report_versions (
+                        report_id, version_number, created_at, created_by, reason,
+                        pdf_path, json_path, checksum, status, prediction_id
+                    ) VALUES (?, 1, ?, ?, 'Initial report generation', ?, ?, ?, 'GENERATED', ?);
+                """, (
+                    report_id, now_str, report.patient_info.ref_physician, pdf_p, js_p, checksum, pred_id
+                ))
+
             self.logger.info(f"Report findings saved successfully. Assigned Database Report ID: {report_id}")
             return report_id
         except Exception as e:
@@ -325,6 +420,109 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             raise e
         finally:
             conn.close()
+
+    def _generate_report_number(self, conn: sqlite3.Connection) -> str:
+        """Safely generates a unique, database-backed report number."""
+        import datetime
+        year = datetime.datetime.now().year
+        conn.execute("""
+            INSERT INTO report_sequence (year, current_val)
+            VALUES (?, 1)
+            ON CONFLICT(year) DO UPDATE SET current_val = current_val + 1;
+        """, (year,))
+        row = conn.execute("SELECT current_val FROM report_sequence WHERE year = ?;", (year,)).fetchone()
+        seq = row["current_val"]
+        return f"RPT-{year}-{seq:06d}"
+
+    def _migrate_legacy_reports(self, conn: sqlite3.Connection) -> None:
+        """Migrate any existing reports from clinical_reports table to reports and report_versions."""
+        import hashlib
+        import os
+
+        def calculate_sha256(filepath: str) -> str:
+            if not filepath or not os.path.exists(filepath):
+                return "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+            sha256_hash = hashlib.sha256()
+            try:
+                with open(filepath, "rb") as f:
+                    for byte_block in iter(lambda: f.read(4096), b""):
+                        sha256_hash.update(byte_block)
+                return sha256_hash.hexdigest()
+            except Exception:
+                return "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='clinical_reports';")
+            if not cursor.fetchone():
+                return
+
+            cursor.execute("SELECT * FROM clinical_reports;")
+            legacy_reports = cursor.fetchall()
+
+            for legacy in legacy_reports:
+                report_id = legacy["id"]
+                prediction_id = legacy["prediction_id"]
+                created_at = legacy["created_at"]
+                pdf_path = legacy["pdf_path"]
+                json_path = legacy["json_path"]
+
+                cursor.execute("SELECT 1 FROM reports WHERE report_id = ?;", (report_id,))
+                if cursor.fetchone():
+                    continue
+
+                cursor.execute("""
+                    SELECT s.patient_id, s.ref_physician
+                    FROM predictions pr
+                    JOIN mri_scans s ON pr.scan_id = s.id
+                    WHERE pr.id = ?;
+                """, (prediction_id,))
+                scan_row = cursor.fetchone()
+                if scan_row:
+                    patient_id = scan_row["patient_id"]
+                    ref_physician = scan_row["ref_physician"]
+                else:
+                    patient_id = "UNKNOWN_PATIENT"
+                    ref_physician = "System"
+
+                year = 2026
+                try:
+                    if "-" in created_at:
+                        year = int(created_at.split("-")[0])
+                except Exception:
+                    pass
+
+                conn.execute("""
+                    INSERT INTO report_sequence (year, current_val)
+                    VALUES (?, 1)
+                    ON CONFLICT(year) DO UPDATE SET current_val = current_val + 1;
+                """, (year,))
+                seq_row = conn.execute("SELECT current_val FROM report_sequence WHERE year = ?;", (year,)).fetchone()
+                seq = seq_row["current_val"]
+                report_number = f"RPT-{year}-{seq:06d}"
+
+                checksum = calculate_sha256(pdf_path)
+
+                conn.execute("""
+                    INSERT INTO reports (
+                        report_id, report_number, patient_id, created_by, report_type,
+                        current_version, status, created_at, updated_at, pdf_path, json_path, checksum
+                    ) VALUES (?, ?, ?, ?, 'MRI Brain Scan', 1, 'GENERATED', ?, ?, ?, ?, ?);
+                """, (
+                    report_id, report_number, patient_id, ref_physician, created_at, created_at, pdf_path, json_path, checksum
+                ))
+
+                conn.execute("""
+                    INSERT INTO report_versions (
+                        report_id, version_number, created_at, created_by, reason,
+                        pdf_path, json_path, checksum, status, prediction_id
+                    ) VALUES (?, 1, ?, ?, 'Legacy report migration', ?, ?, ?, 'GENERATED', ?);
+                """, (
+                    report_id, created_at, ref_physician, pdf_path, json_path, checksum, prediction_id
+                ))
+                self.logger.info(f"Migrated legacy report {report_id} to reports with number {report_number}")
+        except Exception as e:
+            self.logger.warning(f"Error during legacy report migration: {e}")
 
     def get_patient_history(self, patient_id: str) -> List[Dict[str, Any]]:
         """Queries database records to pull scan and severity history for a patient.
@@ -337,7 +535,7 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         """
         conn = self._get_connection()
         query = """
-        SELECT 
+        SELECT
             p.name, p.age, p.gender,
             s.scan_date, s.ref_physician, s.image_path,
             pr.predicted_class, pr.confidence_score, pr.tumor_area_mm2, pr.rule_based_severity, pr.created_at,
@@ -379,8 +577,8 @@ class SQLitePersistenceRepository(IPersistenceRepository):
 
             # 2. Diagnosis Distribution
             cursor.execute("""
-            SELECT predicted_class, COUNT(*) as cnt 
-            FROM predictions 
+            SELECT predicted_class, COUNT(*) as cnt
+            FROM predictions
             GROUP BY predicted_class;
             """)
             diag_rows = cursor.fetchall()
@@ -388,8 +586,8 @@ class SQLitePersistenceRepository(IPersistenceRepository):
 
             # 3. Severity Distribution
             cursor.execute("""
-            SELECT rule_based_severity, COUNT(*) as cnt 
-            FROM predictions 
+            SELECT rule_based_severity, COUNT(*) as cnt
+            FROM predictions
             GROUP BY rule_based_severity;
             """)
             sev_rows = cursor.fetchall()
@@ -429,7 +627,7 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         """Persists validation scorecard findings and perceptual hash references."""
         conn = self._get_connection()
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
+
         sql = """
         INSERT INTO mri_scan_validation (
             prediction_id, file_hash, p_hash, is_valid, scorecard_json, created_at
@@ -463,10 +661,10 @@ class SQLitePersistenceRepository(IPersistenceRepository):
     ) -> Optional[dict]:
         """Performs cryptographic and perceptual hashing lookup to identify duplicates."""
         conn = self._get_connection()
-        
+
         # 1. First, check direct cryptographic SHA256 match
         crypto_query = """
-        SELECT 
+        SELECT
             v.file_hash,
             p.patient_id,
             s.scan_date
@@ -487,10 +685,10 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                     "patient_id": row["patient_id"],
                     "scan_date": row["scan_date"]
                 }
-            
+
             # 2. Check perceptual hash matching with hamming distance threshold <= 2 bits
             perceptual_query = """
-            SELECT 
+            SELECT
                 v.file_hash,
                 v.p_hash,
                 p.patient_id,
@@ -503,7 +701,7 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             """
             cursor.execute(perceptual_query)
             rows = cursor.fetchall()
-            
+
             # Helper to calculate hamming distance between two hex-string hashes
             def hamming_distance(h1: str, h2: str) -> int:
                 if len(h1) != len(h2):
@@ -574,35 +772,35 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            
+
             # 1. Total predictions count
             cursor.execute("SELECT COUNT(*) FROM predictions;")
             total_predictions = cursor.fetchone()[0]
-            
+
             # 2. Average confidence score
             cursor.execute("SELECT AVG(confidence_score) FROM predictions;")
             row = cursor.fetchone()
             avg_confidence = row[0] if row[0] is not None else 0.0
-            
+
             # 3. Average runtime (from audit logs)
             cursor.execute("SELECT AVG(runtime_sec) FROM ai_audit_logs;")
             row = cursor.fetchone()
             avg_runtime = row[0] if row[0] is not None else 0.0
-            
+
             # 4. Duplicate upload counts
             cursor.execute("SELECT COUNT(*) FROM mri_scan_validation WHERE is_valid = 0 AND scorecard_json LIKE '%Duplicate scan detected%';")
             duplicate_uploads = cursor.fetchone()[0]
-            
+
             # 5. Database health (returns number of tables, size estimation)
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
             tables = [r["name"] for r in cursor.fetchall()]
             db_healthy = "clinical_reports" in tables and "predictions" in tables
-            
+
             # 6. Diagnosis Distribution for charts
             cursor.execute("SELECT predicted_class, COUNT(*) as cnt FROM predictions GROUP BY predicted_class;")
             diag_rows = cursor.fetchall()
             diag_dist = {r["predicted_class"]: r["cnt"] for r in diag_rows}
-            
+
             # 7. Average tumor area
             cursor.execute("SELECT AVG(tumor_area_mm2) FROM predictions WHERE tumor_pixel_count > 0;")
             row = cursor.fetchone()
@@ -612,12 +810,12 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             cursor.execute("SELECT AVG(xai_overlap_percentage) FROM clinical_reports WHERE xai_overlap_percentage IS NOT NULL;")
             row = cursor.fetchone()
             avg_xai_overlap = row[0] if row[0] is not None else 0.0
-            
+
             # 9. Active XAI methods count
             cursor.execute("SELECT xai_method, COUNT(*) as cnt FROM clinical_reports WHERE xai_method IS NOT NULL GROUP BY xai_method;")
             xai_rows = cursor.fetchall()
             xai_methods = {r["xai_method"]: r["cnt"] for r in xai_rows}
-            
+
             return {
                 "total_predictions": total_predictions,
                 "avg_confidence": avg_confidence,

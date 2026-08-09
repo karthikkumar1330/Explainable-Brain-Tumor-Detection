@@ -785,13 +785,29 @@
             </button>
             <h3 id="modal-title" class="font-extrabold text-2xl text-slate-100">Diagnostic Report Details</h3>
             <p id="modal-patient-meta" class="text-xs text-slate-400 mb-6">Patient ID: - | Name: -</p>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-950/90 rounded-2xl border border-slate-800/80 mb-6 text-xs shadow-inner">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-950/90 rounded-2xl border border-slate-800/80 mb-4 text-xs shadow-inner">
                 <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Class</span><span id="modal-diag" class="font-extrabold text-slate-100 text-sm">-</span></div>
                 <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Severity</span><span id="modal-severity" class="font-extrabold text-sm">-</span></div>
                 <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Confidence</span><span id="modal-conf" class="font-extrabold text-slate-100 text-sm">-</span></div>
                 <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Tumor Area</span><span id="modal-area" class="font-extrabold text-slate-100 text-sm">-</span></div>
             </div>
-            
+
+            <!-- Report Metadata Details (F2.1) -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-900/40 rounded-2xl border border-slate-800/50 mb-6 text-xs shadow-inner">
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Report Number</span><span id="modal-report-number" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Status</span><span id="modal-report-status" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Current Version</span><span id="modal-report-version" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Updated At</span><span id="modal-report-updated" class="font-extrabold text-slate-100 text-sm">-</span></div>
+            </div>
+
+            <!-- Report Versions List (F2.1) -->
+            <div class="bg-slate-950 p-4 rounded-2xl border border-slate-850 text-xs text-slate-300 mb-6">
+                <span class="font-bold text-slate-400 block mb-2 uppercase tracking-wider text-[10px]">Report Version History:</span>
+                <div id="modal-versions-list" class="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                    <!-- populated dynamically -->
+                </div>
+            </div>
+
             <div class="bg-slate-950 p-5 rounded-2xl border border-slate-800 text-xs text-slate-300 mb-6">
                 <span class="font-bold text-slate-400 block mb-2 uppercase tracking-wider text-[10px]">Clinical Findings & AI Analysis:</span>
                 <p id="modal-rule-desc" class="italic text-slate-200 text-sm leading-relaxed">-</p>
@@ -802,7 +818,7 @@
                 <i class="fa-solid fa-info-circle mr-1"></i> Patient privacy protocol enforcements: Direct brain MRI scan visualizations and segmentation overlays are restricted to clinicians. You can download the official radiology report below.
             </div>
 
-            <div class="flex justify-end">
+            <div class="flex justify-end border-t border-slate-800 pt-4">
                 <a id="modal-pdf-link" href="#" target="_blank" class="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-extrabold text-xs px-6 py-3 rounded-xl transition shadow-lg flex items-center gap-2">
                     <i class="fa-solid fa-file-pdf"></i> Download Official PDF Report
                 </a>
@@ -921,7 +937,7 @@
             const body = document.body;
             const icon = document.getElementById("desktop-collapse-icon");
             const collapsed = body.classList.toggle("sidebar-collapsed");
-            
+
             if (collapsed) {
                 icon.className = "fa-solid fa-chevron-right text-xs";
             } else {
@@ -959,7 +975,7 @@
                     btn.className = "w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm transition-all duration-200 sidebar-nav-btn";
                 }
             });
-            
+
             const activeEl = document.getElementById(`tab-${tabName}`);
             if (activeEl) activeEl.classList.remove('hidden');
             const activeBtn = document.getElementById(`nav-${tabName}`);
@@ -1008,9 +1024,9 @@
                 const history = await resHistory.json();
                 if (Array.isArray(history)) {
                     populateTable("history-table-body", history);
-                    
+
                     document.getElementById('stat-reports').innerText = history.length;
-                    
+
                     // Pull the physician name from the latest report if available
                     if (history.length > 0) {
                         try {
@@ -1052,9 +1068,45 @@
                 elSev.className = data.rule_based_severity.toLowerCase() === 'high' ? 'font-extrabold text-red-400 text-sm' :
                                   data.rule_based_severity.toLowerCase() === 'medium' ? 'font-extrabold text-amber-400 text-sm' :
                                   'font-extrabold text-emerald-400 text-sm';
-                document.getElementById("modal-area").innerText = `${data.tumor_area_mm2.toFixed(2)} mm²`;
+                const isSegFailed = data.predicted_class !== "No Tumor" && data.tumor_area_mm2 <= 0;
+                document.getElementById("modal-area").innerText = isSegFailed ? "N/A" : `${data.tumor_area_mm2.toFixed(2)} mm²`;
                 document.getElementById("modal-rule-desc").innerText = data.severity_rule_description;
                 document.getElementById("modal-pdf-link").href = `/api/report/${data.report_id}/pdf`;
+
+                // Populate new F2.1 Metadata fields
+                document.getElementById("modal-report-number").innerText = data.report_number || `RPT-2026-${String(data.report_id).padStart(6, '0')}`;
+                document.getElementById("modal-report-status").innerText = data.status || "GENERATED";
+                document.getElementById("modal-report-version").innerText = `v${data.current_version || 1}`;
+                document.getElementById("modal-report-updated").innerText = data.updated_at || data.created_at;
+
+                // Populate Versions list
+                const versionsList = document.getElementById("modal-versions-list");
+                versionsList.innerHTML = "";
+                if (data.versions && data.versions.length > 0) {
+                    data.versions.forEach(v => {
+                        const isCurrent = v.version_number === data.current_version;
+                        const vItem = document.createElement("div");
+                        vItem.className = `flex justify-between items-center p-2 rounded mb-1.5 ${isCurrent ? 'bg-slate-900 border border-sky-500/40' : 'bg-slate-950/40 hover:bg-slate-900/40'}`;
+                        vItem.innerHTML = `
+                            <div class="flex flex-col">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-bold text-xs ${isCurrent ? 'text-sky-400' : 'text-slate-300'}">Version ${v.version_number}</span>
+                                    <span class="text-[9px] text-slate-500">${v.created_at}</span>
+                                    <span class="px-1.5 py-0.5 rounded text-[8px] font-bold ${v.status === 'FINAL' ? 'bg-emerald-950 text-emerald-400 border border-emerald-900' : v.status === 'ARCHIVED' ? 'bg-slate-900 text-slate-500' : 'bg-sky-950 text-sky-400 border border-sky-900'}">${v.status}</span>
+                                </div>
+                                <span class="text-[10px] text-slate-400 italic">${v.reason || 'No description'}</span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <a href="/api/report/${data.report_id}/pdf?version=${v.version_number}" target="_blank" class="bg-emerald-600 dark:bg-emerald-500 text-slate-950 font-bold text-[9px] h-6 px-2.5 rounded flex items-center gap-1">
+                                    <i class="fa-solid fa-file-pdf"></i> PDF
+                                </a>
+                            </div>
+                        `;
+                        versionsList.appendChild(vItem);
+                    });
+                } else {
+                    versionsList.innerHTML = `<p class="text-slate-500 italic text-center text-[11px] py-2">No version history found.</p>`;
+                }
                 openModal("details-modal");
             } catch (err) { alert("Failed to load clinical report."); }
         }
@@ -1143,7 +1195,7 @@
                         const typeIcon = s.event_type.includes("GOOGLE") ? "fa-brands fa-google text-amber-400" : "fa-solid fa-shield-halved text-indigo-400";
                         const locationStr = s.location ? ` • ${s.location}` : "";
                         const browserStr = s.browser && s.device ? `${s.browser} (${s.device})` : "Unknown Browser/Device";
-                        
+
                         let activeStatus = "Active Session";
                         let activeColor = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
                         if (s.event_type === "LOGOUT" || s.event_type === "REVOKE_ALL_SESSIONS") {
@@ -1156,7 +1208,7 @@
                             activeStatus = `Ended: ${new Date(s.logout_time).toLocaleTimeString()}`;
                             activeColor = "bg-slate-850 text-slate-400";
                         }
-                        
+
                         listContainer.innerHTML += `
                             <div class="flex items-center justify-between p-2.5 bg-slate-900/40 rounded-xl border border-slate-800/40 text-[11px]">
                                 <div class="flex items-center gap-2.5">
@@ -1200,10 +1252,10 @@
                 const data = await res.json();
                 statusDiv.classList.add("hidden");
                 if (data.error) { alert(data.error); return; }
-                
+
                 document.getElementById("settings-avatar-img").src = data.avatar_url;
                 currentUser.google_profile_pic = data.avatar_url;
-                
+
                 const avatarBtn = document.getElementById("profile-avatar-btn");
                 if (avatarBtn) {
                     avatarBtn.innerHTML = `<img src="${data.avatar_url}" class="h-full w-full rounded-xl object-cover">`;
@@ -1222,7 +1274,7 @@
             const email = document.getElementById("settings-email").value;
             const successDiv = document.getElementById("settings-profile-success");
             const errorDiv = document.getElementById("settings-profile-error");
-            
+
             successDiv.classList.add("hidden");
             errorDiv.classList.add("hidden");
 
@@ -1246,7 +1298,7 @@
                 }
                 const headerName = document.getElementById("header-user-name");
                 if (headerName) headerName.innerText = name;
-                
+
                 settingsDataLoaded = false;
                 await loadSettingsData();
             } catch (err) {
@@ -1367,10 +1419,10 @@
                 const res = await fetchWithAuth("/api/auth/profile/logout-other-devices", { method: "POST" });
                 const data = await res.json();
                 if (data.error) { alert(data.error); return; }
-                
+
                 authToken = data.access_token;
                 localStorage.setItem("auth_token", authToken);
-                
+
                 alert("Successfully logged out of all other devices.");
                 await loadSettingsData();
             } catch (err) {

@@ -61,7 +61,7 @@ def create_app(db_path: str) -> Flask:
                 httponly=False,  # Must be False so frontend JS can read and submit it
                 path="/"
             )
-        
+
         # Configure robust Enterprise Security Headers
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
@@ -88,14 +88,14 @@ def create_app(db_path: str) -> Flask:
             "/api/auth/login",
             "/api/auth/register"
         ]
-        
+
         if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
             if not request.path.startswith("/api/") or any(request.path.startswith(p) for p in exempt_paths):
                 return
-            
+
             cookie_csrf = request.cookies.get("csrf_token")
             header_csrf = request.headers.get("X-CSRF-Token")
-            
+
             # Support bypass in standard unit tests if needed
             if app.config.get("TESTING") and header_csrf == "SKIP_CSRF_FOR_TESTS":
                 return
@@ -205,11 +205,11 @@ def create_app(db_path: str) -> Flask:
                 return redirect(url_for("doctor_dashboard"))
             elif user.role == Role.PATIENT:
                 return redirect(url_for("patient_dashboard"))
-        
+
         index_path = os.path.join(template_dir, "index.html")
         if not os.path.exists(index_path):
             return f"Error: index.html presentation template not found at {index_path}", 404
-        
+
         with open(index_path, "r", encoding="utf-8") as f:
             content = f.read()
         return render_template_string(content)
@@ -219,7 +219,7 @@ def create_app(db_path: str) -> Flask:
         user, err_code = get_current_user_from_request()
         if not user or user.role != Role.ADMIN:
             return redirect(url_for("index"))
-        
+
         path = os.path.join(template_dir, "dashboard_admin.html")
         if not os.path.exists(path):
             return f"Error: dashboard_admin.html not found", 404
@@ -232,7 +232,7 @@ def create_app(db_path: str) -> Flask:
         user, err_code = get_current_user_from_request()
         if not user or user.role != Role.DOCTOR:
             return redirect(url_for("index"))
-        
+
         path = os.path.join(template_dir, "dashboard_doctor.html")
         if not os.path.exists(path):
             return f"Error: dashboard_doctor.html not found", 404
@@ -245,7 +245,7 @@ def create_app(db_path: str) -> Flask:
         user, err_code = get_current_user_from_request()
         if not user or user.role != Role.PATIENT:
             return redirect(url_for("index"))
-        
+
         path = os.path.join(template_dir, "dashboard_patient.html")
         if not os.path.exists(path):
             return f"Error: dashboard_patient.html not found", 404
@@ -345,9 +345,9 @@ def create_app(db_path: str) -> Flask:
         try:
             res = auth_use_cases.refresh_token(refresh_token=refresh_token, ip_addr=ip_addr)
             response = jsonify(res)
-            
+
             is_secure = request.is_secure or request.headers.get("X-Forwarded-Proto", "").lower() == "https"
-            
+
             try:
                 payload = jwt_svc.decode_token(res["refresh_token"], expected_type=TokenType.REFRESH)
                 duration_days = (payload.exp - payload.iat) / 86400.0
@@ -364,7 +364,7 @@ def create_app(db_path: str) -> Flask:
                 samesite="Lax",
                 path="/"
             )
-            
+
             refresh_max_age = 30 * 86400 if remember_me else None
             response.set_cookie(
                 "refresh_token",
@@ -392,12 +392,12 @@ def create_app(db_path: str) -> Flask:
                 token = parts[1]
             else:
                 token = auth_header
-        
+
         refresh_token = request.cookies.get("refresh_token")
         ip_addr = request.remote_addr or "127.0.0.1"
         if token or refresh_token:
             auth_use_cases.logout(token=token or "", refresh_token=refresh_token, ip_address=ip_addr)
-            
+
         response = jsonify({"message": "Logout successful."})
         response.set_cookie("access_token", "", expires=0, httponly=True, samesite="Lax", path="/")
         response.set_cookie("refresh_token", "", expires=0, httponly=True, samesite="Lax", path="/")
@@ -410,7 +410,7 @@ def create_app(db_path: str) -> Flask:
             response = jsonify({"authenticated": False, "code": err_code})
             response.set_cookie("access_token", "", expires=0, httponly=True, samesite="Lax", path="/")
             return response
-        
+
         response = jsonify({"authenticated": True, "user": user.to_dict()})
         auth_header = request.headers.get("Authorization")
         if auth_header:
@@ -464,7 +464,7 @@ def create_app(db_path: str) -> Flask:
                 user_agent=request.headers.get("User-Agent", "Unknown")
             )
             response = jsonify(res)
-            
+
             # If access token was successfully generated, set the cookies
             if "access_token" in res:
                 is_secure = request.is_secure or request.headers.get("X-Forwarded-Proto", "").lower() == "https"
@@ -513,7 +513,7 @@ def create_app(db_path: str) -> Flask:
 
         filename = f"{current_user.uuid}{file_ext}"
         filepath = os.path.join(upload_dir, filename)
-        
+
         # Save the validated and resized image bytes
         with open(filepath, "wb") as f:
             f.write(resized_bytes)
@@ -556,7 +556,7 @@ def create_app(db_path: str) -> Flask:
                 token = parts[1]
             else:
                 token = auth_header
-        
+
         current_jti = None
         if token:
             try:
@@ -661,7 +661,7 @@ def create_app(db_path: str) -> Flask:
                 ORDER BY id DESC LIMIT 15;
             """, (current_user.id,))
             rows = cursor.fetchall()
-            
+
             sessions = []
             for r in rows:
                 d = dict(r)
@@ -670,7 +670,7 @@ def create_app(db_path: str) -> Flask:
                     details = json.loads(details_str)
                 except Exception:
                     details = {}
-                
+
                 sessions.append({
                     "timestamp": convert_utc_to_ist(d.get("timestamp")),
                     "event_type": d.get("event_type"),
@@ -725,7 +725,7 @@ def create_app(db_path: str) -> Flask:
         new_pass = data.get("password")
         if not new_pass:
             return jsonify({"error": "Password is required."}), 400
-        
+
         from security.infrastructure.password import PasswordHasher
         valid_pass, pass_err = PasswordHasher.validate_password_strength(new_pass)
         if not valid_pass:
@@ -734,7 +734,7 @@ def create_app(db_path: str) -> Flask:
         user = user_repo.get_by_id(target_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
-        
+
         user.password_hash = PasswordHasher.hash_password(new_pass)
         user_repo.update_user(user)
 
@@ -764,17 +764,17 @@ def create_app(db_path: str) -> Flask:
         from flask import make_response
 
         users = user_repo.list_users(limit=1000)
-        
+
         dest = io.StringIO()
         writer = csv.writer(dest)
         writer.writerow(["ID", "UUID", "Email", "Full Name", "Role", "Is Verified", "Is Active", "Created At", "Last Login At"])
-        
+
         for u in users:
             writer.writerow([
-                u.id, u.uuid, u.email, u.full_name, u.role.value if hasattr(u.role, 'value') else u.role, 
+                u.id, u.uuid, u.email, u.full_name, u.role.value if hasattr(u.role, 'value') else u.role,
                 u.is_verified, u.is_active, u.created_at, u.last_login_at
             ])
-            
+
         output = make_response(dest.getvalue())
         output.headers["Content-Disposition"] = "attachment; filename=users_export.csv"
         output.headers["Content-type"] = "text/csv"
@@ -833,7 +833,7 @@ def create_app(db_path: str) -> Flask:
         try:
             criteria = HistorySearchCriteria()
             summaries = history_repo.search_history(criteria)
-            
+
             data = []
             for s in summaries:
                 # If Patient role, only return matching patient records
@@ -864,7 +864,7 @@ def create_app(db_path: str) -> Flask:
         try:
             criteria = HistorySearchCriteria(patient_id=q if q else None)
             summaries = history_repo.search_history(criteria)
-            
+
             data = []
             for s in summaries:
                 if current_user.role == Role.PATIENT:
@@ -889,36 +889,117 @@ def create_app(db_path: str) -> Flask:
     @app.route("/api/report/<int:report_id>")
     @login_required
     def get_report_details(current_user: User, report_id: int):
-        conn = sqlite3.connect(app.config["DB_PATH"])
-        conn.row_factory = sqlite3.Row
+        from clinical_reporting.application.services import ReportService
+        service = ReportService(db_path=app.config["DB_PATH"])
         try:
-            query = """
-            SELECT 
-                cr.id as report_id, p.patient_id, p.name as patient_name,
-                pr.predicted_class, pr.confidence_score, pr.tumor_area_mm2, pr.tumor_percentage_brain,
-                pr.rule_based_severity, pr.severity_rule_description, cr.created_at
-            FROM clinical_reports cr
-            JOIN predictions pr ON cr.prediction_id = pr.id
-            JOIN mri_scans s ON pr.scan_id = s.id
-            JOIN patients p ON s.patient_id = p.patient_id
-            WHERE cr.id = ?;
-            """
-            cursor = conn.cursor()
-            cursor.execute(query, (report_id,))
-            row = cursor.fetchone()
-            if not row:
-                return jsonify({"error": "Report not found"}), 404
+            # 1. Fetch current active report details
+            conn = sqlite3.connect(app.config["DB_PATH"])
+            conn.row_factory = sqlite3.Row
+            try:
+                query = """
+                SELECT
+                    cr.id as report_id, p.patient_id, p.name as patient_name,
+                    pr.predicted_class, pr.confidence_score, pr.tumor_area_mm2, pr.tumor_percentage_brain,
+                    pr.rule_based_severity, pr.severity_rule_description, cr.created_at
+                FROM clinical_reports cr
+                JOIN predictions pr ON cr.prediction_id = pr.id
+                JOIN mri_scans s ON pr.scan_id = s.id
+                JOIN patients p ON s.patient_id = p.patient_id
+                WHERE cr.id = ?;
+                """
+                row = conn.execute(query, (report_id,)).fetchone()
+                if not row:
+                    return jsonify({"error": "Report not found"}), 404
+                report_dict = dict(row)
+            finally:
+                conn.close()
 
-            report_dict = dict(row)
+            # Enforce patient boundaries
             if current_user.role == Role.PATIENT:
                 if report_dict["patient_name"].lower() != current_user.full_name.lower() and report_dict["patient_id"].lower() != current_user.uuid.lower():
                     return jsonify({"error": "Access denied to patient report"}), 403
 
+            # 2. Enrich with ReportService metadata & versions
+            report = service.get_report(report_id)
+            versions = service.get_report_versions(report_id)
+
+            report_dict["report_number"] = report.report_number
+            report_dict["status"] = report.status.value
+            report_dict["current_version"] = report.current_version
+            report_dict["updated_at"] = report.updated_at
+            report_dict["versions"] = [v.to_dict() for v in versions]
+
             return jsonify(report_dict)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-        finally:
-            conn.close()
+
+    @app.route("/api/report/<int:report_id>/status", methods=["PATCH"])
+    @login_required
+    def update_report_status(current_user: User, report_id: int):
+        from clinical_reporting.application.services import ReportService
+        from clinical_reporting.domain.entities import ReportStatus
+
+        # Enforce RBAC
+        if current_user.role not in [Role.ADMIN, Role.DOCTOR]:
+            return jsonify({"error": "Access denied. Action restricted to Doctors and Admins."}), 403
+
+        data = request.get_json() or {}
+        status_str = data.get("status")
+        if not status_str:
+            return jsonify({"error": "Status is required."}), 400
+
+        service = ReportService(db_path=app.config["DB_PATH"])
+        try:
+            target_status = ReportStatus(status_str.upper())
+            updated_report = service.transition_status(
+                report_id=report_id,
+                target_status=target_status,
+                actor=current_user.email
+            )
+            return jsonify(updated_report.to_dict())
+        except ValueError:
+            return jsonify({"error": f"Invalid status: {status_str}"}), 400
+        except Exception as e:
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/api/report/<int:report_id>/versions", methods=["POST"])
+    @login_required
+    def create_report_version(current_user: User, report_id: int):
+        from clinical_reporting.application.services import ReportService
+        from clinical_reporting.domain.entities import ReportStatus
+
+        # Enforce RBAC
+        if current_user.role not in [Role.ADMIN, Role.DOCTOR]:
+            return jsonify({"error": "Access denied. Action restricted to Doctors and Admins."}), 403
+
+        data = request.get_json() or {}
+        reason = data.get("reason")
+        if not reason:
+            return jsonify({"error": "Reason is required."}), 400
+
+        pdf_path = data.get("pdf_path")
+        json_path = data.get("json_path")
+        prediction_id = data.get("prediction_id")
+        status_str = data.get("status", "DRAFT")
+
+        service = ReportService(db_path=app.config["DB_PATH"])
+        try:
+            status_enum = ReportStatus(status_str.upper())
+            new_version = service.create_new_version(
+                report_id=report_id,
+                created_by=current_user.email,
+                reason=reason,
+                pdf_path=pdf_path,
+                json_path=json_path,
+                prediction_id=prediction_id,
+                status=status_enum
+            )
+            return jsonify(new_version.to_dict())
+        except ValueError:
+            return jsonify({"error": f"Invalid status: {status_str}"}), 400
+        except Exception as e:
+            return jsonify({"error": str(e)}), 400
+
 
     @app.route("/api/report/<int:report_id>/pdf")
     @login_required
@@ -926,9 +1007,17 @@ def create_app(db_path: str) -> Flask:
         import logging
         from pathlib import Path
         logger = logging.getLogger("dashboard.web_server.get_pdf")
-        
-        logger.info(f"Flask API request received for PDF. Report ID: {report_id}, User: {current_user.email}")
-        
+
+        version_str = request.args.get("version")
+        version = None
+        if version_str:
+            try:
+                version = int(version_str)
+            except ValueError:
+                pass
+
+        logger.info(f"Flask API request received for PDF. Report ID: {report_id}, User: {current_user.email}, Version: {version}")
+
         if current_user.role == Role.PATIENT:
             conn = sqlite3.connect(app.config["DB_PATH"])
             conn.row_factory = sqlite3.Row
@@ -959,9 +1048,23 @@ def create_app(db_path: str) -> Flask:
                 conn.close()
 
         try:
-            from clinical_reporting.infrastructure.pdf_generator import load_or_regenerate_pdf
-            pdf_path = load_or_regenerate_pdf(report_id, app.config["DB_PATH"])
-            
+            if version is not None:
+                conn = sqlite3.connect(app.config["DB_PATH"])
+                conn.row_factory = sqlite3.Row
+                try:
+                    row = conn.execute(
+                        "SELECT pdf_path FROM report_versions WHERE report_id = ? AND version_number = ?;",
+                        (report_id, version)
+                    ).fetchone()
+                    if not row:
+                        return jsonify({"error": f"Version {version} not found for report {report_id}."}), 404
+                    pdf_path = row["pdf_path"]
+                finally:
+                    conn.close()
+            else:
+                from clinical_reporting.infrastructure.pdf_generator import load_or_regenerate_pdf
+                pdf_path = load_or_regenerate_pdf(report_id, app.config["DB_PATH"])
+
             if not pdf_path:
                 logger.error(f"load_or_regenerate_pdf returned None for report_id: {report_id}")
                 return jsonify({
@@ -972,9 +1075,9 @@ def create_app(db_path: str) -> Flask:
             pdf_path_obj = Path(pdf_path).resolve()
             output_dir = pdf_path_obj.parent
             filename = pdf_path_obj.name
-            
+
             logger.info(f"Resolving PDF path. Directory: {output_dir}, Filename: {filename}")
-            
+
             # File exists check
             if not pdf_path_obj.is_file():
                 logger.error(f"PDF file does not exist on disk at: {pdf_path_obj}")
@@ -983,10 +1086,10 @@ def create_app(db_path: str) -> Flask:
                     "reason": "The file does not exist at the resolved absolute path.",
                     "path": str(pdf_path_obj)
                 }), 404
-            
+
             logger.info(f"PDF file verified. Serving PDF from: {pdf_path_obj}")
             return send_file(str(pdf_path_obj), mimetype="application/pdf")
-            
+
         except Exception as e:
             logger.exception(f"Unexpected error in get_pdf endpoint: {e}")
             return jsonify({
@@ -1013,7 +1116,7 @@ def create_app(db_path: str) -> Flask:
             )
             row = cursor.fetchone()
             img_path = None
-            
+
             if row:
                 if image_type == "overlay":
                     img_path = row["overlay_path"]
@@ -1025,7 +1128,7 @@ def create_app(db_path: str) -> Flask:
                     img_path = row["raw_path"]
                 else:
                     img_path = None
-            
+
             if img_path:
                 img_path = os.path.abspath(img_path)
 
@@ -1036,7 +1139,7 @@ def create_app(db_path: str) -> Flask:
                 import numpy as np
                 import cv2
                 import io
-                
+
                 # Generate placeholder image on the fly
                 placeholder = np.zeros((400, 400, 3), dtype=np.uint8)
                 placeholder[:] = [42, 23, 15]  # Slate color
@@ -1051,7 +1154,7 @@ def create_app(db_path: str) -> Flask:
                 text_x = (400 - text_size[0]) // 2
                 text_y = (400 + text_size[1]) // 2
                 cv2.putText(placeholder, text, (text_x, text_y), font, font_scale, (139, 116, 100), thickness, cv2.LINE_AA)
-                
+
                 success, encoded_img = cv2.imencode('.png', placeholder)
                 if success:
                     return send_file(io.BytesIO(encoded_img.tobytes()), mimetype="image/png"), 404
@@ -1089,15 +1192,15 @@ def create_app(db_path: str) -> Flask:
     @roles_accepted(Role.ADMIN, Role.DOCTOR)
     def doctor_generate_report(current_user: User):
         import requests
-        
+
         # 1. Get input data and files
         if "mri_file" not in request.files:
             return jsonify({"error": "No MRI file uploaded."}), 400
-        
+
         mri_file = request.files["mri_file"]
         if not mri_file or mri_file.filename == "":
             return jsonify({"error": "Empty MRI file."}), 400
-        
+
         patient_id = request.form.get("patient_id", "").strip()
         patient_name = request.form.get("patient_name", "").strip()
         patient_age_str = request.form.get("patient_age", "45").strip()
@@ -1118,9 +1221,9 @@ def create_app(db_path: str) -> Flask:
             pixel_spacing_mm = float(pixel_spacing_str)
         except ValueError:
             return jsonify({"error": "Pixel spacing must be a float."}), 400
-        
+
         ensemble_mode = ensemble_mode_str.lower() == "true"
-        
+
         # Forward token
         token = request.cookies.get("access_token")
         auth_header = request.headers.get("Authorization")
@@ -1130,11 +1233,11 @@ def create_app(db_path: str) -> Flask:
                 token = parts[1]
             else:
                 token = auth_header
-        
+
         headers = {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-            
+
         # 2. Forward to FastAPI
         api_url = os.environ.get("FASTAPI_URL", "http://127.0.0.1:8000")
         try:
@@ -1150,10 +1253,10 @@ def create_app(db_path: str) -> Flask:
                 except Exception:
                     err_msg = upload_resp.text
                 return jsonify({"error": f"MRI Ingestion Failed: {err_msg}"}), upload_resp.status_code
-            
+
             upload_data = upload_resp.json()
             filepath = upload_data["filepath"]
-            
+
             intake_payload = {
                 "patient_id": patient_id,
                 "name": patient_name,
@@ -1164,7 +1267,7 @@ def create_app(db_path: str) -> Flask:
                 "xai_method": xai_method,
                 "ensemble_mode": ensemble_mode
             }
-            
+
             report_resp = requests.post(
                 f"{api_url}/api/report",
                 params={"filepath": filepath},
@@ -1172,7 +1275,7 @@ def create_app(db_path: str) -> Flask:
                 headers=headers,
                 timeout=60
             )
-            
+
             if not report_resp.ok:
                 try:
                     err_msg = report_resp.json().get("detail", "Failed report execution.")
@@ -1181,9 +1284,9 @@ def create_app(db_path: str) -> Flask:
                 except Exception:
                     err_msg = report_resp.text
                 return jsonify({"error": f"AI Diagnostic Failure: {err_msg}"}), report_resp.status_code
-            
+
             return jsonify(report_resp.json())
-            
+
         except requests.exceptions.ConnectionError:
             return jsonify({"error": "Failed to connect to AI Inference REST API. Ensure FastAPI server is running on http://127.0.0.1:8000"}), 503
         except Exception as e:

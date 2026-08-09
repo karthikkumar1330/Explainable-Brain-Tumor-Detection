@@ -29,6 +29,7 @@ class AnalyzeTumorUseCase:
         tumor_class: str = "Unknown",
         original_image: Optional[np.ndarray] = None,
         pixel_spacing_mm: float = 1.0,
+        segmentation_failed: bool = False,
     ) -> ClinicalReportData:
         """Executes the tumor analysis and generates clinical report details.
 
@@ -38,6 +39,7 @@ class AnalyzeTumorUseCase:
             tumor_class: Classification label (e.g. Glioma).
             original_image: Optional original image to compute brain coverage percentage.
             pixel_spacing_mm: The physical spacing factor.
+            segmentation_failed: True if the segmentation model failed during inference.
 
         Returns:
             A ClinicalReportData object.
@@ -58,7 +60,7 @@ class AnalyzeTumorUseCase:
         # Generate clinical descriptions based on severity and class
         severity = analysis_result.severity_level
         clinical_notes, recommendations = self._generate_clinical_guidelines(
-            tumor_class, severity, analysis_result
+            tumor_class, severity, analysis_result, segmentation_failed
         )
 
         return ClinicalReportData(
@@ -70,9 +72,23 @@ class AnalyzeTumorUseCase:
         )
 
     def _generate_clinical_guidelines(
-        self, tumor_class: str, severity: SeverityLevel, result: TumorAnalysisResult
+        self, tumor_class: str, severity: SeverityLevel, result: TumorAnalysisResult, segmentation_failed: bool = False
     ) -> tuple[str, str]:
         """Generates patient-specific clinical notes and recommendations based on severity."""
+        t_class_lower = tumor_class.lower().strip()
+        if segmentation_failed and t_class_lower not in ["no tumor", "normal", "none"]:
+            notes = (
+                f"Classification predicts {tumor_class}. Quantitative tumor morphology is "
+                f"unavailable because the segmentation model failed during inference. Tumor area, "
+                f"occupancy, perimeter and morphology measurements should not be interpreted from this run."
+            )
+            recommendations = (
+                "1. Refer patient to neurosurgical/oncological clinical team for diagnostic staging.\n"
+                "2. Correlate findings with physical clinical evaluation and other imaging slices.\n"
+                "3. Schedule a repeat MRI scan or contact support to resolve the segmentation execution failure."
+            )
+            return notes, recommendations
+
         if severity == SeverityLevel.NORMAL:
             notes = "No active tumor mass detected in the provided segmentation mask."
             recommendations = "Routine follow-up as per standard clinical protocol."

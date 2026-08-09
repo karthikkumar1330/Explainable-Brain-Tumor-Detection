@@ -25,7 +25,8 @@ class GenerateClinicalInsightUseCase:
         circularity: Optional[float],
         xai_method: Optional[str],
         xai_overlap_percentage: Optional[float],
-        longitudinal_comparison: Optional[Any] = None
+        longitudinal_comparison: Optional[Any] = None,
+        segmentation_failed: bool = False,
     ) -> ClinicalInsight:
         """Synthesizes qualitative clinical insights based on numerical measurements and classification context.
 
@@ -34,7 +35,7 @@ class GenerateClinicalInsightUseCase:
         """
         p_class_upper = predicted_class.upper().strip()
         is_tumor = p_class_upper not in ["NO TUMOR", "NO_TUMOR"]
-        
+
         cal_str = "calibrated" if is_calibrated else "uncalibrated"
         conf_pct = f"{confidence_score:.1%}"
 
@@ -52,6 +53,21 @@ class GenerateClinicalInsightUseCase:
             recommendations = [
                 "Correlate with previous history and other imaging slices.",
                 "Schedule routine follow-up brain MRI scan cycles as clinically indicated."
+            ]
+        elif segmentation_failed:
+            summary = (
+                f"Classification predicts {predicted_class} with confidence {conf_pct}. "
+                f"Quantitative tumor morphology is unavailable because the segmentation model failed during inference. "
+                f"Tumor area, occupancy, perimeter and morphology measurements should not be interpreted from this run."
+            )
+            key_findings = [
+                f"Lesion identified via classification: {predicted_class} (Confidence: {conf_pct}).",
+                "Quantitative tumor morphology is unavailable because the segmentation model failed during inference."
+            ]
+            recommendations = [
+                "Refer patient to neurosurgical/oncological clinical team for diagnostic staging.",
+                "Correlate findings with physical clinical evaluation and other imaging slices.",
+                "Schedule a repeat MRI scan or contact support to resolve the segmentation execution failure."
             ]
         else:
             # Border & configuration descriptors
@@ -99,10 +115,10 @@ class GenerateClinicalInsightUseCase:
                 status = getattr(longitudinal_comparison, "progression_status", "stable").upper()
                 delta_area = getattr(longitudinal_comparison, "area_delta_mm2", 0.0)
                 pct_change = getattr(longitudinal_comparison, "area_percentage_change", 0.0)
-                
+
                 prog_text = f"Longitudinal progression: {status} status. Area change: {delta_area:+.2f} mm² ({pct_change:+.1f}%)."
                 key_findings.append(prog_text)
-                
+
                 if "PROGRES" in status:
                     recommendations = [
                         "Urgent clinical consultation with neurosurgery/oncology due to lesion progression.",

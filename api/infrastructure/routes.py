@@ -38,6 +38,8 @@ from prediction_history.domain.entities import HistorySearchCriteria
 from api.domain.schemas import PatientIntake
 from security.domain.entities import Role, User
 from api.routes.auth_routes import get_current_user, require_roles
+from pydantic import BaseModel
+from clinical_reporting.application.services import ReportService
 
 
 # Configure paths
@@ -61,7 +63,7 @@ logger = logging.getLogger("api_routes")
 def initialize_api_models():
     """Preloads the deep learning model states into memory."""
     global model_cls, predict_use_case, model_seg, seg_config, device
-    
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"FastAPI API initializing models on device: {device}")
 
@@ -83,7 +85,7 @@ def initialize_api_models():
     try:
         with open(SEG_CONFIG, "r") as f:
             seg_config = yaml.safe_load(f)
-        
+
         import archs
         model_seg = archs.__dict__[seg_config["arch"]](
             num_classes=seg_config["num_classes"],
@@ -116,20 +118,20 @@ def upload_mri_file(file: UploadFile = File(...), current_user: User = Depends(r
     os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
     temp_filename = f"upload_{int(time.time())}_{file.filename}"
     temp_filepath = os.path.join(TEMP_UPLOAD_DIR, temp_filename)
-    
+
     try:
         file_bytes = file.file.read()
         with open(temp_filepath, "wb") as f:
             f.write(file_bytes)
-        
+
         # Run MRI Input Validation
         from input_validation.infrastructure.validators import OpenCVMriValidator
         from input_validation.application.use_cases import ValidateMriUploadUseCase
-        
+
         validator = OpenCVMriValidator()
         use_case = ValidateMriUploadUseCase(validator=validator, db_path=DEFAULT_DB_PATH)
         scorecard = use_case.execute(filepath=temp_filepath, file_bytes=file_bytes, filename=file.filename)
-        
+
         if not scorecard.is_valid:
             if os.path.exists(temp_filepath):
                 os.remove(temp_filepath)
@@ -141,7 +143,7 @@ def upload_mri_file(file: UploadFile = File(...), current_user: User = Depends(r
                     "scorecard": scorecard.to_dict()
                 }
             )
-            
+
         return {
             "filename": temp_filename,
             "filepath": temp_filepath,
@@ -166,7 +168,7 @@ def run_classification(filepath: str, current_user: User = Depends(require_roles
     """
     if not os.path.exists(filepath):
         raise HTTPException(status_code=400, detail="Target MRI file path not found.")
-    
+
     try:
         config_cls = ClassificationConfig()
         image_tensor_cls = preprocess_classification_image(filepath, config_cls)
@@ -186,7 +188,7 @@ def run_segmentation(filepath: str, current_user: User = Depends(require_roles([
     """API Endpoint: Renders brain tumor segmentation mask using UNeXt model."""
     if not os.path.exists(filepath):
         raise HTTPException(status_code=400, detail="Target MRI file path not found.")
-    
+
     try:
         img_bgr = cv2.imread(filepath, cv2.IMREAD_COLOR)
         if img_bgr is None:
@@ -197,10 +199,10 @@ def run_segmentation(filepath: str, current_user: User = Depends(require_roles([
             img_bgr, seg_config["input_h"], seg_config["input_w"]
         )
         input_tensor_seg = input_tensor_seg.to(device)
-        
+
         device_type = device.type
         is_autocast_supported = device_type in ["cuda", "cpu"]
-        
+
         with torch.inference_mode():
             if is_autocast_supported:
                 dtype = torch.float16 if device_type == "cuda" else torch.bfloat16
@@ -208,7 +210,7 @@ def run_segmentation(filepath: str, current_user: User = Depends(require_roles([
                     output_seg = model_seg(input_tensor_seg)
             else:
                 output_seg = model_seg(input_tensor_seg)
-                
+
             if seg_config["deep_supervision"]:
                 output_seg = output_seg[-1]
             output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()
@@ -261,7 +263,7 @@ def run_explainability(filepath: str, target_class: int = 1, method: str = "grad
     """API Endpoint: Runs Explainable AI 2.0 attention heatmap on target classification index."""
     if not os.path.exists(filepath):
         raise HTTPException(status_code=400, detail="Target MRI file path not found.")
-    
+
     try:
         img_bgr = cv2.imread(filepath, cv2.IMREAD_COLOR)
         config_cls = ClassificationConfig()
@@ -324,19 +326,19 @@ def get_pipeline_health(current_user: User = Depends(require_roles([Role.ADMIN, 
     try:
         from monitoring.infrastructure.health_monitor import PipelineHealthMonitor
         from monitoring.application.use_cases import RunPipelineHealthCheckUseCase
-        
+
         monitor = PipelineHealthMonitor(db_path=DEFAULT_DB_PATH, api_url="http://127.0.0.1:8000/docs")
         use_case = RunPipelineHealthCheckUseCase(monitor=monitor)
-        
+
         report = use_case.execute(
             model_cls=model_cls,
             model_seg=model_seg,
             device=str(device)
         )
-        
+
         db_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)
         telemetry = db_repo.get_health_telemetry()
-        
+
         report_dict = report.to_dict()
         report_dict["historical_telemetry"] = telemetry
         return report_dict
@@ -350,7 +352,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
     """API Endpoint: Runs the complete end-to-end MRI diagnostics report pipeline with validation."""
     if not os.path.exists(filepath):
         raise HTTPException(status_code=400, detail="Target upload MRI file path not found.")
-    
+
     t_endpoint_start = time.time()
     timeline = {}
     timeline["Upload"] = time.time() - t_endpoint_start
@@ -360,14 +362,14 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
         # Run MRI Input Validation
         with open(filepath, "rb") as f:
             file_bytes = f.read()
-            
+
         from input_validation.infrastructure.validators import OpenCVMriValidator
         from input_validation.application.use_cases import ValidateMriUploadUseCase
-        
+
         validator = OpenCVMriValidator()
         use_case = ValidateMriUploadUseCase(validator=validator, db_path=DEFAULT_DB_PATH)
         scorecard = use_case.execute(filepath=filepath, file_bytes=file_bytes, filename=os.path.basename(filepath))
-        
+
         timeline["Validation"] = time.time() - t_endpoint_start
 
         if not scorecard.is_valid:
@@ -391,17 +393,17 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
         t_cls = time.time()
         config_cls = ClassificationConfig()
         image_tensor_cls = preprocess_classification_image(filepath, config_cls)
-        
+
         cls_warnings = []
         active_cls_device = str(device)
         try:
             if getattr(intake, "ensemble_mode", False):
                 from research_framework.application.registry import ModelRegistry
                 from research_framework.application.ensemble import EnsembleEngine
-                
+
                 registry = ModelRegistry(default_checkpoint_path=CLS_CHECKPOINT)
                 predictions = registry.predict_all(image_tensor_cls, device=device)
-                
+
                 # Fetch baseline prediction specifically to keep classification_result populated
                 prod_pred = next((p for p in predictions if p.model_name == "efficientnet_b0"), None)
                 if prod_pred:
@@ -420,11 +422,11 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
 
                 engine = EnsembleEngine()
                 ensemble_res = engine.compute_ensemble(predictions)
-                
+
                 # Swap production result with ensemble prediction
                 class_to_label = {"Glioma": 0, "Meningioma": 1, "Pituitary": 2, "No Tumor": 3}
                 ensemble_label = class_to_label.get(ensemble_res.predicted_class, 3)
-                
+
                 classification_result = PredictionResult(
                     label=ensemble_label,
                     class_name=ensemble_res.predicted_class,
@@ -449,7 +451,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
             except Exception as cpu_err:
                 logger.critical(f"CPU fallback for classification failed: {cpu_err}")
                 raise HTTPException(status_code=500, detail=f"Classification inference failed: {cpu_err}")
-        
+
         cls_latency = time.time() - t_cls
         timeline["Classification"] = time.time() - t_endpoint_start
         timeline["Calibration"] = time.time() - t_endpoint_start
@@ -473,7 +475,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
             target_layer=model_cls.backbone.features[8],
             device=device
         )
-        
+
         # We generate the raw heatmap first inside a graceful block (B6.12)
         class DummyXaiResult:
             def __init__(self):
@@ -500,14 +502,15 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
         # 3. Segmentation (B6.12 Retry & CPU fallback)
         t_seg = time.time()
         input_tensor_seg = preprocess_segmentation_image(img_bgr, seg_config["input_h"], seg_config["input_w"])
-        
+
+        segmentation_failed = False
         seg_warnings = []
         active_seg_device = str(device)
         try:
             input_tensor_seg_dev = input_tensor_seg.to(device)
             device_type = device.type
             is_autocast_supported = device_type in ["cuda", "cpu"]
-            
+
             with torch.inference_mode():
                 if is_autocast_supported:
                     dtype = torch.float16 if device_type == "cuda" else torch.bfloat16
@@ -515,7 +518,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
                         output_seg = model_seg(input_tensor_seg_dev)
                 else:
                     output_seg = model_seg(input_tensor_seg_dev)
-                    
+
                 if seg_config["deep_supervision"]:
                     output_seg = output_seg[-1]
                 output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()
@@ -537,11 +540,12 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
                 seg_warnings.append("Auto-recovery warning: Segmentation execution failed on GPU. Retried and completed on CPU fallback mode.")
             except Exception as cpu_err:
                 logger.critical(f"CPU fallback for segmentation failed: {cpu_err}")
+                segmentation_failed = True
                 h_shape = seg_config["input_h"] if (seg_config and "input_h" in seg_config) else 224
                 w_shape = seg_config["input_w"] if (seg_config and "input_w" in seg_config) else 224
                 output_seg = np.zeros((h_shape, w_shape), dtype=np.float32)
-                seg_warnings.append(f"Critical fallback: Segmentation engine failed completely ({cpu_err}). Generated empty tumor mask.")
-                
+                seg_warnings.append(f"Critical fallback: Segmentation engine failed completely ({cpu_err}). Generated empty tumor mask. segmentation execution failed")
+
         bin_mask = (output_seg > 0.5).astype(np.uint8)
 
         # Resize to original scale so post-processing runs at native resolution
@@ -557,7 +561,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
         post_proc = MedicalImagePostProcessor()
         post_proc_use_case = PostProcessSegmentationUseCase(post_processor=post_proc)
         final_mask, post_proc_meta = post_proc_use_case.execute(bin_mask_resized, prob_map_resized)
-        
+
         seg_latency = time.time() - t_seg
         timeline["Segmentation"] = time.time() - t_endpoint_start
 
@@ -567,7 +571,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
             stage_fn=run_xai,
             default_fallback_value=DummyXaiResult()
         )
-        
+
         # Extract heatmap
         if hasattr(xai_result, "heatmap_raw"):
             heatmap = xai_result.heatmap_raw
@@ -580,32 +584,32 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
         # Save explanation visualizations with boundary overlays
         os.makedirs(OUTPUT_REPORTS_DIR, exist_ok=True)
         base_cam_name = f"{intake.patient_id}_api_gradcam"
-        
+
         from classification.infrastructure.visualization import overlay_heatmap
         raw_overlay = overlay_heatmap(img_bgr, heatmap, alpha=0.6)
         overlay_with_contour = overlay_tumor_contour(raw_overlay, final_mask)
-        
+
         heatmap_path = os.path.join(OUTPUT_REPORTS_DIR, f"{base_cam_name}_heatmap.png")
         overlay_path = os.path.join(OUTPUT_REPORTS_DIR, f"{base_cam_name}_overlay.png")
-        
+
         heatmap_uint8 = np.uint8(255 * cv2.resize(heatmap, (img_bgr.shape[1], img_bgr.shape[0])))
         heatmap_color = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
-        
+
         success_h = cv2.imwrite(heatmap_path, heatmap_color)
         if not success_h:
             logger.error(f"Failed to write heatmap image to: {heatmap_path}")
-            
+
         success_o = cv2.imwrite(overlay_path, overlay_with_contour)
         if not success_o:
             logger.error(f"Failed to write overlay image to: {overlay_path}")
- 
+
         # Save post-processed segmentation mask
         mask_filename = f"{intake.patient_id}_api_mask.png"
         mask_path = os.path.join(OUTPUT_REPORTS_DIR, mask_filename)
         success_m = cv2.imwrite(mask_path, (final_mask * 255).astype(np.uint8))
         if not success_m:
             logger.error(f"Failed to write segmentation mask to: {mask_path}")
- 
+
         # Save before-after post-processing comparison image
         comparison_filename = f"{intake.patient_id}_api_comparison.png"
         comparison_path = os.path.join(OUTPUT_REPORTS_DIR, comparison_filename)
@@ -619,7 +623,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
         # 4. Morphological Analysis
         morph_analyzer = OpenCVTumorAnalyzer(low_thresh=1.0, med_thresh=5.0, high_thresh=15.0)
         morph_use_case = AnalyzeTumorUseCase(analyzer=morph_analyzer, logger=logger)
-        
+
         class DummyClinicalData:
             def __init__(self):
                 from tumor_analysis.domain.entities import TumorAnalysisResult, SeverityLevel
@@ -643,15 +647,16 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
                 tumor_class=classification_result.class_name,
                 original_image=img_bgr,
                 pixel_spacing_mm=intake.pixel_spacing_mm,
+                segmentation_failed=segmentation_failed,
             )
-            
+
         clinical_data, morph_warns = recovery.execute_graceful_stage(
             stage_name="Morphological Stats Extraction",
             stage_fn=run_morph,
             default_fallback_value=DummyClinicalData()
         )
         segmentation_metrics = clinical_data.analysis
-        
+
         # Enrich segmentation_metrics with post-processing details
         from dataclasses import replace
         segmentation_metrics = replace(
@@ -661,7 +666,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
             post_processing_applied=True,
             post_processing_metadata=post_proc_meta
         )
-        
+
         timeline["Statistics"] = time.time() - t_endpoint_start
         timeline["Comparison"] = time.time() - t_endpoint_start  # API endpoint doesn't evaluate longitudinal comparison
 
@@ -672,6 +677,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
             tumor_type=classification_result.class_name,
             tumor_area_mm2=segmentation_metrics.tumor_area_mm2,
             tumor_percentage=segmentation_metrics.tumor_percentage_brain,
+            segmentation_failed=segmentation_failed,
         )
 
         # 6. Report generation
@@ -700,7 +706,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
         from monitoring.infrastructure.consistency_checker import ConfidenceConsistencyChecker
         from monitoring.infrastructure.explainability_validator import ExplainabilityValidator
         from monitoring.application.warning_engine import CentralWarningEngine
-        
+
         seg_validator = SegmentationValidator()
         consistency_checker = ConfidenceConsistencyChecker()
         explain_validator = ExplainabilityValidator()
@@ -709,10 +715,10 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
             consistency_checker=consistency_checker,
             explain_validator=explain_validator
         )
-        
+
         uncal_conf = getattr(classification_result, "uncalibrated_confidence_score", None)
         is_cal = getattr(classification_result, "is_calibrated", False)
-        
+
         engine_result = warning_engine.collect_warnings(
             input_errors=cls_warnings + seg_warnings + morph_warns,
             predicted_class=classification_result.class_name,
@@ -733,13 +739,13 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
         # Generate Clinical Insight (B6.15)
         from clinical_insight.application.use_cases import GenerateClinicalInsightUseCase
         insight_use_case = GenerateClinicalInsightUseCase()
-        
+
         solidity_val = None
         circularity_val = None
         if segmentation_metrics and getattr(segmentation_metrics, "stats", None) is not None:
             solidity_val = segmentation_metrics.stats.solidity
             circularity_val = segmentation_metrics.stats.circularity
-            
+
         clinical_insight_res = insight_use_case.execute(
             predicted_class=classification_result.class_name,
             confidence_score=classification_result.confidence_score,
@@ -751,7 +757,8 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
             circularity=circularity_val,
             xai_method=xai_param,
             xai_overlap_percentage=xai_result.overlap_percentage,
-            longitudinal_comparison=None
+            longitudinal_comparison=None,
+            segmentation_failed=segmentation_failed
         )
 
         clinical_report = ClinicalReport(
@@ -827,7 +834,7 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
             import multiprocessing
             cpu_threads = multiprocessing.cpu_count()
             gpu_active = torch.cuda.is_available() and str(device) != "cpu"
-            
+
             audit_logger = AuditLogger(db_path=DEFAULT_DB_PATH)
             audit_logger.log_execution(
                 patient_id=intake.patient_id,
@@ -881,14 +888,14 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
 
 
 @router.get("/report/{report_id}/pdf")
-def serve_report_pdf(report_id: int, current_user: User = Depends(get_current_user)):
+def serve_report_pdf(report_id: int, version: Optional[int] = Query(None), current_user: User = Depends(get_current_user)):
     """Streams the compiled PDF document directly to clients with ownership validation."""
     from pathlib import Path
     import logging
     logger = logging.getLogger("api.routes.serve_report_pdf")
-    
-    logger.info(f"API request received for PDF. Report ID: {report_id}, User: {current_user.email}")
-    
+
+    logger.info(f"API request received for PDF. Report ID: {report_id}, User: {current_user.email}, Version: {version}")
+
     if current_user.role == Role.PATIENT:
         conn = sqlite3.connect(DEFAULT_DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -920,9 +927,23 @@ def serve_report_pdf(report_id: int, current_user: User = Depends(get_current_us
             conn.close()
 
     try:
-        from clinical_reporting.infrastructure.pdf_generator import load_or_regenerate_pdf
-        pdf_path = load_or_regenerate_pdf(report_id, DEFAULT_DB_PATH)
-        
+        if version is not None:
+            conn = sqlite3.connect(DEFAULT_DB_PATH)
+            conn.row_factory = sqlite3.Row
+            try:
+                row = conn.execute(
+                    "SELECT pdf_path FROM report_versions WHERE report_id = ? AND version_number = ?;",
+                    (report_id, version)
+                ).fetchone()
+                if not row:
+                    return JSONResponse(status_code=404, content={"error": f"Version {version} not found for report {report_id}."})
+                pdf_path = row["pdf_path"]
+            finally:
+                conn.close()
+        else:
+            from clinical_reporting.infrastructure.pdf_generator import load_or_regenerate_pdf
+            pdf_path = load_or_regenerate_pdf(report_id, DEFAULT_DB_PATH)
+
         if not pdf_path:
             logger.error(f"load_or_regenerate_pdf returned None for report_id: {report_id}")
             return JSONResponse(
@@ -936,9 +957,9 @@ def serve_report_pdf(report_id: int, current_user: User = Depends(get_current_us
         pdf_path_obj = Path(pdf_path).resolve()
         output_dir = pdf_path_obj.parent
         filename = pdf_path_obj.name
-        
+
         logger.info(f"Resolving PDF path. Directory: {output_dir}, Filename: {filename}")
-        
+
         # File exists check
         if not pdf_path_obj.is_file():
             logger.error(f"PDF file does not exist on disk at: {pdf_path_obj}")
@@ -950,10 +971,10 @@ def serve_report_pdf(report_id: int, current_user: User = Depends(get_current_us
                     "path": str(pdf_path_obj)
                 }
             )
-        
+
         logger.info(f"PDF file verified. Serving PDF from: {pdf_path_obj}")
         return FileResponse(str(pdf_path_obj), media_type="application/pdf", filename=filename)
-        
+
     except Exception as e:
         logger.exception(f"Unexpected error in serve_report_pdf endpoint: {e}")
         return JSONResponse(
@@ -995,14 +1016,14 @@ def serve_report_visual(report_id: int, visual_type: str, current_user: User = D
                 img_path = row["raw_path"]
             else:
                 img_path = None
-        
+
         if img_path:
             img_path = os.path.abspath(img_path)
 
         if not img_path or not os.path.exists(img_path):
             import numpy as np
             import cv2
-            
+
             # Generate placeholder image on the fly
             placeholder = np.zeros((400, 400, 3), dtype=np.uint8)
             placeholder[:] = [42, 23, 15]  # Slate color
@@ -1017,13 +1038,13 @@ def serve_report_visual(report_id: int, visual_type: str, current_user: User = D
             text_x = (400 - text_size[0]) // 2
             text_y = (400 + text_size[1]) // 2
             cv2.putText(placeholder, text, (text_x, text_y), font, font_scale, (139, 116, 100), thickness, cv2.LINE_AA)
-            
+
             success, encoded_img = cv2.imencode('.png', placeholder)
             if success:
                 from fastapi.responses import Response
                 return Response(content=encoded_img.tobytes(), media_type="image/png", status_code=404)
             raise HTTPException(status_code=404, detail="Image file missing on server disk.")
-        
+
         if img_path.lower().endswith(('.tif', '.tiff')):
             import numpy as np
             import cv2
@@ -1046,7 +1067,7 @@ def serve_report_visual(report_id: int, visual_type: str, current_user: User = D
         media_type = "image/png"
         if img_path.lower().endswith(".jpg") or img_path.lower().endswith(".jpeg"):
             media_type = "image/jpeg"
-            
+
         return FileResponse(img_path, media_type=media_type)
     finally:
         conn.close()
@@ -1061,7 +1082,7 @@ def get_prediction_history(patient_id: Optional[str] = Query(None), current_user
 
     history_repo = SQLitePredictionHistoryRepository(db_path=DEFAULT_DB_PATH)
     criteria = HistorySearchCriteria(patient_id=patient_id if patient_id else None)
-    
+
     try:
         summaries = history_repo.search_history(criteria)
         results = []
@@ -1099,3 +1120,168 @@ def get_dashboard_telemetry(current_user: User = Depends(require_roles([Role.ADM
     except Exception as e:
         logger.error(f"Error compiling analytics widgets: {e}")
         raise HTTPException(status_code=500, detail=f"Analytics telemetry compilation failed: {e}")
+
+
+# Pydantic Schemas for Report versioning
+class VersionCreateRequest(BaseModel):
+    reason: str
+    pdf_path: Optional[str] = None
+    json_path: Optional[str] = None
+    prediction_id: Optional[int] = None
+    status: Optional[str] = "DRAFT"
+
+class StatusUpdateRequest(BaseModel):
+    status: str
+
+
+@router.get("/reports/{report_id}")
+def get_report_metadata_api(report_id: int, current_user: User = Depends(get_current_user)):
+    """Fetches Report metadata by ID, enforcing patient tenant boundaries."""
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        report = service.get_report(report_id)
+
+        # Enforce patient boundaries
+        if current_user.role == Role.PATIENT:
+            conn = sqlite3.connect(DEFAULT_DB_PATH)
+            conn.row_factory = sqlite3.Row
+            try:
+                row = conn.execute(
+                    "SELECT p.patient_id, p.name as patient_name FROM patients p WHERE p.patient_id = ?;",
+                    (report.patient_id,)
+                ).fetchone()
+                if not row or (row["patient_name"].lower() != current_user.full_name.lower() and row["patient_id"].lower() != current_user.uuid.lower()):
+                    raise HTTPException(status_code=403, detail="Access denied to patient report.")
+            finally:
+                conn.close()
+
+        versions = service.get_report_versions(report_id)
+        res = report.to_dict()
+        res["versions"] = [v.to_dict() for v in versions]
+        return res
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        logger.error(f"Error fetching report metadata: {e}")
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/reports/{report_id}/versions")
+def get_report_versions_api(report_id: int, current_user: User = Depends(get_current_user)):
+    """Fetches Report version history list, enforcing patient boundaries."""
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        report = service.get_report(report_id)
+
+        # Enforce patient boundaries
+        if current_user.role == Role.PATIENT:
+            conn = sqlite3.connect(DEFAULT_DB_PATH)
+            conn.row_factory = sqlite3.Row
+            try:
+                row = conn.execute(
+                    "SELECT p.patient_id, p.name as patient_name FROM patients p WHERE p.patient_id = ?;",
+                    (report.patient_id,)
+                ).fetchone()
+                if not row or (row["patient_name"].lower() != current_user.full_name.lower() and row["patient_id"].lower() != current_user.uuid.lower()):
+                    raise HTTPException(status_code=403, detail="Access denied to patient report.")
+            finally:
+                conn.close()
+
+        versions = service.get_report_versions(report_id)
+        return [v.to_dict() for v in versions]
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        logger.error(f"Error fetching report versions: {e}")
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/reports/{report_id}/versions")
+def create_report_version_api(
+    report_id: int,
+    req: VersionCreateRequest,
+    current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))
+):
+    """Creates a new version of the report, restricted to Doctors and Admins."""
+    from clinical_reporting.domain.entities import ReportStatus
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        try:
+            status_enum = ReportStatus(req.status.upper())
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {req.status}")
+
+        new_version = service.create_new_version(
+            report_id=report_id,
+            created_by=current_user.email,
+            reason=req.reason,
+            pdf_path=req.pdf_path,
+            json_path=req.json_path,
+            prediction_id=req.prediction_id,
+            status=status_enum
+        )
+        return new_version.to_dict()
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        logger.error(f"Error creating report version: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/reports/{report_id}/status")
+def patch_report_status_api(
+    report_id: int,
+    req: StatusUpdateRequest,
+    current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))
+):
+    """Transition report status state machine, restricted to Doctors and Admins."""
+    from clinical_reporting.domain.entities import ReportStatus
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        try:
+            target_status = ReportStatus(req.status.upper())
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {req.status}")
+
+        updated_report = service.transition_status(
+            report_id=report_id,
+            target_status=target_status,
+            actor=current_user.email
+        )
+        return updated_report.to_dict()
+    except Exception as e:
+        logger.error(f"Error transitioning report status: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/reports/{report_id}/versions/{version_id}")
+def get_report_version_details_api(report_id: int, version_id: int, current_user: User = Depends(get_current_user)):
+    """Fetches details of a specific report version, enforcing patient boundaries."""
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        report = service.get_report(report_id)
+
+        # Enforce patient boundaries
+        if current_user.role == Role.PATIENT:
+            conn = sqlite3.connect(DEFAULT_DB_PATH)
+            conn.row_factory = sqlite3.Row
+            try:
+                row = conn.execute(
+                    "SELECT p.patient_id, p.name as patient_name FROM patients p WHERE p.patient_id = ?;",
+                    (report.patient_id,)
+                ).fetchone()
+                if not row or (row["patient_name"].lower() != current_user.full_name.lower() and row["patient_id"].lower() != current_user.uuid.lower()):
+                    raise HTTPException(status_code=403, detail="Access denied to patient report.")
+            finally:
+                conn.close()
+
+        versions = service.get_report_versions(report_id)
+        target_version = next((v for v in versions if v.version_id == version_id), None)
+        if not target_version:
+            raise HTTPException(status_code=404, detail=f"Version ID {version_id} not found for report {report_id}.")
+        return target_version.to_dict()
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        logger.error(f"Error fetching version details: {e}")
+        raise HTTPException(status_code=404, detail=str(e))

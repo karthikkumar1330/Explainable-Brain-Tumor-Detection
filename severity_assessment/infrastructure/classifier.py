@@ -11,6 +11,7 @@ class RuleBasedSeverityClassifier(ISeverityClassifier):
         tumor_type: str,
         tumor_area_mm2: float,
         tumor_percentage: float,
+        segmentation_failed: bool = False,
     ) -> SeverityAssessment:
         """Evaluates tumor risk profile using type, physical area, and brain tissue percentage.
 
@@ -18,11 +19,31 @@ class RuleBasedSeverityClassifier(ISeverityClassifier):
             tumor_type: Tumor class name (e.g. Glioma).
             tumor_area_mm2: Measured physical area in mm2.
             tumor_percentage: Brain occupancy percentage.
+            segmentation_failed: True if the segmentation model failed during inference.
 
         Returns:
             A SeverityAssessment object.
         """
         t_type = tumor_type.strip().lower()
+
+        # Rule 0: Segmentation failed
+        if segmentation_failed:
+            if t_type not in ["no tumor", "normal", "none"]:
+                return SeverityAssessment(
+                    category=SeverityCategory.MEDIUM,
+                    rule_description=(
+                        f"Classification predicts {tumor_type}. Quantitative tumor morphology is "
+                        f"unavailable because the segmentation model failed during inference. Tumor area, "
+                        f"occupancy, perimeter and morphology measurements should not be interpreted from this run."
+                    ),
+                    educational_disclaimer=EDUCATIONAL_DISCLAIMER
+                )
+            else:
+                return SeverityAssessment(
+                    category=SeverityCategory.LOW,
+                    rule_description="No Tumor classification baseline. Segmentation model was bypassed or failed.",
+                    educational_disclaimer=EDUCATIONAL_DISCLAIMER
+                )
 
         # Rule 1: No Tumor or zero size is Low
         if t_type in ["no tumor", "normal", "none"] or tumor_area_mm2 <= 0.0 or tumor_percentage <= 0.0:

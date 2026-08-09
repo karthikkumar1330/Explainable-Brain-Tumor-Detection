@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
+from enum import Enum
 from tumor_analysis.domain.entities import TumorAnalysisResult
 from severity_assessment.domain.entities import SeverityAssessment
 from classification.domain.entities import PredictionResult
@@ -149,4 +150,87 @@ class ReportData:
     metadata: Metadata
 
 
+class ReportStatus(str, Enum):
+    DRAFT = "DRAFT"
+    GENERATED = "GENERATED"
+    REVIEWED = "REVIEWED"
+    FINAL = "FINAL"
+    ARCHIVED = "ARCHIVED"
 
+
+VALID_TRANSITIONS = {
+    ReportStatus.DRAFT: {ReportStatus.GENERATED},
+    ReportStatus.GENERATED: {ReportStatus.REVIEWED},
+    ReportStatus.REVIEWED: {ReportStatus.FINAL},
+    ReportStatus.FINAL: {ReportStatus.ARCHIVED}
+}
+
+
+def can_transition(current: ReportStatus, target: ReportStatus) -> bool:
+    return target in VALID_TRANSITIONS.get(current, set())
+
+
+@dataclass
+class Report:
+    report_id: int
+    report_number: str
+    patient_id: str
+    created_by: Optional[str]
+    report_type: str
+    current_version: int
+    status: ReportStatus
+    created_at: str
+    updated_at: str
+    finalized_at: Optional[str]
+    archived_at: Optional[str]
+    pdf_path: Optional[str]
+    json_path: Optional[str]
+    checksum: Optional[str]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "report_id": self.report_id,
+            "report_number": self.report_number,
+            "patient_id": self.patient_id,
+            "created_by": self.created_by,
+            "report_type": self.report_type,
+            "current_version": self.current_version,
+            "status": self.status.value,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "finalized_at": self.finalized_at,
+            "archived_at": self.archived_at,
+            "pdf_path": self.pdf_path,
+            "json_path": self.json_path,
+            "checksum": self.checksum
+        }
+
+
+@dataclass
+class ReportVersion:
+    version_id: int
+    report_id: int
+    version_number: int
+    created_at: str
+    created_by: Optional[str]
+    reason: Optional[str]
+    pdf_path: str
+    json_path: str
+    checksum: str
+    status: ReportStatus
+    prediction_id: Optional[int] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "version_id": self.version_id,
+            "report_id": self.report_id,
+            "version_number": self.version_number,
+            "created_at": self.created_at,
+            "created_by": self.created_by,
+            "reason": self.reason,
+            "pdf_path": self.pdf_path,
+            "json_path": self.json_path,
+            "checksum": self.checksum,
+            "status": self.status.value,
+            "prediction_id": self.prediction_id
+        }
