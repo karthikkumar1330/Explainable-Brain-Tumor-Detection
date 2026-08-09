@@ -1462,6 +1462,43 @@ def create_report_version_api(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+class EmailReportRequest(BaseModel):
+    recipient_email: Optional[str] = None
+    version: Optional[int] = None
+
+
+@router.post("/reports/{report_id}/email")
+def email_report_api(
+    report_id: int,
+    req: EmailReportRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Emails a clinical report PDF to an authorized recipient."""
+    from clinical_reporting.application.services import ReportNotFoundException, VersionNotFoundException
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        result = service.send_report_email(
+            report_id=report_id,
+            actor=current_user,
+            recipient_email=req.recipient_email,
+            version=req.version
+        )
+        return result
+    except ReportNotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except VersionNotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail="PDF report file not found on the server.")
+    except Exception as e:
+        logger.error(f"Error emailing report: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error sending report email.")
+
+
 @router.patch("/reports/{report_id}/status")
 def patch_report_status_api(
     report_id: int,

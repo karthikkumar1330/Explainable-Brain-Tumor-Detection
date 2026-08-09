@@ -1706,6 +1706,9 @@
                     <a id="modal-csv-link" href="#" target="_blank" class="btn-secondary text-xs flex items-center gap-2 border border-slate-700 cursor-pointer">
                         <i class="fa-solid fa-file-csv text-indigo-400"></i> Export CSV
                     </a>
+                    <button id="modal-email-btn" onclick="emailReport(currentSelectedReportId)" class="btn-secondary text-xs flex items-center gap-2 border border-slate-700 cursor-pointer">
+                        <i class="fa-solid fa-envelope text-sky-400"></i> Email Report
+                    </button>
                     <a id="modal-pdf-link" href="#" target="_blank" class="btn-primary text-xs flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500">
                         <i class="fa-solid fa-file-pdf"></i> Download PDF Clinical Report
                     </a>
@@ -1803,6 +1806,54 @@
         let currentPreviewZoom = 1.0;
         let currentPdfBlob = null;
         let previewAbortController = null;
+
+        async function emailReport(reportId) {
+            if (!reportId || isNaN(reportId)) {
+                alert("Invalid report ID selected.");
+                return;
+            }
+            const btn = document.getElementById("modal-email-btn");
+            if (!btn) return;
+
+            // Prompt for optional recipient email
+            const input = window.prompt("Enter recipient email (leave blank to send to your own registered email):");
+            if (input === null) return; // Action cancelled
+            const recipientEmail = input.trim();
+
+            // Disable button and show spinner loading UX
+            const originalContent = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin text-sky-400"></i> Sending...';
+
+            try {
+                const payload = {};
+                if (recipientEmail) {
+                    payload.recipient_email = recipientEmail;
+                }
+
+                const response = await fetchWithAuth(`/api/reports/${reportId}/email`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    alert(data.message || "Report email sent successfully!");
+                } else {
+                    alert(data.detail || data.error || "Failed to email report.");
+                }
+            } catch (err) {
+                console.error("Email send error:", err);
+                alert("Network error sending email request.");
+            } finally {
+                // Restore button state
+                btn.disabled = false;
+                btn.innerHTML = originalContent;
+            }
+        }
 
         async function openReportPreview(reportId, versionId = null) {
             if (!reportId || isNaN(reportId)) {

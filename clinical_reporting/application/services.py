@@ -2640,3 +2640,154 @@ class ReportService:
             )
         finally:
             conn.close()
+
+    def send_report_email(
+        self,
+        report_id: int,
+        actor: Optional[Any],
+        recipient_email: Optional[str] = None,
+        version: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Orchestrates authorization, template rendering, and delivery of a report PDF."""
+        # 1. Authenticate caller
+        if actor is None:
+            raise ReportServiceException("Authentication required.")
+
+        # 2. Authorize report access
+        access_status = self.check_report_access(report_id, actor)
+        if access_status == "NOT_FOUND":
+            raise ReportNotFoundException(f"Report with ID {report_id} not found.")
+        elif access_status == "UNAUTHORIZED":
+            raise ReportServiceException("Authentication required.")
+        elif access_status == "FORBIDDEN":
+            raise PermissionError("Access denied to patient report.")
+
+        # 3. Determine and validate recipient email
+        caller_role = actor.role.value if hasattr(actor.role, 'value') else str(actor.role).lower()
+
+        # If no recipient specified, default to caller's email
+        if not recipient_email:
+            recipient_email = actor.email
+
+        # Standard format and injection validation
+        from clinical_reporting.infrastructure.email_service import validate_email_address
+        try:
+            validate_email_address(recipient_email)
+        except Exception as ve:
+            raise ValueError(f"Invalid recipient email format: {ve}")
+
+        # Recipient policy check
+        if caller_role == "patient":
+            # Patient can ONLY email to themselves (IDOR check)
+            if recipient_email.lower().strip() != actor.email.lower().strip():
+                raise PermissionError("Patients are only authorized to email reports to their own registered email.")
+        else:
+            # Doctor/Admin can email to themselves or any registered user in the system
+            from security.infrastructure.repository import SQLiteUserRepository
+            user_repo = SQLiteUserRepository(db_path=self.db_path)
+            recipient_user = user_repo.get_by_email(recipient_email)
+            if not recipient_user:
+                raise PermissionError("Recipient must be a registered user on the AuraScan platform.")
+
+        # 4. Resolve the version number if None
+        conn = self._get_connection()
+        try:
+            if version is None:
+                r_row = conn.execute("SELECT current_version FROM reports WHERE report_id = ?;", (report_id,)).fetchone()
+                if not r_row:
+                    raise ReportNotFoundException(f"Report with ID {report_id} not found.")
+                version = r_row["current_version"]
+
+            # Get report and patient details
+            query = """
+                SELECT r.report_number, rv.version_number, p.patient_id, p.name as patient_name, rv.created_at
+                FROM report_versions rv
+                JOIN reports r ON rv.report_id = r.report_id
+                JOIN patients p ON r.patient_id = p.patient_id
+                WHERE rv.report_id = ? AND rv.version_number = ?;
+            """
+            row = conn.execute(query, (report_id, version)).fetchone()
+            if not row:
+                raise VersionNotFoundException(f"Version {version} not found for report {report_id}.")
+
+            report_number = row["report_number"]
+            version_number = row["version_number"]
+            patient_id = row["patient_id"]
+            patient_name = row["patient_name"]
+            report_date = row["created_at"]
+        finally:
+            conn.close()
+
+        # 5. Resolve secure PDF path (this runs integrity and traversal checks)
+        pdf_path = self.resolve_secure_pdf_path(report_id, version)
+        if not os.path.exists(pdf_path):
+            raise FileNotFoundError(f"PDF file not found at {pdf_path}")
+
+        # Verify file size
+        if os.path.getsize(pdf_path) > 10 * 1024 * 1024:  # 10MB limit
+            raise ValueError("Report PDF size exceeds the limit.")
+
+        # 6. Build secure email context and render templates (redacting patient medical info)
+        from clinical_reporting.presentation.email_templates import EmailTemplateRenderer
+
+        # Redact Patient ID for HIPAA security
+        redacted_patient_id = patient_id[:4] + "****" if len(patient_id) > 4 else "****"
+
+        subject = f"AuraScan Clinical Report Notification: {report_number}"
+        title = f"Clinical Report: {report_number}"
+        message_body = (
+            f"Dear user,\n\n"
+            f"The clinical report version {version_number} has been generated and is attached to this notification."
+        )
+
+        card_items = [
+            ("Report Number", report_number),
+            ("Version", str(version_number)),
+            ("Patient Identifier", redacted_patient_id),
+            ("Generated Date", report_date.split("T")[0] if "T" in report_date else report_date)
+        ]
+
+        html_body, text_body = EmailTemplateRenderer.render_generic_notification(
+            subject=subject,
+            title=title,
+            message_body=message_body,
+            cta_text="Access AuraScan Dashboard",
+            cta_url="https://portal.aurascan.ai/dashboard",
+            card_items=card_items,
+            badge_label="Clinical PDF Attached",
+            badge_type="info"
+        )
+
+        # 7. Dispatch email via EmailService
+        from clinical_reporting.infrastructure.email_service import EmailService
+
+        # Instantiate EmailService (resolves config automatically from environment)
+        email_svc = EmailService()
+
+        # Connect and Send
+        try:
+            email_svc.send(
+                to_email=recipient_email,
+                subject=subject,
+                body_text=text_body,
+                body_html=html_body,
+                attachment_path=pdf_path
+            )
+            # Log security event
+            self.log_report_access_event(
+                "REPORT_EMAIL_SENT",
+                actor,
+                report_id,
+                "SUCCESS",
+                f"Clinical report email sent to {recipient_email}."
+            )
+            return {"success": True, "message": "Report email sent successfully"}
+        except Exception as e:
+            self.log_report_access_event(
+                "REPORT_EMAIL_FAILED",
+                actor,
+                report_id,
+                "FAILED",
+                f"Failed to email clinical report to {recipient_email}. Error: {e}"
+            )
+            raise ReportServiceException(f"Failed to send email: {e}")

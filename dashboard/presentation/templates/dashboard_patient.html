@@ -1136,6 +1136,9 @@
                     <a id="modal-csv-link" href="#" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-4 py-3 rounded-xl transition shadow-lg flex items-center gap-2 border border-slate-700">
                         <i class="fa-solid fa-file-csv text-indigo-400"></i> Export CSV
                     </a>
+                    <button id="modal-email-btn" onclick="emailReport(currentSelectedReportId)" class="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-4 py-3 rounded-xl transition shadow-lg flex items-center gap-2 border border-slate-700 cursor-pointer">
+                        <i class="fa-solid fa-envelope text-sky-400"></i> Email Report
+                    </button>
                     <a id="modal-pdf-link" href="#" target="_blank" class="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-extrabold text-xs px-6 py-3 rounded-xl transition shadow-lg flex items-center gap-2">
                         <i class="fa-solid fa-file-pdf"></i> Download Official PDF Report
                     </a>
@@ -1225,6 +1228,49 @@
         let currentPreviewZoom = 1.0;
         let currentPdfBlob = null;
         let previewAbortController = null;
+
+        async function emailReport(reportId) {
+            if (!reportId || isNaN(reportId)) {
+                alert("Invalid report ID selected.");
+                return;
+            }
+            const btn = document.getElementById("modal-email-btn");
+            if (!btn) return;
+
+            // Confirm sending to own registered email
+            const confirmSend = window.confirm("Send this clinical report to your registered email address?");
+            if (!confirmSend) return;
+
+            // Disable button and show spinner loading UX
+            const originalContent = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin text-sky-400"></i> Sending...';
+
+            try {
+                // Patient cannot specify custom recipient, send empty payload to default to self
+                const response = await fetchWithAuth(`/api/reports/${reportId}/email`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({})
+                });
+
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    alert(data.message || "Report email sent successfully!");
+                } else {
+                    alert(data.detail || data.error || "Failed to email report.");
+                }
+            } catch (err) {
+                console.error("Email send error:", err);
+                alert("Network error sending email request.");
+            } finally {
+                // Restore button state
+                btn.disabled = false;
+                btn.innerHTML = originalContent;
+            }
+        }
 
         async function openReportPreview(reportId, versionId = null) {
             if (!reportId || isNaN(reportId)) {
