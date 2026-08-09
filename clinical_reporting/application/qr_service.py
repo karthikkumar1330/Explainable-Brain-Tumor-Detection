@@ -51,7 +51,7 @@ class QRGeneratorService:
             # Ensure parent directories exist
             os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
             img.save(output_path)
-            
+
             self.logger.info(f"QR code successfully generated and saved to: {output_path}")
             return output_path
         except Exception as e:
