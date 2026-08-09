@@ -1133,6 +1133,9 @@
                     <a id="modal-json-link" href="#" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-4 py-3 rounded-xl transition shadow-lg flex items-center gap-2 border border-slate-700">
                         <i class="fa-solid fa-file-code text-sky-400"></i> Export JSON
                     </a>
+                    <a id="modal-csv-link" href="#" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-4 py-3 rounded-xl transition shadow-lg flex items-center gap-2 border border-slate-700">
+                        <i class="fa-solid fa-file-csv text-indigo-400"></i> Export CSV
+                    </a>
                     <a id="modal-pdf-link" href="#" target="_blank" class="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-extrabold text-xs px-6 py-3 rounded-xl transition shadow-lg flex items-center gap-2">
                         <i class="fa-solid fa-file-pdf"></i> Download Official PDF Report
                     </a>
@@ -2012,6 +2015,7 @@
                 document.getElementById("modal-rule-desc").innerText = data.severity_rule_description;
                 document.getElementById("modal-pdf-link").href = `/api/report/${data.report_id}/pdf`;
                 document.getElementById("modal-json-link").href = `/api/report/${data.report_id}/json`;
+                document.getElementById("modal-csv-link").href = `/api/report/${data.report_id}/csv`;
 
                 // Populate new F2.1 Metadata fields
                 document.getElementById("modal-report-number").innerText = data.report_number || `RPT-2026-${String(data.report_id).padStart(6, '0')}`;

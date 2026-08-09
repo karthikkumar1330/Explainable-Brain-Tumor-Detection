@@ -12,7 +12,7 @@ import logging
 from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Query
 from fastapi.responses import FileResponse, JSONResponse
 from contextlib import asynccontextmanager
-from typing import Optional, List
+from typing import Optional, List, Any
 
 from classification.config import ClassificationConfig
 from classification.infrastructure.models import EfficientNetB0Model, PyTorchModelAdapter
@@ -106,6 +106,46 @@ def preprocess_segmentation_image(img_bgr: np.ndarray, h: int, w: int) -> torch.
     img_resized = cv2.resize(img_rgb, (w, h))
     img_tensor = (img_resized.astype(np.float32) / 255.0).transpose(2, 0, 1)  # C, H, W
     return torch.from_numpy(img_tensor).unsqueeze(0)  # 1, C, H, W
+
+
+def validate_version_param(version_val: Any) -> Optional[int]:
+    """Validates the version parameter strictly.
+    Returns:
+        The validated version as an int, or None if the parameter was not provided (to use current version).
+    Raises:
+        ValueError if the version parameter is malformed.
+    """
+    if version_val is None:
+        return None
+
+    # If it's a string, strip it and check if it's empty
+    if isinstance(version_val, str):
+        val_str = version_val.strip()
+        if not val_str:
+            raise ValueError("Version cannot be empty or whitespace.")
+        # Check if it has a decimal point, reject
+        if "." in val_str:
+            raise ValueError("Version must be a positive integer, not a decimal.")
+        # Reject booleans represented as strings
+        if val_str.lower() in ("true", "false"):
+            raise ValueError("Version cannot be a boolean.")
+        try:
+            val_int = int(val_str)
+        except ValueError:
+            raise ValueError("Version must be a valid integer.")
+    elif isinstance(version_val, bool):
+        # Python's bool is a subclass of int, so isinstance(True, int) is True! We must check bool explicitly.
+        raise ValueError("Version cannot be a boolean.")
+    elif isinstance(version_val, float):
+        raise ValueError("Version must be an integer, not a float.")
+    elif isinstance(version_val, int):
+        val_int = version_val
+    else:
+        raise ValueError("Invalid version type.")
+
+    if val_int <= 0:
+        raise ValueError("Version must be a positive integer.")
+    return val_int
 
 
 # FastAPI Router
@@ -902,15 +942,20 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
 
 
 @router.get("/report/{report_id}/pdf")
-def serve_report_pdf(report_id: int, version: Optional[int] = Query(None), current_user: User = Depends(get_current_user)):
+def serve_report_pdf(report_id: int, version: Optional[str] = Query(None), current_user: User = Depends(get_current_user)):
     """Streams the compiled PDF document directly to clients with ownership validation."""
+    try:
+        validated_version = validate_version_param(version)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+
     from clinical_reporting.application.services import (
         ReportService, ReportNotFoundException, VersionNotFoundException,
         PathTraversalException, IntegrityFailureException
     )
     import logging
     logger = logging.getLogger("api.routes.serve_report_pdf")
-    logger.info(f"API request received for PDF. Report ID: {report_id}, User: {current_user.email}, Version: {version}")
+    logger.info(f"API request received for PDF. Report ID: {report_id}, User: {current_user.email}, Version: {validated_version}")
 
     service = ReportService(db_path=DEFAULT_DB_PATH)
 
@@ -927,9 +972,9 @@ def serve_report_pdf(report_id: int, version: Optional[int] = Query(None), curre
 
     # 2. Resolve PDF path with security checks and integrity verification
     try:
-        pdf_path = service.resolve_secure_pdf_path(report_id, version)
+        pdf_path = service.resolve_secure_pdf_path(report_id, validated_version)
     except (ReportNotFoundException, VersionNotFoundException):
-        service.log_report_access_event("REPORT_NOT_FOUND", current_user, report_id, "FAILED", f"Report version {version if version is not None else 'latest'} not found.")
+        service.log_report_access_event("REPORT_NOT_FOUND", current_user, report_id, "FAILED", f"Report version {validated_version if validated_version is not None else 'latest'} not found.")
         raise HTTPException(status_code=404, detail="Report not found.")
     except PathTraversalException as pte:
         service.log_report_access_event("REPORT_ACCESS_DENIED", current_user, report_id, "FAILED", f"Path traversal attempt: {pte}")
@@ -944,7 +989,7 @@ def serve_report_pdf(report_id: int, version: Optional[int] = Query(None), curre
         raise HTTPException(status_code=500, detail="Internal error resolving PDF report.")
 
     # 3. Log download success and serve
-    service.log_report_access_event("REPORT_DOWNLOADED", current_user, report_id, "SUCCESS", f"Downloaded report version {version if version is not None else 'latest'}")
+    service.log_report_access_event("REPORT_DOWNLOADED", current_user, report_id, "SUCCESS", f"Downloaded report version {validated_version if validated_version is not None else 'latest'}")
     filename = os.path.basename(pdf_path)
     headers = {
         "Content-Disposition": f"attachment; filename={filename}",
@@ -954,15 +999,20 @@ def serve_report_pdf(report_id: int, version: Optional[int] = Query(None), curre
 
 
 @router.get("/report/{report_id}/json")
-def serve_report_json(report_id: int, version: Optional[int] = Query(None), current_user: User = Depends(get_current_user)):
+def serve_report_json(report_id: int, version: Optional[str] = Query(None), current_user: User = Depends(get_current_user)):
     """Streams the compiled JSON document directly to clients with ownership validation."""
+    try:
+        validated_version = validate_version_param(version)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+
     from clinical_reporting.application.services import (
         ReportService, ReportNotFoundException, VersionNotFoundException,
         PathTraversalException, IntegrityFailureException
     )
     import logging
     logger = logging.getLogger("api.routes.serve_report_json")
-    logger.info(f"API request received for JSON. Report ID: {report_id}, User: {current_user.email}, Version: {version}")
+    logger.info(f"API request received for JSON. Report ID: {report_id}, User: {current_user.email}, Version: {validated_version}")
 
     service = ReportService(db_path=DEFAULT_DB_PATH)
 
@@ -979,7 +1029,7 @@ def serve_report_json(report_id: int, version: Optional[int] = Query(None), curr
 
     # 2. Get and sanitize JSON payload
     try:
-        sanitized_json = service.get_report_json_for_export(report_id, version, current_user)
+        sanitized_json = service.get_report_json_for_export(report_id, validated_version, current_user)
     except (ReportNotFoundException, VersionNotFoundException):
         raise HTTPException(status_code=404, detail="Report not found.")
     except PathTraversalException as pte:
@@ -992,7 +1042,7 @@ def serve_report_json(report_id: int, version: Optional[int] = Query(None), curr
         logger.error(f"Error exporting JSON report: {e}")
         raise HTTPException(status_code=500, detail="Internal error exporting JSON report.")
 
-    resolved_version = version
+    resolved_version = validated_version
     if resolved_version is None:
         try:
             report = service.get_report(report_id)
@@ -1006,6 +1056,63 @@ def serve_report_json(report_id: int, version: Optional[int] = Query(None), curr
         "X-Content-Type-Options": "nosniff"
     }
     return JSONResponse(content=sanitized_json, headers=headers)
+
+
+@router.get("/report/{report_id}/csv")
+def serve_report_csv(report_id: int, version: Optional[str] = Query(None), current_user: User = Depends(get_current_user)):
+    """Streams the compiled CSV document directly to clients with ownership validation."""
+    from clinical_reporting.application.services import (
+        ReportService, ReportNotFoundException, VersionNotFoundException,
+        PathTraversalException, IntegrityFailureException, ReportServiceException
+    )
+    import logging
+    logger = logging.getLogger("api.routes.serve_report_csv")
+    logger.info(f"API request received for CSV. Report ID: {report_id}, User: {current_user.email}, Version: {version}")
+
+    try:
+        validated_version = validate_version_param(version)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+
+    try:
+        csv_content = service.get_report_csv_for_export(report_id, validated_version, current_user)
+    except (ReportNotFoundException, VersionNotFoundException):
+        raise HTTPException(status_code=404, detail="Report not found.")
+    except PathTraversalException as pte:
+        raise HTTPException(status_code=400, detail="Invalid report path.")
+    except IntegrityFailureException as ife:
+        raise HTTPException(status_code=422, detail="Report integrity verification failed.")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="CSV report source file not found.")
+    except ReportServiceException as rse:
+        err_msg = str(rse)
+        if "Access denied" in err_msg or "denied" in err_msg.lower():
+            raise HTTPException(status_code=403, detail="Access denied to patient report.")
+        elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
+            raise HTTPException(status_code=401, detail="Authentication required.")
+        else:
+            raise HTTPException(status_code=400, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error exporting CSV: {e}")
+        raise HTTPException(status_code=500, detail="Internal error resolving CSV report.")
+
+    resolved_version = validated_version
+    if resolved_version is None:
+        try:
+            report = service.get_report(report_id)
+            resolved_version = report.current_version
+        except Exception:
+            resolved_version = 1
+
+    filename = f"report_{report_id}_v{resolved_version}.csv"
+    headers = {
+        "Content-Disposition": f"attachment; filename={filename}",
+        "X-Content-Type-Options": "nosniff"
+    }
+    from fastapi.responses import Response
+    return Response(content=csv_content, media_type="text/csv", headers=headers)
 
 
 @router.get("/report/{report_id}/visuals/{visual_type}")

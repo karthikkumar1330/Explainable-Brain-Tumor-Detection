@@ -1126,6 +1126,118 @@ class ReportService:
         finally:
             conn.close()
 
+    def get_report_csv_for_export(
+        self,
+        report_id: int,
+        version: Optional[int] = None,
+        actor: Optional[Any] = None
+    ) -> str:
+        """Retrieves and compiles a report's key details and clinical metrics as a CSV string."""
+        import csv
+        import io
+        import math
+
+        # 1. Reuse existing JSON export (which handles RBAC, path traversal, missing files, integrity, sanitization)
+        sanitized_json = self.get_report_json_for_export(report_id, version, actor)
+
+        # 2. Extract nested fields to flat representation
+        patient_data = sanitized_json.get("patient", {})
+        cls_data = sanitized_json.get("classification", {})
+        seg_data = sanitized_json.get("segmentation", {})
+        sev_data = sanitized_json.get("severity", {})
+
+        # Get metadata from DB
+        resolved_version = version
+        report_number = ""
+        status = ""
+        integrity_hash = ""
+        created_at = ""
+        conn = self._get_connection()
+        try:
+            if version is not None:
+                row = conn.execute("""
+                    SELECT r.report_number, rv.version_number, rv.status, rv.integrity_hash, rv.created_at
+                    FROM report_versions rv
+                    JOIN reports r ON rv.report_id = r.report_id
+                    WHERE rv.report_id = ? AND rv.version_number = ?;
+                """, (report_id, version)).fetchone()
+            else:
+                row = conn.execute("""
+                    SELECT r.report_number, rv.version_number, rv.status, rv.integrity_hash, rv.created_at
+                    FROM report_versions rv
+                    JOIN reports r ON rv.report_id = r.report_id
+                    WHERE rv.report_id = ? AND rv.version_number = r.current_version;
+                """, (report_id,)).fetchone()
+            if row:
+                report_number = row["report_number"]
+                resolved_version = row["version_number"]
+                status = row["status"]
+                integrity_hash = row["integrity_hash"]
+                created_at = row["created_at"]
+        finally:
+            conn.close()
+
+        # Build tabular data row
+        row_data = {
+            "Report Number": report_number or "",
+            "Version": str(resolved_version) if resolved_version is not None else "",
+            "Status": status or "",
+            "Created At": created_at or "",
+            "Patient ID": patient_data.get("patient_id", ""),
+            "Patient Name": patient_data.get("name", ""),
+            "Patient Age": str(patient_data.get("age", "")) if patient_data.get("age") is not None else "",
+            "Patient Gender": patient_data.get("gender", ""),
+            "Scan Date": patient_data.get("scan_date", ""),
+            "AI Classification": cls_data.get("predicted_class", ""),
+            "Confidence Score": cls_data.get("confidence_score"),
+            "Severity": sev_data.get("category", ""),
+            "Tumor Area (mm2)": seg_data.get("tumor_area_mm2") if seg_data else "",
+            "Tumor Percentage Brain (%)": seg_data.get("tumor_percentage_brain") if seg_data else "",
+            "Integrity Hash": integrity_hash or "",
+        }
+
+        # Serialize fields safely:
+        # Convert float, None to correct string.
+        # Prevent CSV injection by escaping any value starting with: =, +, -, @
+        # Also serialize NaN/Infinity/None/missing values as empty string
+        def sanitize_val(val: Any) -> str:
+            if val is None:
+                return ""
+            if isinstance(val, float):
+                if math.isnan(val) or math.isinf(val):
+                    return ""
+                return f"{val:.6f}".rstrip('0').rstrip('.')
+            val_str = str(val)
+            # Prevent CSV Formula Injection
+            if val_str and val_str[0] in ('=', '+', '-', '@'):
+                return "'" + val_str
+            return val_str
+
+        headers = list(row_data.keys())
+        csv_row = [sanitize_val(row_data[h]) for h in headers]
+
+        dest = io.StringIO()
+        writer = csv.writer(dest, lineterminator='\r\n')
+        writer.writerow(headers)
+        writer.writerow(csv_row)
+
+        # Log successful audit event
+        conn = self._get_connection()
+        try:
+            self._log_security_audit_event(
+                conn,
+                "REPORT_CSV_EXPORTED",
+                actor,
+                report_id,
+                "SUCCESS",
+                f"Exported report CSV version {resolved_version}"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return dest.getvalue()
+
     def get_report_audit_history(self, user: Any) -> List[Dict[str, Any]]:
         """Retrieves and filters access history logs according to RBAC."""
         conn = self._get_connection()
@@ -1138,7 +1250,7 @@ class ReportService:
                     'REPORT_VIEWED', 'REPORT_DOWNLOADED',
                     'REPORT_ACCESS_DENIED', 'REPORT_NOT_FOUND',
                     'REPORT_INTEGRITY_FAILED', 'REPORT_LIFECYCLE_CHANGE',
-                    'REPORT_JSON_EXPORTED'
+                    'REPORT_JSON_EXPORTED', 'REPORT_CSV_EXPORTED'
                 )
                 ORDER BY id DESC;
             """)

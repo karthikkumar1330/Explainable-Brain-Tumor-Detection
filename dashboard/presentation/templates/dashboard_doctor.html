@@ -1703,6 +1703,9 @@
                     <a id="modal-json-link" href="#" target="_blank" class="btn-secondary text-xs flex items-center gap-2 border border-slate-700 cursor-pointer">
                         <i class="fa-solid fa-file-code text-amber-400"></i> Export JSON
                     </a>
+                    <a id="modal-csv-link" href="#" target="_blank" class="btn-secondary text-xs flex items-center gap-2 border border-slate-700 cursor-pointer">
+                        <i class="fa-solid fa-file-csv text-indigo-400"></i> Export CSV
+                    </a>
                     <a id="modal-pdf-link" href="#" target="_blank" class="btn-primary text-xs flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500">
                         <i class="fa-solid fa-file-pdf"></i> Download PDF Clinical Report
                     </a>
@@ -2469,6 +2472,7 @@
                 document.getElementById("modal-rule-desc").innerText = data.severity_rule_description;
                 document.getElementById("modal-pdf-link").href = `/api/report/${data.report_id}/pdf`;
                 document.getElementById("modal-json-link").href = `/api/report/${data.report_id}/json`;
+                document.getElementById("modal-csv-link").href = `/api/report/${data.report_id}/csv`;
 
                 // Populate new F2.1 Metadata fields
                 document.getElementById("modal-report-number").innerText = data.report_number || `RPT-2026-${String(data.report_id).padStart(6, '0')}`;

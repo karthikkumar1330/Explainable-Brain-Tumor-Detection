@@ -14,6 +14,45 @@ from security.infrastructure.jwt_service import JWTService, TokenExpiredError, T
 from security.application.use_cases import AuthUseCases
 from security.application.profile_image_service import validate_and_resize_avatar
 
+def validate_version_param(version_val: Any) -> Optional[int]:
+    """Validates the version parameter strictly.
+    Returns:
+        The validated version as an int, or None if the parameter was not provided (to use current version).
+    Raises:
+        ValueError if the version parameter is malformed.
+    """
+    if version_val is None:
+        return None
+
+    # If it's a string, strip it and check if it's empty
+    if isinstance(version_val, str):
+        val_str = version_val.strip()
+        if not val_str:
+            raise ValueError("Version cannot be empty or whitespace.")
+        # Check if it has a decimal point, reject
+        if "." in val_str:
+            raise ValueError("Version must be a positive integer, not a decimal.")
+        # Reject booleans represented as strings
+        if val_str.lower() in ("true", "false"):
+            raise ValueError("Version cannot be a boolean.")
+        try:
+            val_int = int(val_str)
+        except ValueError:
+            raise ValueError("Version must be a valid integer.")
+    elif isinstance(version_val, bool):
+        # Python's bool is a subclass of int, so isinstance(True, int) is True! We must check bool explicitly.
+        raise ValueError("Version cannot be a boolean.")
+    elif isinstance(version_val, float):
+        raise ValueError("Version must be an integer, not a float.")
+    elif isinstance(version_val, int):
+        val_int = version_val
+    else:
+        raise ValueError("Invalid version type.")
+
+    if val_int <= 0:
+        raise ValueError("Version must be a positive integer.")
+    return val_int
+
 
 def create_app(db_path: str) -> Flask:
     """Factory function to build and configure the Flask web dashboard application with OWASP security.
@@ -1221,12 +1260,10 @@ def create_app(db_path: str) -> Flask:
         logger = logging.getLogger("dashboard.web_server.get_pdf")
 
         version_str = request.args.get("version")
-        version = None
-        if version_str:
-            try:
-                version = int(version_str)
-            except ValueError:
-                pass
+        try:
+            version = validate_version_param(version_str)
+        except ValueError as ve:
+            return jsonify({"error": str(ve)}), 400
 
         logger.info(f"Flask API request received for PDF. Report ID: {report_id}, User: {current_user.email}, Version: {version}")
 
@@ -1281,12 +1318,10 @@ def create_app(db_path: str) -> Flask:
         logger = logging.getLogger("dashboard.web_server.get_json_report")
 
         version_str = request.args.get("version")
-        version = None
-        if version_str is not None and version_str != "":
-            try:
-                version = int(version_str)
-            except ValueError:
-                return jsonify({"error": "Invalid version parameter. Version must be a valid integer."}), 400
+        try:
+            version = validate_version_param(version_str)
+        except ValueError as ve:
+            return jsonify({"error": str(ve)}), 400
 
         logger.info(f"Flask API request received for JSON. Report ID: {report_id}, User: {current_user.email}, Version: {version}")
 
@@ -1334,6 +1369,69 @@ def create_app(db_path: str) -> Flask:
 
         response = jsonify(sanitized_json)
         response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
+    @app.route("/api/report/<int:report_id>/csv")
+    @login_required
+    def get_csv_report(current_user: User, report_id: int):
+        import logging
+        logger = logging.getLogger("dashboard.web_server.get_csv_report")
+
+        version_str = request.args.get("version")
+        try:
+            version = validate_version_param(version_str)
+        except ValueError as ve:
+            return jsonify({"error": str(ve)}), 400
+
+        logger.info(f"Flask API request received for CSV. Report ID: {report_id}, User: {current_user.email}, Version: {version}")
+
+        from clinical_reporting.application.services import (
+            ReportService, ReportNotFoundException, VersionNotFoundException,
+            PathTraversalException, IntegrityFailureException
+        )
+        service = ReportService(db_path=app.config["DB_PATH"])
+
+        # 1. Enforce access check
+        access_status = service.check_report_access(report_id, current_user)
+        if access_status == "NOT_FOUND":
+            service.log_report_access_event("REPORT_NOT_FOUND", current_user, report_id, "FAILED", "Requested nonexistent report CSV.")
+            return jsonify({"error": "Report not found"}), 404
+        elif access_status == "UNAUTHORIZED":
+            return jsonify({"error": "Authentication required"}), 401
+        elif access_status == "FORBIDDEN":
+            service.log_report_access_event("REPORT_ACCESS_DENIED", current_user, report_id, "FAILED", "Access denied to patient report CSV.")
+            return jsonify({"error": "Access denied to patient report"}), 403
+
+        # 2. Get CSV payload
+        try:
+            csv_content = service.get_report_csv_for_export(report_id, version, current_user)
+        except (ReportNotFoundException, VersionNotFoundException):
+            return jsonify({"error": "Report not found"}), 404
+        except PathTraversalException as pte:
+            return jsonify({"error": "Invalid report path"}), 400
+        except IntegrityFailureException as ife:
+            return jsonify({"error": "Report integrity verification failed."}), 422
+        except FileNotFoundError:
+            return jsonify({"error": "CSV report source file not found"}), 404
+        except Exception as e:
+            logger.error(f"Error exporting CSV report: {e}")
+            return jsonify({"error": "Internal error exporting CSV report."}), 500
+
+        resolved_version = version
+        if resolved_version is None:
+            try:
+                report = service.get_report(report_id)
+                resolved_version = report.current_version
+            except Exception:
+                resolved_version = 1
+
+        filename = f"report_{report_id}_v{resolved_version}.csv"
+
+        from flask import make_response
+        response = make_response(csv_content)
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        response.headers["Content-Type"] = "text/csv; charset=utf-8"
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
