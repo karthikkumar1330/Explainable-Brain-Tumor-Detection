@@ -260,6 +260,37 @@ class TestRBACIntegration(unittest.TestCase):
         response = self.client.get("/api/report/1/pdf")
         self.assertEqual(response.status_code, 404)
 
+    def test_health_telemetry_endpoint_rbac(self):
+        """Verify Role-Based Access Control on the /api/health-telemetry endpoint."""
+        # 1. Unauthenticated request -> 401
+        self.client.delete_cookie("access_token")
+        response = self.client.get("/api/health-telemetry")
+        self.assertEqual(response.status_code, 401)
+
+        # 2. Invalid authentication -> correct auth failure (401)
+        self.client.set_cookie("access_token", "invalid_jwt_token_here")
+        response = self.client.get("/api/health-telemetry")
+        self.assertEqual(response.status_code, 401)
+
+        # 3. Patient role -> 403 Forbidden
+        self.client.set_cookie("access_token", self.patient_token)
+        response = self.client.get("/api/health-telemetry")
+        self.assertEqual(response.status_code, 403)
+
+        # 4. Doctor role -> 200 OK
+        self.client.set_cookie("access_token", self.doctor_token)
+        response = self.client.get("/api/health-telemetry")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertNotIn("error", data)
+
+        # 5. Admin role -> 200 OK
+        self.client.set_cookie("access_token", self.admin_token)
+        response = self.client.get("/api/health-telemetry")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertNotIn("error", data)
+
 
 if __name__ == "__main__":
     unittest.main()
