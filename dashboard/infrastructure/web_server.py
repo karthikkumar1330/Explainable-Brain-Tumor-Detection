@@ -941,6 +941,55 @@ def create_app(db_path: str) -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+
+    @app.route("/api/report/<int:report_id>/compare/<int:other_report_id>")
+    @login_required
+    def compare_reports_flask(current_user: User, report_id: int, other_report_id: int):
+        from clinical_reporting.application.services import ReportService, ReportNotFoundException, VersionNotFoundException, ReportServiceException
+        from clinical_reporting.domain.entities import PatientMismatchException
+
+        prev_version_str = request.args.get("previous_version")
+        curr_version_str = request.args.get("current_version")
+
+        prev_version = None
+        curr_version = None
+        if prev_version_str:
+            try:
+                prev_version = int(prev_version_str)
+            except ValueError:
+                pass
+        if curr_version_str:
+            try:
+                curr_version = int(curr_version_str)
+            except ValueError:
+                pass
+
+        service = ReportService(db_path=app.config["DB_PATH"])
+        try:
+            result = service.compare_reports(
+                previous_report_id=report_id,
+                current_report_id=other_report_id,
+                previous_version=prev_version,
+                current_version=curr_version,
+                actor=current_user
+            )
+            return jsonify(result)
+        except (ReportNotFoundException, VersionNotFoundException) as nfe:
+            return jsonify({"error": str(nfe)}), 404
+        except PatientMismatchException as pme:
+            return jsonify({"error": str(pme)}), 400
+        except ReportServiceException as rse:
+            err_msg = str(rse)
+            if "Access denied" in err_msg or "denied" in err_msg.lower():
+                return jsonify({"error": err_msg}), 403
+            elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
+                return jsonify({"error": err_msg}), 401
+            else:
+                return jsonify({"error": err_msg}), 422
+        except Exception as e:
+            app.logger.error(f"Error in Flask comparison API: {e}")
+            return jsonify({"error": "Internal comparison engine error"}), 500
+
     @app.route("/api/report/<int:report_id>/status", methods=["PATCH"])
     @login_required
     def update_report_status(current_user: User, report_id: int):

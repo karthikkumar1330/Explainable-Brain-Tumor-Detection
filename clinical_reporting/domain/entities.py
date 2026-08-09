@@ -302,3 +302,35 @@ def generate_integrity_hash(data: Dict[str, Any]) -> str:
     import hashlib
     canonical_str = canonicalize_report_data(data)
     return hashlib.sha256(canonical_str.encode('utf-8')).hexdigest()
+
+
+class PatientMismatchException(ValueError):
+    """Raised when trying to compare reports belonging to different patients."""
+    pass
+
+
+@dataclass(frozen=True)
+class ComparisonMetric:
+    name: str
+    previous_value: Any
+    current_value: Any
+    absolute_difference: Optional[float] = None
+    percentage_difference: Optional[float] = None
+    direction: str = "UNCHANGED"  # "INCREASED", "DECREASED", "UNCHANGED", "CHANGED"
+    interpretation_category: str = "UNCHANGED"  # "OBSERVED_INCREASE", "OBSERVED_DECREASE", "UNCHANGED"
+
+
+@dataclass(frozen=True)
+class ReportComparison:
+    comparison_id: str
+    patient_id: str
+    previous_report_id: int
+    current_report_id: int
+    previous_version: int
+    current_version: int
+    created_at: str
+    created_by: str
+    metrics: List[ComparisonMetric]
+    summary_status: str  # "STABLE", "MEASUREMENTS_INCREASED", "MEASUREMENTS_DECREASED", "CLASSIFICATION_CHANGED", "MULTIPLE_CHANGES"
+    summary_text: str
+    disclaimer: str

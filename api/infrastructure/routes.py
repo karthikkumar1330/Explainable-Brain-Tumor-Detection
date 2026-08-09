@@ -1165,6 +1165,45 @@ def get_report_metadata_api(report_id: int, current_user: User = Depends(get_cur
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@router.get("/reports/{report_id}/compare/{other_report_id}")
+def compare_reports_api(
+    report_id: int,
+    other_report_id: int,
+    previous_version: Optional[int] = Query(None),
+    current_version: Optional[int] = Query(None),
+    current_user: User = Depends(get_current_user)
+):
+    """API Endpoint: Compares two existing reports for the same patient, enforcing RBAC boundaries."""
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        from clinical_reporting.domain.entities import PatientMismatchException
+        from clinical_reporting.application.services import ReportNotFoundException, VersionNotFoundException, ReportServiceException
+
+        result = service.compare_reports(
+            previous_report_id=report_id,
+            current_report_id=other_report_id,
+            previous_version=previous_version,
+            current_version=current_version,
+            actor=current_user
+        )
+        return result
+    except (ReportNotFoundException, VersionNotFoundException) as nfe:
+        raise HTTPException(status_code=404, detail=str(nfe))
+    except PatientMismatchException as pme:
+        raise HTTPException(status_code=400, detail=str(pme))
+    except ReportServiceException as rse:
+        err_msg = str(rse)
+        if "Access denied" in err_msg or "denied" in err_msg.lower():
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
+            raise HTTPException(status_code=401, detail=err_msg)
+        else:
+            raise HTTPException(status_code=422, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in comparison API: {e}")
+        raise HTTPException(status_code=500, detail="Internal comparison engine error")
+
+
 @router.get("/reports/{report_id}/versions")
 def get_report_versions_api(report_id: int, current_user: User = Depends(get_current_user)):
     """Fetches Report version history list, enforcing patient boundaries."""

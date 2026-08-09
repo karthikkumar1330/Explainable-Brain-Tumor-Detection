@@ -734,6 +734,107 @@
 
             <!-- TAB 6: REPORTS VIEW -->
             <div id="tab-reports" class="hidden space-y-6">
+                <!-- Report Comparison Control Panel -->
+                <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
+                    <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2">
+                        <i class="fa-solid fa-arrows-split-up-and-left text-sky-400"></i>
+                        Advanced Report Comparison Engine
+                    </h4>
+                    <p class="text-xs text-slate-400">Compare two diagnostic reports side-by-side for the same patient</p>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                        <!-- Patient Select -->
+                        <div class="flex flex-col gap-1.5" id="compare-patient-wrapper">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Select Patient</label>
+                            <select id="compare-patient-select" onchange="onComparePatientChange()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
+                                <option value="">-- Choose Patient --</option>
+                            </select>
+                        </div>
+
+                        <!-- Previous Report Select -->
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Previous Report</label>
+                            <select id="compare-prev-report-select" onchange="onComparePrevReportChange()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
+                                <option value="">-- Choose Previous Report --</option>
+                            </select>
+                        </div>
+
+                        <!-- Previous Version Select -->
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Previous Version</label>
+                            <select id="compare-prev-version-select" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
+                                <option value="">-- Choose Version --</option>
+                            </select>
+                        </div>
+
+                        <!-- Current Report Select -->
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Current Report</label>
+                            <select id="compare-curr-report-select" onchange="onCompareCurrReportChange()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
+                                <option value="">-- Choose Current Report --</option>
+                            </select>
+                        </div>
+
+                        <!-- Current Version Select -->
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Current Version</label>
+                            <select id="compare-curr-version-select" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
+                                <option value="">-- Choose Version --</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end pt-2">
+                        <button onclick="runReportComparison()" class="btn-primary text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition">
+                            <i class="fa-solid fa-code-compare"></i> Compare Reports
+                        </button>
+                    </div>
+
+                    <!-- Comparison Results Area -->
+                    <div id="comparison-results" class="hidden bg-slate-950/80 p-5 rounded-2xl border border-slate-800/80 space-y-4">
+                        <div class="border-b border-slate-800 pb-3 flex justify-between items-center">
+                            <div>
+                                <h5 class="text-xs font-bold uppercase text-slate-350 tracking-wider">Comparison Metrics Results</h5>
+                                <p class="text-[10px] text-slate-500" id="comparison-meta-info">CMP-ID | Patient ID</p>
+                            </div>
+                            <span id="comparison-summary-badge" class="px-2 py-0.5 rounded text-[10px] font-bold border">STATUS</span>
+                        </div>
+
+                        <div class="bg-slate-900/40 p-4 rounded-xl border border-slate-850">
+                            <span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Overall Comparison Narrative:</span>
+                            <p id="comparison-summary-text" class="text-xs text-slate-200 font-medium italic mt-1"></p>
+                        </div>
+
+                        <!-- Side-by-Side Table -->
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs border border-slate-800/60 rounded-xl overflow-hidden">
+                                <thead>
+                                    <tr class="bg-slate-950/50 text-slate-400 border-b border-slate-800 text-[10px] uppercase font-bold tracking-wider">
+                                        <th class="p-3">Metric</th>
+                                        <th class="p-3">Previous</th>
+                                        <th class="p-3">Current</th>
+                                        <th class="p-3">Absolute Change</th>
+                                        <th class="p-3">Percentage Change</th>
+                                        <th class="p-3">Trend Direction</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="comparison-tbody" class="divide-y divide-slate-800/40">
+                                    <!-- Populated dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Safety disclaimer -->
+                        <div class="bg-amber-950/30 border border-amber-900/65 rounded-xl p-3.5 flex items-start gap-2.5 text-[11px] text-amber-400">
+                            <i class="fa-solid fa-triangle-exclamation text-base shrink-0 mt-0.5"></i>
+                            <div>
+                                <span class="font-extrabold block mb-0.5">Clinical Safety Notice:</span>
+                                <p id="comparison-disclaimer" class="leading-relaxed"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Recent Scan Reports Table -->
                 <div class="glass-panel rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
                     <div class="p-5 bg-slate-900/80 border-b border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1686,6 +1787,9 @@
 
                     // Populate registry table
                     updateRegistryView();
+
+                    // Populate comparison patient selectors
+                    populateComparePatients();
                 }
                 dashboardDataLoaded = true;
             } catch (err) {
@@ -1941,6 +2045,264 @@
                 </tr>
                 `;
             });
+        }
+
+        // --- Comparison Engine Javascript Implementations ---
+        function populateComparePatients() {
+            const select = document.getElementById("compare-patient-select");
+            if (!select) return;
+
+            // Get current selected value to preserve if possible
+            const currentVal = select.value;
+            select.innerHTML = '<option value="">-- Choose Patient --</option>';
+
+            // Extract unique patients from allScans
+            const uniquePatients = {};
+            if (Array.isArray(allScans)) {
+                allScans.forEach(s => {
+                    if (s.patient_id) {
+                        uniquePatients[s.patient_id] = s.patient_name || s.patient_id;
+                    }
+                });
+            }
+
+            Object.keys(uniquePatients).forEach(pId => {
+                const opt = document.createElement("option");
+                opt.value = pId;
+                opt.textContent = `${uniquePatients[pId]} (${pId})`;
+                select.appendChild(opt);
+            });
+
+            if (currentVal && uniquePatients[currentVal]) {
+                select.value = currentVal;
+            }
+        }
+
+        async function onComparePatientChange() {
+            const pId = document.getElementById("compare-patient-select").value;
+            populateCompareReports(pId);
+        }
+
+        function populateCompareReports(patientId) {
+            const prevSelect = document.getElementById("compare-prev-report-select");
+            const currSelect = document.getElementById("compare-curr-report-select");
+
+            if (!prevSelect || !currSelect) return;
+
+            prevSelect.innerHTML = '<option value="">-- Choose Previous Report --</option>';
+            currSelect.innerHTML = '<option value="">-- Choose Current Report --</option>';
+
+            const prevVerSelect = document.getElementById("compare-prev-version-select");
+            const currVerSelect = document.getElementById("compare-curr-version-select");
+            if (prevVerSelect) prevVerSelect.innerHTML = '<option value="">-- Choose Version --</option>';
+            if (currVerSelect) currVerSelect.innerHTML = '<option value="">-- Choose Version --</option>';
+
+            if (!patientId) return;
+
+            // Filter scans for this patient
+            const patientScans = allScans.filter(s => s.patient_id === patientId);
+
+            patientScans.forEach(s => {
+                const text = `#${s.report_id} - ${s.scan_date} (${s.predicted_class})`;
+
+                const optPrev = document.createElement("option");
+                optPrev.value = s.report_id;
+                optPrev.textContent = text;
+                prevSelect.appendChild(optPrev);
+
+                const optCurr = document.createElement("option");
+                optCurr.value = s.report_id;
+                optCurr.textContent = text;
+                currSelect.appendChild(optCurr);
+            });
+        }
+
+        async function onComparePrevReportChange() {
+            const rId = document.getElementById("compare-prev-report-select").value;
+            const selectVer = document.getElementById("compare-prev-version-select");
+            if (!selectVer) return;
+            selectVer.innerHTML = '<option value="">Loading versions...</option>';
+
+            if (!rId) {
+                selectVer.innerHTML = '<option value="">-- Choose Version --</option>';
+                return;
+            }
+
+            try {
+                const res = await fetchWithAuth(`/api/report/${rId}`);
+                const data = await res.json();
+                selectVer.innerHTML = '';
+                if (data.versions && data.versions.length > 0) {
+                    data.versions.forEach(v => {
+                        const opt = document.createElement("option");
+                        opt.value = v.version_number;
+                        opt.textContent = `Version ${v.version_number} (${v.status})`;
+                        if (v.version_number === data.current_version) {
+                            opt.selected = true; // Default to latest version
+                        }
+                        selectVer.appendChild(opt);
+                    });
+                } else {
+                    selectVer.innerHTML = '<option value="1">Version 1</option>';
+                }
+            } catch (err) {
+                selectVer.innerHTML = '<option value="">Failed to load</option>';
+            }
+        }
+
+        async function onCompareCurrReportChange() {
+            const rId = document.getElementById("compare-curr-report-select").value;
+            const selectVer = document.getElementById("compare-curr-version-select");
+            if (!selectVer) return;
+            selectVer.innerHTML = '<option value="">Loading versions...</option>';
+
+            if (!rId) {
+                selectVer.innerHTML = '<option value="">-- Choose Version --</option>';
+                return;
+            }
+
+            try {
+                const res = await fetchWithAuth(`/api/report/${rId}`);
+                const data = await res.json();
+                selectVer.innerHTML = '';
+                if (data.versions && data.versions.length > 0) {
+                    data.versions.forEach(v => {
+                        const opt = document.createElement("option");
+                        opt.value = v.version_number;
+                        opt.textContent = `Version ${v.version_number} (${v.status})`;
+                        if (v.version_number === data.current_version) {
+                            opt.selected = true;
+                        }
+                        selectVer.appendChild(opt);
+                    });
+                } else {
+                    selectVer.innerHTML = '<option value="1">Version 1</option>';
+                }
+            } catch (err) {
+                selectVer.innerHTML = '<option value="">Failed to load</option>';
+            }
+        }
+
+        async function runReportComparison() {
+            const prevId = document.getElementById("compare-prev-report-select").value;
+            const currId = document.getElementById("compare-curr-report-select").value;
+            const prevVer = document.getElementById("compare-prev-version-select").value;
+            const currVer = document.getElementById("compare-curr-version-select").value;
+
+            if (!prevId || !currId) {
+                alert("Please select both a Previous Report and a Current Report to compare.");
+                return;
+            }
+
+            try {
+                let url = `/api/report/${prevId}/compare/${currId}`;
+                const params = [];
+                if (prevVer) params.push(`previous_version=${prevVer}`);
+                if (currVer) params.push(`current_version=${currVer}`);
+                if (params.length > 0) url += `?${params.join('&')}`;
+
+                const res = await fetchWithAuth(url);
+                const data = await res.json();
+
+                if (data.error) {
+                    alert("Comparison Error: " + data.error);
+                    return;
+                }
+
+                // Render Results
+                document.getElementById("comparison-results").classList.remove("hidden");
+                document.getElementById("comparison-meta-info").innerText = `Comparison ID: ${data.comparison_id} | Patient ID: ${data.patient_id}`;
+
+                const badge = document.getElementById("comparison-summary-badge");
+                badge.innerText = data.summary.status;
+                badge.className = `px-2 py-0.5 rounded text-[10px] font-bold border ` +
+                    (data.summary.status === 'STABLE' ? 'bg-emerald-950 text-emerald-400 border-emerald-900' :
+                     data.summary.status === 'CLASSIFICATION_CHANGED' ? 'bg-amber-950 text-amber-400 border-amber-900 animate-pulse' :
+                     data.summary.status === 'MEASUREMENTS_INCREASED' ? 'bg-red-950 text-red-400 border-red-900 font-extrabold' :
+                     data.summary.status === 'MEASUREMENTS_DECREASED' ? 'bg-blue-950 text-blue-400 border-blue-900' :
+                     'bg-purple-950 text-purple-400 border-purple-900');
+
+                document.getElementById("comparison-summary-text").innerText = data.summary.text;
+                document.getElementById("comparison-disclaimer").innerText = data.disclaimer;
+
+                const tbody = document.getElementById("comparison-tbody");
+                tbody.innerHTML = "";
+
+                data.metrics.forEach(m => {
+                    const tr = document.createElement("tr");
+                    tr.className = "table-row-hover hover:bg-slate-900/50 text-xs";
+
+                    let prevDisplay = "N/A";
+                    let currDisplay = "N/A";
+                    let absDisplay = "N/A";
+                    let pctDisplay = "N/A";
+
+                    if (m.previous_value !== null && m.previous_value !== undefined) {
+                        prevDisplay = m.previous_value;
+                    }
+                    if (m.current_value !== null && m.current_value !== undefined) {
+                        currDisplay = m.current_value;
+                    }
+                    if (m.absolute_difference !== null && m.absolute_difference !== undefined) {
+                        absDisplay = m.absolute_difference;
+                    }
+                    if (m.percentage_difference !== null && m.percentage_difference !== undefined) {
+                        pctDisplay = `${m.percentage_difference > 0 ? '+' : ''}${m.percentage_difference.toFixed(2)}%`;
+                    }
+
+                    // Format values beautifully
+                    if (m.name === 'confidence') {
+                        if (m.previous_value !== null && m.previous_value !== undefined) prevDisplay = `${(m.previous_value * 100).toFixed(2)}%`;
+                        if (m.current_value !== null && m.current_value !== undefined) currDisplay = `${(m.current_value * 100).toFixed(2)}%`;
+                        if (m.absolute_difference !== null && m.absolute_difference !== undefined) absDisplay = `${m.absolute_difference > 0 ? '+' : ''}${(m.absolute_difference * 100).toFixed(2)} pp`;
+                    } else if (m.name === 'tumor_area_mm2' || m.name === 'major_axis' || m.name === 'minor_axis' || m.name === 'perimeter') {
+                        const unit = m.name === 'tumor_area_mm2' ? ' mm²' : ' mm';
+                        if (m.previous_value !== null && m.previous_value !== undefined && typeof m.previous_value === 'number') prevDisplay = `${m.previous_value.toFixed(2)}${unit}`;
+                        if (m.current_value !== null && m.current_value !== undefined && typeof m.current_value === 'number') currDisplay = `${m.current_value.toFixed(2)}${unit}`;
+                        if (m.absolute_difference !== null && m.absolute_difference !== undefined && typeof m.absolute_difference === 'number') absDisplay = `${m.absolute_difference > 0 ? '+' : ''}${m.absolute_difference.toFixed(2)}${unit}`;
+                    } else if (m.name === 'tumor_percentage_brain') {
+                        if (m.previous_value !== null && m.previous_value !== undefined) prevDisplay = `${(m.previous_value * 100).toFixed(4)}%`;
+                        if (m.current_value !== null && m.current_value !== undefined) currDisplay = `${(m.current_value * 100).toFixed(4)}%`;
+                        if (m.absolute_difference !== null && m.absolute_difference !== undefined) absDisplay = `${m.absolute_difference > 0 ? '+' : ''}${(m.absolute_difference * 100).toFixed(4)} pp`;
+                    } else if (m.name === 'eccentricity' || m.name === 'circularity' || m.name === 'compactness') {
+                        if (m.previous_value !== null && m.previous_value !== undefined && typeof m.previous_value === 'number') prevDisplay = m.previous_value.toFixed(4);
+                        if (m.current_value !== null && m.current_value !== undefined && typeof m.current_value === 'number') currDisplay = m.current_value.toFixed(4);
+                        if (m.absolute_difference !== null && m.absolute_difference !== undefined && typeof m.absolute_difference === 'number') absDisplay = `${m.absolute_difference > 0 ? '+' : ''}${m.absolute_difference.toFixed(4)}`;
+                    } else if (m.name === 'orientation') {
+                        if (m.previous_value !== null && m.previous_value !== undefined && typeof m.previous_value === 'number') prevDisplay = `${m.previous_value.toFixed(1)}°`;
+                        if (m.current_value !== null && m.current_value !== undefined && typeof m.current_value === 'number') currDisplay = `${m.current_value.toFixed(1)}°`;
+                        if (m.absolute_difference !== null && m.absolute_difference !== undefined && typeof m.absolute_difference === 'number') absDisplay = `${m.absolute_difference > 0 ? '+' : ''}${m.absolute_difference.toFixed(1)}°`;
+                    }
+
+                    let trendIcon = '';
+                    let trendClass = 'text-slate-400';
+                    if (m.direction === 'INCREASED') {
+                        trendIcon = '<i class="fa-solid fa-arrow-trend-up text-red-400 mr-1"></i>';
+                        trendClass = 'text-red-400 font-bold';
+                    } else if (m.direction === 'DECREASED') {
+                        trendIcon = '<i class="fa-solid fa-arrow-trend-down text-blue-400 mr-1"></i>';
+                        trendClass = 'text-blue-400 font-bold';
+                    } else if (m.direction === 'CHANGED') {
+                        trendIcon = '<i class="fa-solid fa-arrows-left-right text-amber-400 mr-1"></i>';
+                        trendClass = 'text-amber-400 font-bold';
+                    } else {
+                        trendIcon = '<i class="fa-solid fa-minus text-slate-500 mr-1"></i>';
+                        trendClass = 'text-slate-500';
+                    }
+
+                    tr.innerHTML = `
+                        <td class="p-3 font-semibold text-slate-350 uppercase text-[10px] tracking-wider font-mono">${m.name.replace('_mm2', '').replace('_mm', '').replace('_', ' ')}</td>
+                        <td class="p-3 text-slate-200 font-medium">${prevDisplay}</td>
+                        <td class="p-3 text-slate-200 font-medium">${currDisplay}</td>
+                        <td class="p-3 ${trendClass}">${absDisplay}</td>
+                        <td class="p-3 ${trendClass}">${pctDisplay}</td>
+                        <td class="p-3 flex items-center gap-1 ${trendClass}">${trendIcon} ${m.interpretation_category}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (err) {
+                alert("Failed to load report comparison details: " + err);
+            }
         }
 
         // PACS Visual Overlay Opacity Blending Adjustments

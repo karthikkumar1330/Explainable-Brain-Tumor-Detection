@@ -8,7 +8,7 @@ import logging
 import hashlib
 from typing import List, Optional, Tuple, Dict, Any
 
-from clinical_reporting.domain.entities import Report, ReportVersion, ReportStatus, can_transition
+from clinical_reporting.domain.entities import Report, ReportVersion, ReportStatus, can_transition, PatientMismatchException, ComparisonMetric, ReportComparison
 
 
 class ReportServiceException(Exception):
@@ -1139,3 +1139,417 @@ class ReportService:
                 timestamp, event_type, user_id, email, ip_address, status, details, user_agent
             ) VALUES (?, ?, ?, ?, '127.0.0.1', ?, ?, 'System');
         """, (now_str, event_type, user_id, email, status, details))
+
+    def compare_reports(
+        self,
+        previous_report_id: int,
+        current_report_id: int,
+        previous_version: Optional[int] = None,
+        current_version: Optional[int] = None,
+        actor: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Compares two report versions dynamically from persisted JSON and DB metrics."""
+        self.logger.info(
+            f"Comparing reports: Prev ID={previous_report_id} (v={previous_version}) "
+            f"vs Curr ID={current_report_id} (v={current_version}) by actor={actor}"
+        )
+
+        # 1. Enforce RBAC access check on both reports
+        status_prev = self.check_report_access(previous_report_id, actor)
+        if status_prev == "NOT_FOUND":
+            self.log_report_access_event("REPORT_NOT_FOUND", actor, previous_report_id, "FAILED", "Requested nonexistent previous report for comparison.")
+            raise ReportNotFoundException(f"Previous report with ID {previous_report_id} not found.")
+        elif status_prev == "UNAUTHORIZED":
+            raise ReportServiceException("Authentication required.")
+        elif status_prev == "FORBIDDEN":
+            self.log_report_access_event("REPORT_ACCESS_DENIED", actor, previous_report_id, "FAILED", "Access denied to previous report for comparison.")
+            raise ReportServiceException("Access denied to previous report.")
+
+        status_curr = self.check_report_access(current_report_id, actor)
+        if status_curr == "NOT_FOUND":
+            self.log_report_access_event("REPORT_NOT_FOUND", actor, current_report_id, "FAILED", "Requested nonexistent current report for comparison.")
+            raise ReportNotFoundException(f"Current report with ID {current_report_id} not found.")
+        elif status_curr == "UNAUTHORIZED":
+            raise ReportServiceException("Authentication required.")
+        elif status_curr == "FORBIDDEN":
+            self.log_report_access_event("REPORT_ACCESS_DENIED", actor, current_report_id, "FAILED", "Access denied to current report for comparison.")
+            raise ReportServiceException("Access denied to current report.")
+
+        # 2. Fetch both report versions details
+        conn = self._get_connection()
+        try:
+            prev_data = self._fetch_report_version_data(conn, previous_report_id, previous_version)
+            curr_data = self._fetch_report_version_data(conn, current_report_id, current_version)
+        finally:
+            conn.close()
+
+        # 3. Validate same patient
+        if str(prev_data["patient_id"]).lower() != str(curr_data["patient_id"]).lower():
+            raise PatientMismatchException("Cannot compare reports belonging to different patients.")
+
+        # 4. Calculate comparisons
+        metrics = []
+
+        # A. Classification
+        prev_cls = prev_data["classification"]
+        curr_cls = curr_data["classification"]
+        cls_dir = "UNCHANGED" if prev_cls == curr_cls else "CHANGED"
+        metrics.append(ComparisonMetric(
+            name="classification",
+            previous_value=prev_cls,
+            current_value=curr_cls,
+            direction=cls_dir,
+            interpretation_category=cls_dir
+        ))
+
+        # B. Classification confidence
+        prev_conf = prev_data["confidence"]
+        curr_conf = curr_data["confidence"]
+        metrics.append(self._compare_numeric_metric("confidence", prev_conf, curr_conf, tolerance=1e-4))
+
+        # C. Tumor area
+        prev_area = prev_data["tumor_area_mm2"]
+        curr_area = curr_data["tumor_area_mm2"]
+        metrics.append(self._compare_numeric_metric("tumor_area_mm2", prev_area, curr_area, tolerance=1e-4))
+
+        # D. Tumor percentage brain (occupancy)
+        prev_pct = prev_data["tumor_percentage_brain"]
+        curr_pct = curr_data["tumor_percentage_brain"]
+        metrics.append(self._compare_numeric_metric("tumor_percentage_brain", prev_pct, curr_pct, tolerance=1e-4))
+
+        # E. Severity
+        prev_sev = prev_data["severity"].upper()
+        curr_sev = curr_data["severity"].upper()
+        metrics.append(self._compare_severity_metric(prev_sev, curr_sev))
+
+        # F. Morphological metrics
+        morphology_keys = [
+            ("major_axis_mm", "major_axis"),
+            ("minor_axis_mm", "minor_axis"),
+            ("eccentricity", "eccentricity"),
+            ("orientation_deg", "orientation"),
+            ("perimeter_mm", "perimeter"),
+            ("solidity", "compactness"),
+            ("circularity", "circularity")
+        ]
+        for key_json, key_metric in morphology_keys:
+            prev_m = prev_data["morphology"].get(key_json)
+            curr_m = curr_data["morphology"].get(key_json)
+            if prev_m is not None and curr_m is not None:
+                metrics.append(self._compare_numeric_metric(key_metric, prev_m, curr_m, tolerance=1e-4))
+
+        # G. Clinical findings
+        prev_findings = prev_data["clinical_findings"]
+        curr_findings = curr_data["clinical_findings"]
+        findings_dir = "TEXT_UNCHANGED" if prev_findings == curr_findings else "TEXT_CHANGED"
+        metrics.append(ComparisonMetric(
+            name="clinical_findings",
+            previous_value=prev_findings,
+            current_value=curr_findings,
+            direction=findings_dir,
+            interpretation_category=findings_dir
+        ))
+
+        # 5. Determine Overall Summary Status & Text
+        summary_status, summary_text = self._determine_overall_summary(
+            prev_cls, curr_cls,
+            prev_area, curr_area,
+            prev_sev, curr_sev
+        )
+
+        import secrets
+        comparison_id = f"CMP-{secrets.token_hex(8).upper()}"
+        created_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        created_by_str = actor.email if (actor and hasattr(actor, "email")) else (str(actor) if actor else "System")
+
+        disclaimer = (
+            "This comparison summarizes differences between stored AI-derived report measurements. "
+            "It is not a medical diagnosis and should be interpreted by a qualified healthcare professional."
+        )
+
+        comparison = ReportComparison(
+            comparison_id=comparison_id,
+            patient_id=prev_data["patient_id"],
+            previous_report_id=previous_report_id,
+            current_report_id=current_report_id,
+            previous_version=prev_data["version_number"],
+            current_version=curr_data["version_number"],
+            created_at=created_at,
+            created_by=created_by_str,
+            metrics=metrics,
+            summary_status=summary_status,
+            summary_text=summary_text,
+            disclaimer=disclaimer
+        )
+
+        # Log comparison event in security audit log
+        conn = self._get_connection()
+        try:
+            self._log_security_audit_event(
+                conn,
+                "REPORT_COMPARED",
+                actor,
+                previous_report_id,
+                "SUCCESS",
+                f"Compared with current report ID: {current_report_id}. Summary status: {summary_status}"
+            )
+            conn.commit()
+        except Exception as audit_err:
+            self.logger.warning(f"Failed to log comparison security event: {audit_err}")
+        finally:
+            conn.close()
+
+        # Convert back to dict
+        res_dict = {
+            "comparison_id": comparison.comparison_id,
+            "patient_id": comparison.patient_id,
+            "previous_report": {
+                "report_id": comparison.previous_report_id,
+                "version": comparison.previous_version
+            },
+            "current_report": {
+                "report_id": comparison.current_report_id,
+                "version": comparison.current_version
+            },
+            "metrics": [
+                {
+                    "name": m.name,
+                    "previous_value": m.previous_value,
+                    "current_value": m.current_value,
+                    "absolute_difference": m.absolute_difference,
+                    "percentage_difference": m.percentage_difference,
+                    "direction": m.direction,
+                    "interpretation_category": m.interpretation_category
+                } for m in comparison.metrics
+            ],
+            "summary": {
+                "status": comparison.summary_status,
+                "text": comparison.summary_text
+            },
+            "disclaimer": comparison.disclaimer
+        }
+
+        import math
+
+        def sanitize_non_finite_values(val: Any) -> Any:
+            if isinstance(val, dict):
+                return {k: sanitize_non_finite_values(v) for k, v in val.items()}
+            elif isinstance(val, list):
+                return [sanitize_non_finite_values(v) for v in val]
+            elif isinstance(val, float):
+                if math.isnan(val) or math.isinf(val):
+                    return None
+                return val
+            return val
+
+        return sanitize_non_finite_values(res_dict)
+
+    def _fetch_report_version_data(self, conn: sqlite3.Connection, report_id: int, version: Optional[int]) -> Dict[str, Any]:
+        """Helper to fetch a specific or latest version and prediction parameters, falling back to JSON file on disk."""
+        if version is not None:
+            query = """
+                SELECT rv.version_number, rv.json_path, rv.prediction_id, r.patient_id, r.report_number,
+                       p.predicted_class, p.confidence_score, p.tumor_area_mm2, p.tumor_percentage_brain,
+                       p.rule_based_severity, p.severity_rule_description
+                FROM report_versions rv
+                JOIN reports r ON rv.report_id = r.report_id
+                LEFT JOIN predictions p ON rv.prediction_id = p.id
+                WHERE rv.report_id = ? AND rv.version_number = ?;
+            """
+            row = conn.execute(query, (report_id, version)).fetchone()
+            if not row:
+                raise VersionNotFoundException(f"Version {version} not found for report {report_id}.")
+        else:
+            query = """
+                SELECT rv.version_number, rv.json_path, rv.prediction_id, r.patient_id, r.report_number,
+                       p.predicted_class, p.confidence_score, p.tumor_area_mm2, p.tumor_percentage_brain,
+                       p.rule_based_severity, p.severity_rule_description
+                FROM report_versions rv
+                JOIN reports r ON rv.report_id = r.report_id
+                LEFT JOIN predictions p ON rv.prediction_id = p.id
+                WHERE rv.report_id = ? AND rv.version_number = r.current_version;
+            """
+            row = conn.execute(query, (report_id,)).fetchone()
+            if not row:
+                raise ReportNotFoundException(f"Report with ID {report_id} not found.")
+
+        # Default fallback values from DB row
+        res = {
+            "version_number": row["version_number"],
+            "patient_id": row["patient_id"],
+            "report_number": row["report_number"],
+            "classification": row["predicted_class"] or "No Tumor",
+            "confidence": row["confidence_score"] or 0.0,
+            "tumor_area_mm2": row["tumor_area_mm2"] or 0.0,
+            "tumor_percentage_brain": row["tumor_percentage_brain"] or 0.0,
+            "severity": row["rule_based_severity"] or "LOW",
+            "morphology": {},
+            "clinical_findings": row["severity_rule_description"] or ""
+        }
+
+        # Try to load and enrich from JSON file
+        json_path = row["json_path"]
+        if json_path and os.path.exists(json_path):
+            try:
+                import json
+                with open(json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                # Enrich patient
+                if "patient" in data:
+                    res["patient_id"] = data["patient"].get("patient_id", res["patient_id"])
+
+                # Enrich classification
+                if "classification" in data:
+                    c = data["classification"]
+                    res["classification"] = c.get("predicted_class", res["classification"])
+                    res["confidence"] = c.get("confidence_score", res["confidence"])
+
+                # Enrich segmentation & morphology
+                if "segmentation" in data:
+                    s = data["segmentation"]
+                    res["tumor_area_mm2"] = s.get("tumor_area_mm2", res["tumor_area_mm2"])
+                    res["tumor_percentage_brain"] = s.get("tumor_percentage_brain", res["tumor_percentage_brain"])
+                    if "shape_statistics" in s:
+                        res["morphology"] = s["shape_statistics"]
+
+                # Enrich severity
+                if "severity" in data:
+                    sev = data["severity"]
+                    res["severity"] = sev.get("category", res["severity"])
+
+                # Enrich clinical findings
+                if "clinical_insight" in data:
+                    ci = data["clinical_insight"]
+                    # If key findings are list, join them or use narrative
+                    findings_list = ci.get("key_findings", [])
+                    if findings_list:
+                        res["clinical_findings"] = "; ".join(findings_list)
+                    else:
+                        res["clinical_findings"] = ci.get("summary_narrative", res["clinical_findings"])
+            except Exception as e:
+                self.logger.warning(f"Could not load/parse JSON report file at {json_path}: {e}")
+
+        return res
+
+    def _compare_numeric_metric(self, name: str, prev_val: float, curr_val: float, tolerance: float = 1e-4) -> ComparisonMetric:
+        """Helper to calculate difference of numerical metrics with float safety tolerance."""
+        abs_diff = curr_val - prev_val
+        if abs(abs_diff) <= tolerance:
+            abs_diff = 0.0
+            pct_diff = 0.0
+            direction = "UNCHANGED"
+            interpretation = "UNCHANGED"
+        else:
+            if prev_val != 0.0:
+                pct_diff = (abs_diff / abs(prev_val)) * 100.0
+            else:
+                pct_diff = None
+
+            if abs_diff > 0:
+                direction = "INCREASED"
+                interpretation = "OBSERVED_INCREASE"
+            else:
+                direction = "DECREASED"
+                interpretation = "OBSERVED_DECREASE"
+
+        return ComparisonMetric(
+            name=name,
+            previous_value=prev_val,
+            current_value=curr_val,
+            absolute_difference=round(abs_diff, 5) if abs_diff is not None else None,
+            percentage_difference=round(pct_diff, 4) if pct_diff is not None else None,
+            direction=direction,
+            interpretation_category=interpretation
+        )
+
+    def _compare_severity_metric(self, prev_sev: str, curr_sev: str) -> ComparisonMetric:
+        """Helper to compare ordinal severity levels (LOW, MEDIUM, HIGH)."""
+        severity_order = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
+        prev_idx = severity_order.get(prev_sev, -1)
+        curr_idx = severity_order.get(curr_sev, -1)
+
+        if prev_idx != -1 and curr_idx != -1:
+            if curr_idx > prev_idx:
+                direction = "INCREASED"
+                interpretation = "OBSERVED_INCREASE"
+            elif curr_idx < prev_idx:
+                direction = "DECREASED"
+                interpretation = "OBSERVED_DECREASE"
+            else:
+                direction = "UNCHANGED"
+                interpretation = "UNCHANGED"
+        else:
+            # Fallback to simple string comparison if not standard severity levels
+            if prev_sev == curr_sev:
+                direction = "UNCHANGED"
+                interpretation = "UNCHANGED"
+            else:
+                direction = "CHANGED"
+                interpretation = "CHANGED"
+
+        return ComparisonMetric(
+            name="severity",
+            previous_value=prev_sev,
+            current_value=curr_sev,
+            direction=direction,
+            interpretation_category=interpretation
+        )
+
+    def _determine_overall_summary(
+        self,
+        prev_cls: str, curr_cls: str,
+        prev_area: float, curr_area: float,
+        prev_sev: str, curr_sev: str
+    ) -> Tuple[str, str]:
+        """Generates deterministic summary category and text based on metric differences."""
+        if prev_cls != curr_cls:
+            status = "CLASSIFICATION_CHANGED"
+            text = f"AI-derived tumor classification changed from {prev_cls} to {curr_cls} between the selected reports."
+            return status, text
+
+        # Check severity changes
+        severity_order = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
+        prev_idx = severity_order.get(prev_sev.upper(), 0)
+        curr_idx = severity_order.get(curr_sev.upper(), 0)
+        sev_changed = prev_idx != curr_idx
+
+        # Check area changes with tolerance
+        tolerance = 1e-4
+        area_diff = curr_area - prev_area
+        if abs(area_diff) > tolerance:
+            if area_diff > 0:
+                status = "MEASUREMENTS_INCREASED"
+                if prev_area > 0:
+                    pct = (area_diff / prev_area) * 100.0
+                    text = f"AI-derived tumor area increased by {pct:.1f}% between the selected reports."
+                else:
+                    text = f"AI-derived tumor area increased by {area_diff:.2f} mm² (from 0 mm²) between the selected reports."
+            else:
+                status = "MEASUREMENTS_DECREASED"
+                if prev_area > 0:
+                    pct = (abs(area_diff) / prev_area) * 100.0
+                    text = f"AI-derived tumor area decreased by {pct:.1f}% between the selected reports."
+                else:
+                    text = f"AI-derived tumor area decreased by {abs(area_diff):.2f} mm² between the selected reports."
+
+            # If both severity and area changed, we can mark it as MULTIPLE_CHANGES
+            if sev_changed:
+                status = "MULTIPLE_CHANGES"
+                text += f" Additionally, severity classification changed from {prev_sev} to {curr_sev}."
+            return status, text
+
+        # If area is stable but severity changed
+        if sev_changed:
+            status = "MULTIPLE_CHANGES"
+            dir_str = "increased" if curr_idx > prev_idx else "decreased"
+            text = f"AI-derived tumor severity classification {dir_str} from {prev_sev} to {curr_sev} while tumor area remained stable."
+            return status, text
+
+        # stable cases
+        status = "STABLE"
+        if prev_cls == "No Tumor":
+            text = "No diagnostic changes observed. Tumor measurements remain stable at zero."
+        else:
+            text = "AI-derived tumor measurements remain stable."
+        return status, text
