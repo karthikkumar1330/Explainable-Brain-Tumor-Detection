@@ -672,3 +672,162 @@ class LongitudinalPatientTimeline:
             "metrics": {k: v.to_dict() for k, v in self.metrics.items()}
         }
         return sanitize_json_value(res)
+
+
+@dataclass(frozen=True)
+class ClinicalDistributionAnalytics:
+    classification: Dict[str, int]
+    severity: Dict[str, int]
+    progression: Dict[str, int]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.classification, dict):
+            raise TypeError("classification must be a dictionary.")
+        if not isinstance(self.severity, dict):
+            raise TypeError("severity must be a dictionary.")
+        if not isinstance(self.progression, dict):
+            raise TypeError("progression must be a dictionary.")
+
+    def to_dict(self) -> Dict[str, Any]:
+        res = {
+            "classification": self.classification,
+            "severity": self.severity,
+            "progression": self.progression
+        }
+        return sanitize_json_value(res)
+
+
+@dataclass(frozen=True)
+class PatientAnalytics:
+    patient_id: str
+    patient_name: Optional[str]
+    total_scans: int
+    first_scan_date: Optional[str]
+    latest_scan_date: Optional[str]
+    first_tumor_area: Optional[float]
+    latest_tumor_area: Optional[float]
+    area_absolute_change: Optional[float]
+    area_percentage_change: Optional[float]
+    occupancy_change: Optional[float]
+    confidence_change: Optional[float]
+    severity_change: Optional[float]
+    classification_history: List[Dict[str, Any]]
+    progression_status: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.patient_id, str) or not self.patient_id.strip():
+            raise ValueError("patient_id must be a non-empty string.")
+        if not isinstance(self.total_scans, int) or self.total_scans < 0:
+            raise ValueError("total_scans must be a non-negative integer.")
+        if not isinstance(self.classification_history, list):
+            raise TypeError("classification_history must be a list.")
+        if not isinstance(self.progression_status, str):
+            raise TypeError("progression_status must be a string.")
+
+    def to_dict(self) -> Dict[str, Any]:
+        res = {
+            "patient_id": self.patient_id,
+            "patient_name": self.patient_name,
+            "total_scans": self.total_scans,
+            "first_scan_date": self.first_scan_date,
+            "latest_scan_date": self.latest_scan_date,
+            "first_tumor_area": self.first_tumor_area,
+            "latest_tumor_area": self.latest_tumor_area,
+            "area_absolute_change": self.area_absolute_change,
+            "area_percentage_change": self.area_percentage_change,
+            "occupancy_change": self.occupancy_change,
+            "confidence_change": self.confidence_change,
+            "severity_change": self.severity_change,
+            "classification_history": self.classification_history,
+            "progression_status": self.progression_status
+        }
+        return sanitize_json_value(res)
+
+
+@dataclass(frozen=True)
+class PopulationAnalytics:
+    total_patients: int
+    total_reports: int
+    total_scans: int
+    classification_distribution: Dict[str, int]
+    severity_distribution: Dict[str, int]
+    progression_distribution: Dict[str, int]
+    average_confidence: Optional[float]
+    average_tumor_area: Optional[float]
+    activity_over_time: List[Dict[str, Any]]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.total_patients, int) or self.total_patients < 0:
+            raise ValueError("total_patients must be a non-negative integer.")
+        if not isinstance(self.total_reports, int) or self.total_reports < 0:
+            raise ValueError("total_reports must be a non-negative integer.")
+        if not isinstance(self.total_scans, int) or self.total_scans < 0:
+            raise ValueError("total_scans must be a non-negative integer.")
+        if not isinstance(self.classification_distribution, dict):
+            raise TypeError("classification_distribution must be a dictionary.")
+        if not isinstance(self.severity_distribution, dict):
+            raise TypeError("severity_distribution must be a dictionary.")
+        if not isinstance(self.progression_distribution, dict):
+            raise TypeError("progression_distribution must be a dictionary.")
+        if not isinstance(self.activity_over_time, list):
+            raise TypeError("activity_over_time must be a list.")
+
+    def to_dict(self) -> Dict[str, Any]:
+        res = {
+            "total_patients": self.total_patients,
+            "total_reports": self.total_reports,
+            "total_scans": self.total_scans,
+            "classification_distribution": self.classification_distribution,
+            "severity_distribution": self.severity_distribution,
+            "progression_distribution": self.progression_distribution,
+            "average_confidence": self.average_confidence,
+            "average_tumor_area": self.average_tumor_area,
+            "activity_over_time": self.activity_over_time
+        }
+        return sanitize_json_value(res)
+
+
+@dataclass(frozen=True)
+class TimeSeriesPoint:
+    date: str
+    tumor_area: Optional[float]
+    occupancy: Optional[float]
+    confidence: Optional[float]
+    severity_score: Optional[float]
+    severity: Optional[str]
+    classification: Optional[str]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.date, str) or not self.date.strip():
+            raise ValueError("date must be a non-empty string.")
+
+    def to_dict(self) -> Dict[str, Any]:
+        res = {
+            "date": self.date,
+            "tumor_area": self.tumor_area,
+            "occupancy": self.occupancy,
+            "confidence": self.confidence,
+            "severity_score": self.severity_score,
+            "severity": self.severity,
+            "classification": self.classification
+        }
+        return sanitize_json_value(res)
+
+
+@dataclass(frozen=True)
+class TimeSeriesAnalytics:
+    patient_id: str
+    points: List[TimeSeriesPoint]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.patient_id, str) or not self.patient_id.strip():
+            raise ValueError("patient_id must be a non-empty string.")
+        if not isinstance(self.points, list):
+            raise TypeError("points must be a list of TimeSeriesPoint.")
+
+    def to_dict(self) -> Dict[str, Any]:
+        res = {
+            "patient_id": self.patient_id,
+            "points": [p.to_dict() for p in self.points]
+        }
+        return sanitize_json_value(res)

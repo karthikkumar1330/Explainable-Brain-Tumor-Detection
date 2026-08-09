@@ -1066,6 +1066,86 @@ def create_app(db_path: str) -> Flask:
             app.logger.error(f"Error in Flask longitudinal timeline API: {e}")
             return jsonify({"error": "Internal timeline engine error"}), 500
 
+    @app.route("/api/patients/<patient_id>/analytics")
+    @login_required
+    def get_patient_analytics_flask(current_user: User, patient_id: str):
+        """Flask Endpoint: Retrieves patient clinical analytics, enforcing authorization boundaries."""
+        from clinical_reporting.application.services import ReportService, ReportServiceException
+
+        service = ReportService(db_path=app.config["DB_PATH"])
+        try:
+            analytics = service.get_patient_analytics(
+                patient_id=patient_id,
+                actor=current_user
+            )
+            return jsonify(analytics.to_dict())
+        except ReportServiceException as rse:
+            err_msg = str(rse)
+            if "Access denied" in err_msg or "denied" in err_msg.lower():
+                return jsonify({"error": "Access denied to patient analytics."}), 403
+            elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
+                return jsonify({"error": err_msg}), 401
+            elif "not found" in err_msg.lower():
+                return jsonify({"error": err_msg}), 404
+            else:
+                return jsonify({"error": err_msg}), 422
+        except Exception as e:
+            app.logger.error(f"Error in Flask patient analytics API: {e}")
+            return jsonify({"error": "Internal analytics engine error"}), 500
+
+    @app.route("/api/analytics/overview")
+    @login_required
+    def get_population_analytics_flask(current_user: User):
+        """Flask Endpoint: Retrieves population overview analytics, enforcing authorization boundaries."""
+        if current_user.role not in [Role.ADMIN, Role.DOCTOR]:
+            return jsonify({"error": f"Access denied. Privilege level '{current_user.role.value}' is not authorized."}), 403
+
+        from clinical_reporting.application.services import ReportService, ReportServiceException
+
+        service = ReportService(db_path=app.config["DB_PATH"])
+        try:
+            pop_analytics = service.get_population_analytics(actor=current_user)
+            return jsonify(pop_analytics.to_dict())
+        except ReportServiceException as rse:
+            err_msg = str(rse)
+            if "Access denied" in err_msg or "denied" in err_msg.lower():
+                return jsonify({"error": err_msg}), 403
+            elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
+                return jsonify({"error": err_msg}), 401
+            else:
+                return jsonify({"error": err_msg}), 422
+        except Exception as e:
+            app.logger.error(f"Error in Flask population analytics API: {e}")
+            return jsonify({"error": "Internal population analytics engine error"}), 500
+
+    @app.route("/api/patients/<patient_id>/analytics/timeseries")
+    @login_required
+    def get_patient_timeseries_flask(current_user: User, patient_id: str):
+        """Flask Endpoint: Retrieves patient timeseries points, enforcing authorization boundaries."""
+        from clinical_reporting.application.services import ReportService, ReportServiceException
+
+        service = ReportService(db_path=app.config["DB_PATH"])
+        try:
+            ts = service.get_patient_timeseries(
+                patient_id=patient_id,
+                actor=current_user
+            )
+            return jsonify(ts.to_dict())
+        except ReportServiceException as rse:
+            err_msg = str(rse)
+            if "Access denied" in err_msg or "denied" in err_msg.lower():
+                return jsonify({"error": "Access denied to patient timeseries."}), 403
+            elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
+                return jsonify({"error": err_msg}), 401
+            elif "not found" in err_msg.lower():
+                return jsonify({"error": err_msg}), 404
+            else:
+                return jsonify({"error": err_msg}), 422
+        except Exception as e:
+            app.logger.error(f"Error in Flask patient timeseries API: {e}")
+            return jsonify({"error": "Internal timeseries engine error"}), 500
+
+
     @app.route("/api/report/<int:report_id>/status", methods=["PATCH"])
     @login_required
     def update_report_status(current_user: User, report_id: int):

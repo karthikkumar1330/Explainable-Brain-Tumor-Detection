@@ -1401,3 +1401,93 @@ def get_patient_longitudinal_timeline_api(
     except Exception as e:
         logger.error(f"Error in longitudinal timeline API: {e}")
         raise HTTPException(status_code=500, detail="Internal timeline engine error")
+
+
+@router.get("/patients/{patient_id}/analytics")
+def get_patient_analytics_api(
+    patient_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """API Endpoint: Retrieves patient clinical analytics, enforcing authorization boundaries."""
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        from clinical_reporting.application.services import ReportServiceException
+
+        analytics = service.get_patient_analytics(
+            patient_id=patient_id,
+            actor=current_user
+        )
+        return analytics.to_dict()
+    except ReportServiceException as rse:
+        err_msg = str(rse)
+        if "Access denied" in err_msg or "denied" in err_msg.lower():
+            raise HTTPException(status_code=403, detail="Access denied to patient analytics.")
+        elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=422, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in patient analytics API: {e}")
+        raise HTTPException(status_code=500, detail="Internal analytics engine error")
+
+
+@router.get("/analytics/overview")
+def get_population_analytics_api(
+    current_user: User = Depends(get_current_user)
+):
+    """API Endpoint: Retrieves population overview analytics for clinician dashboard."""
+    if current_user.role not in [Role.ADMIN, Role.DOCTOR]:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied. Privilege level '{current_user.role.value}' is not authorized."
+        )
+
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        from clinical_reporting.application.services import ReportServiceException
+
+        pop_analytics = service.get_population_analytics(actor=current_user)
+        return pop_analytics.to_dict()
+    except ReportServiceException as rse:
+        err_msg = str(rse)
+        if "Access denied" in err_msg or "denied" in err_msg.lower():
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
+            raise HTTPException(status_code=401, detail=err_msg)
+        else:
+            raise HTTPException(status_code=422, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in population analytics API: {e}")
+        raise HTTPException(status_code=500, detail="Internal population analytics engine error")
+
+
+@router.get("/patients/{patient_id}/analytics/timeseries")
+def get_patient_timeseries_api(
+    patient_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """API Endpoint: Retrieves patient time-series data points, enforcing authorization boundaries."""
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        from clinical_reporting.application.services import ReportServiceException
+
+        ts = service.get_patient_timeseries(
+            patient_id=patient_id,
+            actor=current_user
+        )
+        return ts.to_dict()
+    except ReportServiceException as rse:
+        err_msg = str(rse)
+        if "Access denied" in err_msg or "denied" in err_msg.lower():
+            raise HTTPException(status_code=403, detail="Access denied to patient timeseries.")
+        elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=422, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in patient timeseries API: {e}")
+        raise HTTPException(status_code=500, detail="Internal timeseries engine error")

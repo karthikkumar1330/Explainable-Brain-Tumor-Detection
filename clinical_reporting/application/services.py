@@ -8,7 +8,7 @@ import logging
 import hashlib
 from typing import List, Optional, Tuple, Dict, Any
 
-from clinical_reporting.domain.entities import Report, ReportVersion, ReportStatus, can_transition, PatientMismatchException, ComparisonMetric, ReportComparison, FollowUpComparisonMetric, FollowUpComparison, LongitudinalTimelineEvent, LongitudinalPatientTimeline, LongitudinalTimelineMetric
+from clinical_reporting.domain.entities import Report, ReportVersion, ReportStatus, can_transition, PatientMismatchException, ComparisonMetric, ReportComparison, FollowUpComparisonMetric, FollowUpComparison, LongitudinalTimelineEvent, LongitudinalPatientTimeline, LongitudinalTimelineMetric, ClinicalDistributionAnalytics, PatientAnalytics, PopulationAnalytics, TimeSeriesPoint, TimeSeriesAnalytics
 
 
 class ReportServiceException(Exception):
@@ -2104,3 +2104,201 @@ class ReportService:
         )
 
         return timeline
+
+    def get_patient_analytics(self, patient_id: str, actor: Any) -> PatientAnalytics:
+        """Retrieves and calculates patient-level clinical analytics based on scan history."""
+        import math
+        # 1. Fetch timeline (this enforces access controls and validation)
+        timeline = self.get_patient_longitudinal_timeline(patient_id, actor)
+
+        # 2. Derive analytics from timeline events
+        total_scans = timeline.total_events
+        first_scan_date = timeline.first_scan_date
+        latest_scan_date = timeline.latest_scan_date
+
+        first_event = timeline.first_event
+        latest_event = timeline.latest_event
+
+        first_tumor_area = first_event.tumor_area if first_event else None
+        latest_tumor_area = latest_event.tumor_area if latest_event else None
+
+        # Absolute and percentage changes
+        area_absolute_change = None
+        area_percentage_change = None
+        if "tumor_area" in timeline.metrics:
+            area_absolute_change = timeline.metrics["tumor_area"].absolute_change
+            area_percentage_change = timeline.metrics["tumor_area"].percentage_change
+
+        # Occupancy change: absolute difference in tumor percentage
+        occupancy_change = None
+        if first_event and latest_event and first_event.tumor_percentage is not None and latest_event.tumor_percentage is not None:
+            try:
+                f_pct = float(first_event.tumor_percentage)
+                l_pct = float(latest_event.tumor_percentage)
+                if not (math.isnan(f_pct) or math.isinf(f_pct) or math.isnan(l_pct) or math.isinf(l_pct)):
+                    occupancy_change = l_pct - f_pct
+            except (ValueError, TypeError):
+                pass
+
+        # Confidence change
+        confidence_change = None
+        if "confidence" in timeline.metrics:
+            confidence_change = timeline.metrics["confidence"].absolute_change
+
+        # Severity change: absolute difference in severity scores
+        severity_change = None
+        if "severity" in timeline.metrics:
+            severity_change = timeline.metrics["severity"].absolute_change
+
+        # Classification history
+        classification_history = [
+            {"date": ev.scan_date, "classification": ev.classification}
+            for ev in timeline.events
+        ]
+
+        progression_status = timeline.timeline_status
+
+        # Create entity (which self-validates)
+        return PatientAnalytics(
+            patient_id=patient_id,
+            patient_name=timeline.patient_name,
+            total_scans=total_scans,
+            first_scan_date=first_scan_date,
+            latest_scan_date=latest_scan_date,
+            first_tumor_area=first_tumor_area,
+            latest_tumor_area=latest_tumor_area,
+            area_absolute_change=area_absolute_change,
+            area_percentage_change=area_percentage_change,
+            occupancy_change=occupancy_change,
+            confidence_change=confidence_change,
+            severity_change=severity_change,
+            classification_history=classification_history,
+            progression_status=progression_status
+        )
+
+    def get_patient_timeseries(self, patient_id: str, actor: Any) -> TimeSeriesAnalytics:
+        """Retrieves clinical timeseries data points for a patient."""
+        # Enforces access control and validation
+        timeline = self.get_patient_longitudinal_timeline(patient_id, actor)
+
+        points = []
+        for ev in timeline.events:
+            if not ev.scan_date:
+                continue
+            point = TimeSeriesPoint(
+                date=ev.scan_date,
+                tumor_area=ev.tumor_area,
+                occupancy=ev.tumor_percentage,
+                confidence=ev.confidence,
+                severity_score=ev.severity_score,
+                severity=ev.severity,
+                classification=ev.classification
+            )
+            points.append(point)
+
+        return TimeSeriesAnalytics(
+            patient_id=patient_id,
+            points=points
+        )
+
+    def get_population_analytics(self, actor: Any) -> PopulationAnalytics:
+        """Calculates population-level aggregated analytics. Restricted to Doctors and Admins."""
+        import math
+        if actor is None:
+            raise ReportServiceException("Authentication required.")
+
+        role_val = actor.role.value if hasattr(actor.role, 'value') else str(actor.role).lower()
+        if role_val not in ["admin", "doctor"]:
+            raise ReportServiceException("Access denied.")
+
+        conn = self._get_connection()
+        try:
+            # 1. Base counts
+            total_patients = conn.execute("SELECT COUNT(*) FROM patients;").fetchone()[0]
+            total_reports = conn.execute("SELECT COUNT(*) FROM reports;").fetchone()[0]
+            total_scans = conn.execute("SELECT COUNT(*) FROM mri_scans;").fetchone()[0]
+
+            # 2. Classification and Severity distributions from active reports
+            query_dist = """
+                SELECT p.predicted_class, p.rule_based_severity, COUNT(*) as cnt
+                FROM report_versions rv
+                JOIN reports r ON rv.report_id = r.report_id
+                JOIN predictions p ON rv.prediction_id = p.id
+                WHERE rv.version_number = r.current_version
+                GROUP BY p.predicted_class, p.rule_based_severity;
+            """
+            rows_dist = conn.execute(query_dist).fetchall()
+
+            classification_distribution = {}
+            severity_distribution = {}
+            for r in rows_dist:
+                cls = r["predicted_class"]
+                sev = r["rule_based_severity"]
+                cnt = r["cnt"]
+
+                classification_distribution[cls] = classification_distribution.get(cls, 0) + cnt
+                severity_distribution[sev] = severity_distribution.get(sev, 0) + cnt
+
+            # 3. Average Confidence & Average Tumor Area
+            query_avg = """
+                SELECT AVG(p.confidence_score) as avg_conf, AVG(p.tumor_area_mm2) as avg_area
+                FROM report_versions rv
+                JOIN reports r ON rv.report_id = r.report_id
+                JOIN predictions p ON rv.prediction_id = p.id
+                WHERE rv.version_number = r.current_version;
+            """
+            row_avg = conn.execute(query_avg).fetchone()
+
+            def clean_avg(val: Any) -> Optional[float]:
+                if val is None:
+                    return None
+                try:
+                    f = float(val)
+                    if math.isnan(f) or math.isinf(f):
+                        return None
+                    return round(f, 4)
+                except (ValueError, TypeError):
+                    return None
+
+            average_confidence = clean_avg(row_avg["avg_conf"]) if row_avg else None
+            average_tumor_area = clean_avg(row_avg["avg_area"]) if row_avg else None
+
+            # 4. Activity Over Time (grouped by scan date)
+            rows_dates = conn.execute("SELECT scan_date FROM mri_scans;").fetchall()
+            activity_dict = {}
+            for row in rows_dates:
+                s_date = row["scan_date"]
+                if s_date:
+                    date_str = str(s_date).split()[0].strip()
+                    activity_dict[date_str] = activity_dict.get(date_str, 0) + 1
+
+            activity_over_time = sorted(
+                [{"date": dt, "count": cnt} for dt, cnt in activity_dict.items()],
+                key=lambda x: x["date"]
+            )
+
+            # 5. Progression status distribution for all patients in the system
+            progression_distribution = {}
+            rows_patients = conn.execute("SELECT patient_id FROM patients;").fetchall()
+            for row_pat in rows_patients:
+                pat_id = row_pat["patient_id"]
+                try:
+                    timeline = self.get_patient_longitudinal_timeline(patient_id=pat_id, actor=actor)
+                    status = timeline.timeline_status
+                    progression_distribution[status] = progression_distribution.get(status, 0) + 1
+                except Exception:
+                    progression_distribution["UNKNOWN"] = progression_distribution.get("UNKNOWN", 0) + 1
+
+            return PopulationAnalytics(
+                total_patients=total_patients,
+                total_reports=total_reports,
+                total_scans=total_scans,
+                classification_distribution=classification_distribution,
+                severity_distribution=severity_distribution,
+                progression_distribution=progression_distribution,
+                average_confidence=average_confidence,
+                average_tumor_area=average_tumor_area,
+                activity_over_time=activity_over_time
+            )
+        finally:
+            conn.close()
