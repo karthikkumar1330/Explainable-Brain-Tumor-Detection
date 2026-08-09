@@ -66,59 +66,56 @@ def validate_subject(subject: str) -> None:
         raise EmailServiceException("Header injection detected: Subject contains newlines.")
 
 
+_UNSET = object()
+
+
 class EmailService:
     """Reusable email infrastructure transport service following Clean Architecture design."""
 
     def __init__(
         self,
-        smtp_host: Optional[str] = None,
-        smtp_port: Optional[int] = None,
-        smtp_username: Optional[str] = None,
-        smtp_password: Optional[str] = None,
-        email_from: Optional[str] = None,
-        email_reply_to: Optional[str] = None,
-        email_timeout: Optional[float] = None,
-        use_ssl: Optional[bool] = None
+        smtp_host: Optional[str] = _UNSET,
+        smtp_port: Optional[int] = _UNSET,
+        smtp_username: Optional[str] = _UNSET,
+        smtp_password: Optional[str] = _UNSET,
+        email_from: Optional[str] = _UNSET,
+        email_reply_to: Optional[str] = _UNSET,
+        email_timeout: Optional[float] = _UNSET,
+        use_ssl: Optional[bool] = _UNSET
     ) -> None:
         """Initializes configuration properties, prioritizing explicit parameters over env vars."""
         self.logger = logging.getLogger("email_service")
 
-        self.smtp_host = smtp_host or os.environ.get("SMTP_HOST")
+        from clinical_reporting.infrastructure.email_config import EmailConfig
+        self.config = EmailConfig()
         
-        port_val = smtp_port or os.environ.get("SMTP_PORT")
-        if port_val:
-            try:
-                self.smtp_port = int(port_val)
-            except ValueError:
-                raise ConfigurationException(f"Invalid SMTP_PORT value: {port_val}")
-        else:
-            self.smtp_port = None
-            
-        self.smtp_username = smtp_username or os.environ.get("SMTP_USERNAME")
-        self.smtp_password = smtp_password or os.environ.get("SMTP_PASSWORD")
-        self.email_from = email_from or os.environ.get("EMAIL_FROM")
-        self.email_reply_to = email_reply_to or os.environ.get("EMAIL_REPLY_TO")
-        
-        timeout_val = email_timeout or os.environ.get("EMAIL_TIMEOUT")
-        if timeout_val:
-            try:
-                self.email_timeout = float(timeout_val)
-            except ValueError:
-                raise ConfigurationException(f"Invalid EMAIL_TIMEOUT value: {timeout_val}")
-        else:
-            self.email_timeout = 10.0  # Default 10 seconds timeout
+        # Explicit parameters override environment settings
+        if smtp_host is not _UNSET:
+            self.config.smtp_host = smtp_host
+        if smtp_port is not _UNSET:
+            self.config.smtp_port = smtp_port
+        if smtp_username is not _UNSET:
+            self.config.smtp_username = smtp_username
+        if smtp_password is not _UNSET:
+            self.config.smtp_password = smtp_password
+        if email_from is not _UNSET:
+            self.config.email_from = email_from
+        if email_reply_to is not _UNSET:
+            self.config.email_reply_to = email_reply_to
+        if email_timeout is not _UNSET:
+            self.config.email_timeout = email_timeout
+        if use_ssl is not _UNSET:
+            self.config.use_ssl = use_ssl
 
-        # Determine implicit SSL/TLS vs STARTTLS
-        if use_ssl is not None:
-            self.use_ssl = use_ssl
-        else:
-            env_ssl = os.environ.get("SMTP_USE_SSL", "")
-            if env_ssl.lower() in ("true", "1", "yes"):
-                self.use_ssl = True
-            elif self.smtp_port == 465:
-                self.use_ssl = True
-            else:
-                self.use_ssl = False
+        # Expose properties for external access/backwards compatibility
+        self.smtp_host = self.config.smtp_host
+        self.smtp_port = self.config.smtp_port
+        self.smtp_username = self.config.smtp_username
+        self.smtp_password = self.config.smtp_password
+        self.email_from = self.config.email_from
+        self.email_reply_to = self.config.email_reply_to
+        self.email_timeout = self.config.email_timeout
+        self.use_ssl = self.config.use_ssl
 
         self._connection: Optional[Any] = None
 
@@ -127,12 +124,22 @@ class EmailService:
         if self._connection:
             return self
         
-        if not self.smtp_host:
-            raise ConfigurationException("SMTP_HOST configuration parameter is missing.")
-        if not self.smtp_port:
-            raise ConfigurationException("SMTP_PORT configuration parameter is missing.")
-        if not self.email_from:
-            raise ConfigurationException("EMAIL_FROM configuration parameter is missing.")
+        from clinical_reporting.infrastructure.email_config import EmailConfigException
+        try:
+            # Validate settings on connection attempt
+            self.config.validate(active=True)
+        except EmailConfigException as e:
+            raise ConfigurationException(str(e))
+
+        # Synchronize properties
+        self.smtp_host = self.config.smtp_host
+        self.smtp_port = self.config.smtp_port
+        self.smtp_username = self.config.smtp_username
+        self.smtp_password = self.config.smtp_password
+        self.email_from = self.config.email_from
+        self.email_reply_to = self.config.email_reply_to
+        self.email_timeout = self.config.email_timeout
+        self.use_ssl = self.config.use_ssl
 
         try:
             self.logger.info(f"Connecting to SMTP server {self.smtp_host}:{self.smtp_port} (use_ssl={self.use_ssl}, timeout={self.email_timeout}s)...")

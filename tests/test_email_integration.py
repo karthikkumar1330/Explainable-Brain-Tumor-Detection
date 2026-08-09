@@ -26,6 +26,19 @@ class TestEmailService(unittest.TestCase):
     """Phase G1 Automated unit, mock, and security compliance tests for EmailService."""
 
     def setUp(self) -> None:
+        self.env_patcher = patch.dict(os.environ, {
+            "SMTP_HOST": "",
+            "SMTP_PORT": "",
+            "SMTP_USERNAME": "",
+            "SMTP_PASSWORD": "",
+            "EMAIL_FROM": "",
+            "EMAIL_REPLY_TO": "",
+            "EMAIL_TIMEOUT": "",
+            "SMTP_USE_SSL": "",
+            "ENV_MODE": "testing"
+        })
+        self.env_patcher.start()
+
         self.smtp_host = "smtp.example.com"
         self.smtp_port = 587
         self.email_from = "sender@example.com"
@@ -33,6 +46,9 @@ class TestEmailService(unittest.TestCase):
         self.subject = "Test Clinical Report"
         self.body_text = "This is a plain text clinical report."
         self.body_html = "<h1>This is a clinical report</h1>"
+
+    def tearDown(self) -> None:
+        self.env_patcher.stop()
 
     def test_01_valid_recipient(self) -> None:
         """Verify address validation passes for typical email patterns."""
@@ -239,9 +255,9 @@ class TestEmailService(unittest.TestCase):
             service.send(to_email="rec@example.com", subject="Hi\r\nBcc: spy@example.com", body_text="Body")
 
         # Sender newline
-        with self.assertRaises(InvalidAddressException):
+        with self.assertRaises(ConfigurationException):
             service = EmailService(smtp_host="smtp.example.com", smtp_port=587, email_from="sender@example.com\nCC: spy@example.com")
-            service.send(to_email="rec@example.com", subject="Hi", body_text="Body")
+            service.connect()
 
     def test_14_successful_send(self) -> None:
         """Verify send transfers message smoothly when connection works."""
