@@ -125,7 +125,11 @@ def create_app(db_path: str) -> Flask:
         # Exclude public sign-in and registration from CSRF
         exempt_paths = [
             "/api/auth/login",
-            "/api/auth/register"
+            "/api/auth/register",
+            "/api/auth/verify-email",
+            "/api/auth/resend-verification",
+            "/api/auth/forgot-password",
+            "/api/auth/reset-password"
         ]
 
         if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
@@ -253,6 +257,43 @@ def create_app(db_path: str) -> Flask:
             content = f.read()
         return render_template_string(content)
 
+    @app.route("/verify-email")
+    def page_verify_email():
+        token = request.args.get("token")
+        from flask import render_template
+        if not token:
+            return render_template("verify_email.html", success=False, error="Verification token is missing.")
+        try:
+            auth_use_cases.verify_email(raw_token=token)
+            return render_template("verify_email.html", success=True)
+        except ValueError as e:
+            return render_template("verify_email.html", success=False, error=str(e))
+
+    @app.route("/reset-password")
+    def page_reset_password():
+        token = request.args.get("token")
+        from flask import render_template
+        if not token:
+            return render_template("reset_password.html", valid=False, error="Password reset token is missing.")
+
+        import hashlib
+        import datetime
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        token_rec = user_repo.get_password_reset_token(token_hash)
+
+        if not token_rec or token_rec["used_at"]:
+            return render_template("reset_password.html", valid=False, error="Password reset token is invalid or has already been used.")
+
+        expires_at = datetime.datetime.fromisoformat(token_rec["expires_at"])
+        if datetime.datetime.utcnow() > expires_at:
+            return render_template("reset_password.html", valid=False, error="Password reset token has expired.")
+
+        user = user_repo.get_by_id(token_rec["user_id"])
+        if not user:
+            return render_template("reset_password.html", valid=False, error="User account not found.")
+
+        return render_template("reset_password.html", valid=True, token=token, email=user.email)
+
     @app.route("/admin")
     def admin_dashboard():
         user, err_code = get_current_user_from_request()
@@ -366,6 +407,89 @@ def create_app(db_path: str) -> Flask:
                     path="/"
                 )
             return response
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/api/auth/verify-email", methods=["POST"])
+    def auth_verify_email():
+        ip_addr = request.remote_addr or "127.0.0.1"
+        from security.application.use_cases import is_testing_env
+        if not is_testing_env():
+            from security.infrastructure.rate_limiter import global_rate_limiter
+            limited, remaining = global_rate_limiter.is_rate_limited(f"verify_email:{ip_addr}", max_requests=5, window_seconds=300)
+            if limited:
+                return jsonify({"error": f"Rate limit exceeded. Please try again in {remaining} seconds."}), 429
+
+        data = request.get_json() or {}
+        token = data.get("token")
+        if not token:
+            return jsonify({"error": "Token is required."}), 400
+        try:
+            res = auth_use_cases.verify_email(raw_token=token)
+            return jsonify(res)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/api/auth/resend-verification", methods=["POST"])
+    def auth_resend_verification():
+        ip_addr = request.remote_addr or "127.0.0.1"
+        from security.application.use_cases import is_testing_env
+        if not is_testing_env():
+            from security.infrastructure.rate_limiter import global_rate_limiter
+            limited, remaining = global_rate_limiter.is_rate_limited(f"resend_verification:{ip_addr}", max_requests=5, window_seconds=300)
+            if limited:
+                return jsonify({"error": f"Rate limit exceeded. Please try again in {remaining} seconds."}), 429
+
+        data = request.get_json() or {}
+        email = data.get("email")
+        if not email:
+            return jsonify({"error": "Email is required."}), 400
+        res = auth_use_cases.resend_verification(email=email)
+        return jsonify(res)
+
+    @app.route("/api/auth/forgot-password", methods=["POST"])
+    def auth_forgot_password():
+        ip_addr = request.remote_addr or "127.0.0.1"
+        from security.application.use_cases import is_testing_env
+        if not is_testing_env():
+            from security.infrastructure.rate_limiter import global_rate_limiter
+            limited, remaining = global_rate_limiter.is_rate_limited(f"forgot_password:{ip_addr}", max_requests=5, window_seconds=300)
+            if limited:
+                return jsonify({"error": f"Rate limit exceeded. Please try again in {remaining} seconds."}), 429
+
+        data = request.get_json() or {}
+        email = data.get("email")
+        if not email:
+            return jsonify({"error": "Email is required."}), 400
+        res = auth_use_cases.forgot_password(email=email, ip_address=ip_addr)
+        return jsonify(res)
+
+    @app.route("/api/auth/reset-password", methods=["POST"])
+    def auth_reset_password():
+        ip_addr = request.remote_addr or "127.0.0.1"
+        from security.application.use_cases import is_testing_env
+        if not is_testing_env():
+            from security.infrastructure.rate_limiter import global_rate_limiter
+            limited, remaining = global_rate_limiter.is_rate_limited(f"reset_password:{ip_addr}", max_requests=5, window_seconds=300)
+            if limited:
+                return jsonify({"error": f"Rate limit exceeded. Please try again in {remaining} seconds."}), 429
+
+        data = request.get_json() or {}
+        code = data.get("reset_token_or_otp") or data.get("token")
+        email = data.get("email")
+        new_password = data.get("new_password")
+
+        if not code or not email or not new_password:
+            return jsonify({"error": "Missing required fields."}), 400
+
+        try:
+            res = auth_use_cases.reset_password(
+                reset_token_or_otp=code,
+                email=email,
+                new_password=new_password,
+                ip_address=ip_addr
+            )
+            return jsonify(res)
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
 

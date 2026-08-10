@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AuraScan AI - Verify Email</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            400: '#38bdf8',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Global Theme Script -->
+    <script src="/static/js/theme.js"></script>
+    <!-- Global Theme Styles -->
+    <link rel="stylesheet" href="/static/css/theme.css">
+    <style>
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background-color 0.3s ease, color 0.3s ease;
+            background-image: radial-gradient(circle at 15% 15%, rgba(0, 163, 224, 0.05) 0%, transparent 40%),
+                              radial-gradient(circle at 85% 85%, rgba(13, 148, 136, 0.05) 0%, transparent 40%);
+            background-size: cover;
+            background-attachment: fixed;
+        }
+        .glass-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.05), 0 20px 40px -15px rgba(0, 0, 0, 0.1);
+        }
+        .floating-group {
+            position: relative;
+            width: 100%;
+        }
+        .floating-input {
+            width: 100%;
+            height: 52px;
+            padding: 14px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            border-radius: 12px;
+            border: 1.5px solid var(--border-color);
+            background-color: var(--input-bg) !important;
+            color: var(--text-color) !important;
+            outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .floating-input:focus {
+            border-color: var(--border-focus) !important;
+            box-shadow: 0 0 0 4px var(--focus-ring) !important;
+        }
+        .floating-label {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%) scale(1);
+            background-color: var(--card-bg);
+            padding: 0 6px;
+            color: var(--text-muted);
+            font-size: 14px;
+            font-weight: 500;
+            pointer-events: none;
+            transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+            transform-origin: left top;
+            z-index: 10;
+        }
+        .floating-input:focus ~ .floating-label,
+        .floating-input:not(:placeholder-shown) ~ .floating-label {
+            top: 0;
+            transform: translateY(-50%) scale(0.8);
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+    <!-- Theme Toggle -->
+    <div class="absolute top-6 right-6">
+        <button onclick="toggleTheme()" class="p-3 rounded-xl border border-[var(--border-color)] bg-[var(--panel-bg)] hover:bg-[var(--hover-bg)] transition-colors shadow-sm" aria-label="Toggle dark mode">
+            <i id="theme-icon" class="fas fa-moon text-lg text-[var(--text-muted)]"></i>
+        </button>
+    </div>
+
+    <div class="w-full max-w-md p-8 glass-panel rounded-2xl relative overflow-hidden transition-all duration-300">
+        <!-- Brand Header -->
+        <div class="flex flex-col items-center mb-8">
+            <div class="h-14 w-14 rounded-2xl bg-gradient-to-tr from-brand-600 to-brand-400 flex items-center justify-center shadow-lg shadow-brand-500/20 mb-4 animate-pulse">
+                <i class="fas fa-brain text-white text-2xl"></i>
+            </div>
+            <h1 class="text-2xl font-extrabold tracking-tight text-[var(--text-color)]">AuraScan AI</h1>
+            <p class="text-sm font-medium text-[var(--text-muted)] mt-1">Clinical MRI Enterprise Portal</p>
+        </div>
+
+        {% if success %}
+        <!-- Success State -->
+        <div class="text-center">
+            <div class="inline-flex items-center justify-center h-16 w-16 rounded-full bg-teal-500/10 text-teal-500 border border-teal-500/20 mb-6">
+                <i class="fas fa-circle-check text-3xl"></i>
+            </div>
+            <h2 class="text-xl font-bold text-[var(--text-color)] mb-2">Verification Successful</h2>
+            <p class="text-sm text-[var(--text-muted)] mb-6 leading-relaxed">
+                Your email address has been successfully verified. You now have full access to our HIPAA-compliant clinical scan services.
+            </p>
+            <div class="flex items-center justify-center space-x-2 text-sm font-semibold text-brand-500">
+                <i class="fas fa-spinner animate-spin"></i>
+                <span>Redirecting to portal homepage...</span>
+            </div>
+        </div>
+        <script>
+            setTimeout(() => {
+                window.location.href = "/";
+            }, 3000);
+        </script>
+        {% else %}
+        <!-- Error State -->
+        <div>
+            <div class="text-center mb-6">
+                <div class="inline-flex items-center justify-center h-16 w-16 rounded-full bg-rose-500/10 text-rose-500 border border-rose-500/20 mb-4">
+                    <i class="fas fa-triangle-exclamation text-3xl"></i>
+                </div>
+                <h2 class="text-xl font-bold text-[var(--text-color)] mb-2">Verification Failed</h2>
+                <p class="text-sm text-rose-600 dark:text-rose-400 bg-rose-500/5 dark:bg-rose-500/10 px-4 py-2 rounded-xl inline-block border border-rose-500/20 font-medium">
+                    {{ error }}
+                </p>
+            </div>
+
+            <!-- AJAX Resend Request Form -->
+            <form id="resend-form" class="space-y-5" onsubmit="handleResend(event)">
+                <div class="text-sm text-[var(--text-muted)] leading-relaxed mb-4 text-center">
+                    The verification link may have expired or is invalid. Provide your account email address below to request a new verification link.
+                </div>
+
+                <div id="resend-error" class="hidden p-4 rounded-xl text-sm font-semibold border bg-rose-500/10 text-rose-500 border-rose-500/20 flex items-center">
+                    <i class="fas fa-circle-xmark mr-2 text-base"></i>
+                    <span id="error-msg">Failed to send instructions.</span>
+                </div>
+                <div id="resend-success" class="hidden p-4 rounded-xl text-sm font-semibold border bg-teal-500/10 text-teal-500 border-teal-500/20 flex items-center">
+                    <i class="fas fa-circle-check mr-2 text-base"></i>
+                    <span>If the account exists, a new verification link has been sent.</span>
+                </div>
+
+                <div class="floating-group">
+                    <input type="email" id="resend-email" class="floating-input" placeholder=" " required autocomplete="email">
+                    <label for="resend-email" class="floating-label">Clinical Email Address</label>
+                </div>
+
+                <button type="submit" id="submit-btn" class="w-full h-12 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-700 hover:to-brand-600 text-white font-semibold text-sm transition-all duration-200 shadow-md shadow-brand-500/20 flex items-center justify-center space-x-2">
+                    <span>Request Verification Link</span>
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </form>
+
+            <div class="text-center mt-6">
+                <a href="/" class="text-xs font-semibold text-[var(--text-muted)] hover:text-brand-500 transition-colors">
+                    <i class="fas fa-arrow-left mr-1"></i> Back to Portal Login
+                </a>
+            </div>
+        </div>
+        <script>
+            async function handleResend(e) {
+                e.preventDefault();
+                const email = document.getElementById('resend-email').value;
+                const errDiv = document.getElementById('resend-error');
+                const successDiv = document.getElementById('resend-success');
+                const btn = document.getElementById('submit-btn');
+
+                errDiv.classList.add('hidden');
+                successDiv.classList.add('hidden');
+                btn.disabled = true;
+                btn.innerHTML = `<i class="fas fa-spinner animate-spin"></i> <span>Sending link...</span>`;
+
+                try {
+                    const res = await fetch('/api/auth/resend-verification', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email })
+                    });
+                    const data = await res.json();
+
+                    if (res.status === 200) {
+                        successDiv.classList.remove('hidden');
+                        document.getElementById('resend-email').value = '';
+                    } else {
+                        document.getElementById('error-msg').innerText = data.error || 'Failed to send instructions.';
+                        errDiv.classList.remove('hidden');
+                    }
+                } catch (err) {
+                    document.getElementById('error-msg').innerText = 'Network error. Please try again.';
+                    errDiv.classList.remove('hidden');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = `<span>Request Verification Link</span> <i class="fas fa-arrow-right"></i>`;
+                }
+            }
+        </script>
+        {% endif %}
+    </div>
+
+    <!-- Init Theme Icons -->
+    <script>
+        const themeIcon = document.getElementById('theme-icon');
+        if (document.documentElement.classList.contains('dark')) {
+            themeIcon.className = 'fas fa-sun text-lg text-yellow-400';
+        } else {
+            themeIcon.className = 'fas fa-moon text-lg text-slate-500';
+        }
+    </script>
+</body>
+</html>

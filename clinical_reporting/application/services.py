@@ -2920,6 +2920,77 @@ class ReportService:
             )
             raise ReportServiceException(f"Failed to send email: {e}")
 
+    def execute_account_email_delivery(
+        self,
+        delivery_id: int,
+        recipient_email: str,
+        subject: str,
+        body_text: str,
+        body_html: Optional[str],
+        attempt_count: int,
+        max_attempts: int
+    ) -> Dict[str, Any]:
+        """Performs the email send operation for an account-related email retry/dispatch."""
+        import datetime
+        now = datetime.datetime.utcnow().isoformat()
+
+        # Update attempt info in DB prior to send
+        conn = self._get_connection()
+        try:
+            conn.execute("""
+                UPDATE email_deliveries
+                SET attempt_count = ?, last_attempt_at = ?, updated_at = ?
+                WHERE id = ?;
+            """, (attempt_count + 1, now, now, delivery_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Dispatch email via EmailService
+        from clinical_reporting.infrastructure.email_service import EmailService
+        email_svc = EmailService()
+        try:
+            email_svc.send(
+                to_email=recipient_email,
+                subject=subject,
+                body_text=body_text,
+                body_html=body_html
+            )
+            # Update delivery status to SENT
+            now = datetime.datetime.utcnow().isoformat()
+            conn = self._get_connection()
+            try:
+                conn.execute("""
+                    UPDATE email_deliveries
+                    SET status = 'SENT', sent_at = ?, next_retry_at = NULL, updated_at = ?
+                    WHERE id = ?;
+                """, (now, now, delivery_id))
+                conn.commit()
+            finally:
+                conn.close()
+
+            # Log security event
+            self.log_report_access_event(
+                "ACCOUNT_EMAIL_SENT",
+                None,
+                None,
+                "SUCCESS",
+                f"Account email ({subject}) sent to {recipient_email}."
+            )
+            return {"success": True, "message": "Account email sent successfully"}
+        except Exception as e:
+            # Handle failure with classification and retry check
+            self._handle_delivery_failure(
+                delivery_id=delivery_id,
+                exception=e,
+                actor=None,
+                report_id=None,
+                recipient_email=recipient_email,
+                attempt_count=attempt_count + 1,
+                max_attempts=max_attempts
+            )
+            raise ReportServiceException(f"Failed to send email: {e}")
+
     def classify_email_error(self, exception: Exception) -> tuple[str, bool]:
         """Classifies an email exception to standardized failure code and retry status.
 
@@ -2980,7 +3051,7 @@ class ReportService:
         delivery_id: int,
         reason: str,
         actor: Optional[Any],
-        report_id: int,
+        report_id: Optional[int],
         recipient_email: str,
         error_msg: str
     ) -> None:
@@ -2997,12 +3068,14 @@ class ReportService:
         finally:
             conn.close()
 
+        event_name = "REPORT_EMAIL_FAILED" if report_id is not None else "ACCOUNT_EMAIL_FAILED"
+        msg_prefix = "clinical report" if report_id is not None else "account email"
         self.log_report_access_event(
-            "REPORT_EMAIL_FAILED",
+            event_name,
             actor,
             report_id,
             "FAILED",
-            f"Failed to email clinical report to {recipient_email} (Permanent: {reason}). Error: {error_msg}"
+            f"Failed to email {msg_prefix} to {recipient_email} (Permanent: {reason}). Error: {error_msg}"
         )
 
     def _handle_delivery_failure(
@@ -3010,7 +3083,7 @@ class ReportService:
         delivery_id: int,
         exception: Exception,
         actor: Optional[Any],
-        report_id: int,
+        report_id: Optional[int],
         recipient_email: str,
         attempt_count: int,
         max_attempts: int
@@ -3050,12 +3123,14 @@ class ReportService:
             finally:
                 conn.close()
 
+            event_name = "REPORT_EMAIL_RETRY_SCHEDULED" if report_id is not None else "ACCOUNT_EMAIL_RETRY_SCHEDULED"
+            msg_prefix = "clinical report" if report_id is not None else "account email"
             self.log_report_access_event(
-                "REPORT_EMAIL_RETRY_SCHEDULED",
+                event_name,
                 actor,
                 report_id,
                 "FAILED",
-                f"Failed to email clinical report to {recipient_email} (Transient: {reason}). Scheduled retry {attempt_count + 1}/{max_attempts} at {next_retry_at}. Error: {exception}"
+                f"Failed to email {msg_prefix} to {recipient_email} (Transient: {reason}). Scheduled retry {attempt_count + 1}/{max_attempts} at {next_retry_at}. Error: {exception}"
             )
         else:
             conn = self._get_connection()
@@ -3069,12 +3144,14 @@ class ReportService:
             finally:
                 conn.close()
 
+            event_name = "REPORT_EMAIL_FAILED" if report_id is not None else "ACCOUNT_EMAIL_FAILED"
+            msg_prefix = "clinical report" if report_id is not None else "account email"
             self.log_report_access_event(
-                "REPORT_EMAIL_FAILED",
+                event_name,
                 actor,
                 report_id,
                 "FAILED",
-                f"Failed to email clinical report to {recipient_email} (Permanent or Max Attempts Reached). Error: {exception}"
+                f"Failed to email {msg_prefix} to {recipient_email} (Permanent or Max Attempts Reached). Error: {exception}"
             )
 
     def get_email_history(
@@ -3122,8 +3199,8 @@ class ReportService:
         count_query = f"""
             SELECT COUNT(*) as cnt
             FROM email_deliveries ed
-            JOIN reports r ON ed.report_id = r.report_id
-            JOIN patients p ON r.patient_id = p.patient_id
+            LEFT JOIN reports r ON ed.report_id = r.report_id
+            LEFT JOIN patients p ON r.patient_id = p.patient_id
             {where_str}
         """
 
@@ -3131,12 +3208,12 @@ class ReportService:
         offset = (page - 1) * per_page
         data_query = f"""
             SELECT ed.id, ed.report_id, ed.actor_user_id, ed.recipient_email, ed.status,
-                   ed.attempted_at, ed.sent_at, ed.failure_reason,
+                   ed.attempted_at, ed.sent_at, ed.failure_reason, ed.email_type,
                    r.report_number, u.full_name as actor_name, u.email as actor_email
             FROM email_deliveries ed
-            JOIN reports r ON ed.report_id = r.report_id
-            JOIN patients p ON r.patient_id = p.patient_id
-            JOIN users u ON ed.actor_user_id = u.id
+            LEFT JOIN reports r ON ed.report_id = r.report_id
+            LEFT JOIN patients p ON r.patient_id = p.patient_id
+            LEFT JOIN users u ON ed.actor_user_id = u.id
             {where_str}
             ORDER BY ed.attempted_at DESC
             LIMIT ? OFFSET ?
@@ -3156,19 +3233,25 @@ class ReportService:
             items = []
             for r in rows:
                 masked_recipient = mask_email(r["recipient_email"])
+                actor_email = r["actor_email"]
+                if actor_email:
+                    masked_actor_email = mask_email(actor_email) if caller_role == "patient" else actor_email
+                else:
+                    masked_actor_email = "system@aurascan.ai"
 
                 items.append({
                     "id": r["id"],
                     "report_id": r["report_id"],
-                    "report_number": r["report_number"],
+                    "report_number": r["report_number"] if r["report_number"] else "N/A",
                     "actor_user_id": r["actor_user_id"],
-                    "actor_name": r["actor_name"],
-                    "actor_email": mask_email(r["actor_email"]) if caller_role == "patient" else r["actor_email"],
+                    "actor_name": r["actor_name"] if r["actor_name"] else "System",
+                    "actor_email": masked_actor_email,
                     "recipient_email": masked_recipient,
                     "status": r["status"],
                     "attempted_at": r["attempted_at"],
                     "sent_at": r["sent_at"],
-                    "failure_reason": r["failure_reason"]
+                    "failure_reason": r["failure_reason"],
+                    "email_type": r["email_type"] if "email_type" in r.keys() else "REPORT"
                 })
 
             total_pages = (total_items + per_page - 1) // per_page if total_items > 0 else 0

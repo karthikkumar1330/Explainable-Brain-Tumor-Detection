@@ -210,3 +210,80 @@ class EmailTemplateRenderer:
         )
 
         return html_body, text_body
+
+    @staticmethod
+    def render_email_verification(verification_url: str, user_name: str) -> Tuple[str, str]:
+        """Renders the account verification email template."""
+        subject = "Verify Your AuraScan AI Account"
+        title = "Email Verification Required"
+        message_body = (
+            f"Dear {user_name},\n\n"
+            f"Thank you for registering with AuraScan AI. To complete your registration and "
+            f"activate your clinical account, please verify your email address by clicking the link below."
+        )
+        return EmailTemplateRenderer.render_generic_notification(
+            subject=subject,
+            title=title,
+            message_body=message_body,
+            cta_text="Verify Email Address",
+            cta_url=verification_url
+        )
+
+    @staticmethod
+    def render_otp(otp_code: str, user_name: str, expires_in_minutes: int = 5) -> Tuple[str, str]:
+        """Renders the secure 2FA/OTP login verification email template."""
+        subject = "Your AuraScan AI Verification Code"
+        title = "One-Time Password (OTP)"
+        message_body = (
+            f"Dear {user_name},\n\n"
+            f"Your secure one-time verification code is provided below. "
+            f"This code will expire in {expires_in_minutes} minutes."
+        )
+        card_items = [
+            ("Verification Code", otp_code),
+            ("Expires In", f"{expires_in_minutes} minutes")
+        ]
+        return EmailTemplateRenderer.render_generic_notification(
+            subject=subject,
+            title=title,
+            message_body=message_body,
+            card_items=card_items,
+            badge_label="Secure 2FA",
+            badge_type="warning"
+        )
+
+    @staticmethod
+    def render_password_reset(reset_url: str, user_name: str) -> Tuple[str, str]:
+        """Renders the password recovery email template."""
+        subject = "Reset Your AuraScan AI Password"
+        title = "Password Recovery Request"
+        message_body = (
+            f"Dear {user_name},\n\n"
+            f"We received a request to reset your password. If you made this request, please "
+            f"click the link below to configure your new credentials. This link will expire shortly."
+        )
+        return EmailTemplateRenderer.render_generic_notification(
+            subject=subject,
+            title=title,
+            message_body=message_body,
+            cta_text="Reset Password",
+            cta_url=reset_url
+        )
+
+    @staticmethod
+    def render_password_reset_confirmation(user_name: str) -> Tuple[str, str]:
+        """Renders the password reset success confirmation email template."""
+        subject = "AuraScan AI Password Changed Successfully"
+        title = "Password Reset Confirmed"
+        message_body = (
+            f"Dear {user_name},\n\n"
+            f"The password for your AuraScan AI account has been successfully changed.\n\n"
+            f"If you did not request this change, please contact system administration immediately."
+        )
+        return EmailTemplateRenderer.render_generic_notification(
+            subject=subject,
+            title=title,
+            message_body=message_body,
+            badge_label="Security Update",
+            badge_type="success"
+        )

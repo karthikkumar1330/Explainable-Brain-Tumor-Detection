@@ -16,7 +16,12 @@ admin_router = APIRouter(prefix="/admin", tags=["Admin User Management"])
 
 
 def get_auth_use_cases() -> AuthUseCases:
-    repo = SQLiteUserRepository(db_path=DEFAULT_DB_PATH)
+    default_base = "outputs/clinical_reports.db"
+    if DEFAULT_DB_PATH != default_base:
+        db_path = DEFAULT_DB_PATH
+    else:
+        db_path = os.environ.get("DB_PATH", DEFAULT_DB_PATH)
+    repo = SQLiteUserRepository(db_path=db_path)
     repo.initialize_security_tables()
     jwt_svc = JWTService()
     return AuthUseCases(user_repo=repo, jwt_service=jwt_svc)
@@ -148,6 +153,38 @@ class AdminRoleUpdateSchema(BaseModel):
 
 class AdminStatusUpdateSchema(BaseModel):
     is_active: bool
+
+
+class VerifyEmailSchema(BaseModel):
+    token: str
+
+
+class ResendVerificationSchema(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordSchema(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordSchema(BaseModel):
+    reset_token_or_otp: str
+    email: EmailStr
+    new_password: str = Field(..., min_length=8)
+
+
+# Rate limiter check helper
+def enforce_rate_limit(key: str, max_requests: int, window_seconds: int):
+    from security.application.use_cases import is_testing_env
+    if is_testing_env():
+        return
+    from security.infrastructure.rate_limiter import global_rate_limiter
+    limited, remaining = global_rate_limiter.is_rate_limited(key, max_requests, window_seconds)
+    if limited:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded. Please try again in {remaining} seconds."
+        )
 
 
 # Router Endpoints
@@ -366,3 +403,58 @@ def get_audit_logs(
 ):
     logs = use_cases.user_repo.get_security_audit_logs(limit=limit)
     return {"audit_logs": logs}
+
+
+@auth_router.post("/verify-email")
+def verify_email(
+    data: VerifyEmailSchema,
+    request: Request,
+    use_cases: AuthUseCases = Depends(get_auth_use_cases)
+):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    enforce_rate_limit(f"verify_email:{client_ip}", max_requests=5, window_seconds=300)
+    try:
+        return use_cases.verify_email(raw_token=data.token)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@auth_router.post("/resend-verification")
+def resend_verification(
+    data: ResendVerificationSchema,
+    request: Request,
+    use_cases: AuthUseCases = Depends(get_auth_use_cases)
+):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    enforce_rate_limit(f"resend_verification:{client_ip}", max_requests=5, window_seconds=300)
+    return use_cases.resend_verification(email=data.email)
+
+
+@auth_router.post("/forgot-password")
+def forgot_password(
+    data: ForgotPasswordSchema,
+    request: Request,
+    use_cases: AuthUseCases = Depends(get_auth_use_cases)
+):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    enforce_rate_limit(f"forgot_password:{client_ip}", max_requests=5, window_seconds=300)
+    return use_cases.forgot_password(email=data.email, ip_address=client_ip)
+
+
+@auth_router.post("/reset-password")
+def reset_password(
+    data: ResetPasswordSchema,
+    request: Request,
+    use_cases: AuthUseCases = Depends(get_auth_use_cases)
+):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    enforce_rate_limit(f"reset_password:{client_ip}", max_requests=5, window_seconds=300)
+    try:
+        return use_cases.reset_password(
+            reset_token_or_otp=data.reset_token_or_otp,
+            email=data.email,
+            new_password=data.new_password,
+            ip_address=client_ip
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

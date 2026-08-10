@@ -43,3 +43,21 @@ class IUserRepository(ABC):
     @abstractmethod
     def get_security_audit_logs(self, limit: int = 100) -> List[Dict[str, Any]]:
         pass
+
+    def save_verification_token(self, user_id: int, token_hash: str, expires_at: str) -> None:
+        pass
+
+    def get_verification_token(self, token_hash: str) -> Optional[Dict[str, Any]]:
+        pass
+
+    def consume_verification_token(self, token_hash: str) -> None:
+        pass
+
+    def save_password_reset_token(self, user_id: int, token_hash: str, expires_at: str) -> None:
+        pass
+
+    def get_password_reset_token(self, token_hash: str) -> Optional[Dict[str, Any]]:
+        pass
+
+    def consume_password_reset_token(self, token_hash: str) -> None:
+        pass

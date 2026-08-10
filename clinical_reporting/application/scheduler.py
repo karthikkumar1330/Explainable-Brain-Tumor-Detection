@@ -71,15 +71,21 @@ class EmailRetryScheduler:
         # Query pending retries
         conn = service._get_connection()
         try:
+            import sqlite3
             now = datetime.datetime.utcnow().isoformat()
             query = """
-                SELECT id, report_id, actor_user_id, recipient_email, attempt_count, max_attempts, report_version
+                SELECT id, report_id, actor_user_id, recipient_email, attempt_count, max_attempts, report_version, email_type, subject, body_text, body_html
                 FROM email_deliveries
                 WHERE status = 'RETRY_PENDING'
                   AND next_retry_at IS NOT NULL
                   AND next_retry_at <= ?;
             """
             rows = conn.execute(query, (now,)).fetchall()
+        except sqlite3.OperationalError as e:
+            if "no such table" in str(e).lower():
+                logger.warning("email_deliveries table does not exist. skipping retries.")
+                return
+            raise e
         finally:
             conn.close()
 
@@ -91,6 +97,10 @@ class EmailRetryScheduler:
             attempt_count = row["attempt_count"]
             max_attempts = row["max_attempts"]
             version = row["report_version"]
+            email_type = row["email_type"] if "email_type" in row.keys() else "REPORT"
+            subject = row["subject"]
+            body_text = row["body_text"]
+            body_html = row["body_html"]
 
             # Claim job to avoid double execution (Idempotency Protection)
             conn = service._get_connection()
@@ -116,14 +126,25 @@ class EmailRetryScheduler:
             # Run execution safely
             try:
                 logger.info(f"Processing retry for delivery ID {delivery_id} (Attempt {attempt_count + 1}/{max_attempts})")
-                service.execute_email_delivery(
-                    delivery_id=delivery_id,
-                    report_id=report_id,
-                    actor_user_id=actor_user_id,
-                    recipient_email=recipient_email,
-                    version=version,
-                    attempt_count=attempt_count,
-                    max_attempts=max_attempts
-                )
+                if email_type == "REPORT" or email_type is None:
+                    service.execute_email_delivery(
+                        delivery_id=delivery_id,
+                        report_id=report_id,
+                        actor_user_id=actor_user_id,
+                        recipient_email=recipient_email,
+                        version=version,
+                        attempt_count=attempt_count,
+                        max_attempts=max_attempts
+                    )
+                else:
+                    service.execute_account_email_delivery(
+                        delivery_id=delivery_id,
+                        recipient_email=recipient_email,
+                        subject=subject,
+                        body_text=body_text,
+                        body_html=body_html,
+                        attempt_count=attempt_count,
+                        max_attempts=max_attempts
+                    )
             except Exception as exec_err:
                 logger.error(f"Failed to execute retry for delivery ID {delivery_id}: {exec_err}")

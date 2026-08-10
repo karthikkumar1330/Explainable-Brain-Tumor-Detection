@@ -199,8 +199,8 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         create_email_deliveries_table_sql = """
         CREATE TABLE IF NOT EXISTS email_deliveries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            report_id INTEGER NOT NULL,
-            actor_user_id INTEGER NOT NULL,
+            report_id INTEGER,
+            actor_user_id INTEGER,
             recipient_email TEXT NOT NULL,
             status TEXT NOT NULL,
             attempted_at TEXT NOT NULL,
@@ -215,6 +215,10 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             last_failure_code TEXT,
             retryable INTEGER NOT NULL DEFAULT 1,
             report_version INTEGER DEFAULT NULL,
+            email_type TEXT DEFAULT 'REPORT',
+            subject TEXT,
+            body_text TEXT,
+            body_html TEXT,
             FOREIGN KEY (report_id) REFERENCES reports(report_id) ON DELETE CASCADE,
             FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE CASCADE
         );
@@ -323,24 +327,72 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 except Exception as backfill_err:
                     self.logger.warning(f"Failed to backfill F2.2 columns: {backfill_err}")
 
-                # Migrate email_deliveries to support G6 retry fields
-                for col, col_type, col_default in [
-                    ("attempt_count", "INTEGER", "0"),
-                    ("max_attempts", "INTEGER", "3"),
-                    ("next_retry_at", "TEXT", "NULL"),
-                    ("last_attempt_at", "TEXT", "NULL"),
-                    ("last_failure_code", "TEXT", "NULL"),
-                    ("retryable", "INTEGER", "1"),
-                    ("report_version", "INTEGER", "NULL")
-                ]:
-                    try:
-                        conn.execute(f"SELECT {col} FROM email_deliveries LIMIT 1;")
-                    except sqlite3.OperationalError:
+                # Migrate email_deliveries to nullable columns and add new fields
+                cursor = conn.cursor()
+                cursor.execute("PRAGMA table_info(email_deliveries);")
+                cols_info = cursor.fetchall()
+                cols_dict = {row["name"]: row for row in cols_info}
+
+                need_migration = False
+                if "email_type" not in cols_dict:
+                    need_migration = True
+                elif cols_dict["report_id"]["notnull"] == 1:
+                    need_migration = True
+
+                if need_migration:
+                    self.logger.info("Migrating email_deliveries schema to nullable report_id/actor_user_id and adding new columns...")
+                    conn.execute("PRAGMA foreign_keys = OFF;")
+
+                    conn.execute("DROP TABLE IF EXISTS _email_deliveries_old;")
+                    conn.execute("ALTER TABLE email_deliveries RENAME TO _email_deliveries_old;")
+
+                    conn.execute(create_email_deliveries_table_sql)
+
+                    old_cols_in_db = list(cols_dict.keys())
+                    target_cols = [c for c in [
+                        "id", "report_id", "actor_user_id", "recipient_email", "status", "attempted_at",
+                        "sent_at", "failure_reason", "created_at", "updated_at", "attempt_count",
+                        "max_attempts", "next_retry_at", "last_attempt_at", "last_failure_code",
+                        "retryable", "report_version"
+                    ] if c in old_cols_in_db]
+
+                    cols_str = ", ".join(target_cols)
+                    conn.execute(f"""
+                        INSERT INTO email_deliveries ({cols_str})
+                        SELECT {cols_str} FROM _email_deliveries_old;
+                    """)
+
+                    conn.execute("DROP TABLE _email_deliveries_old;")
+
+                    for idx_sql in [
+                        "CREATE INDEX IF NOT EXISTS idx_email_deliveries_report ON email_deliveries(report_id);",
+                        "CREATE INDEX IF NOT EXISTS idx_email_deliveries_actor ON email_deliveries(actor_user_id);",
+                        "CREATE INDEX IF NOT EXISTS idx_email_deliveries_status ON email_deliveries(status);",
+                        "CREATE INDEX IF NOT EXISTS idx_email_deliveries_attempted ON email_deliveries(attempted_at);"
+                    ]:
+                        conn.execute(idx_sql)
+
+                    conn.execute("PRAGMA foreign_keys = ON;")
+                    self.logger.info("email_deliveries schema migration completed successfully.")
+                else:
+                    # Double-check G6 retry columns are present (fallback)
+                    for col, col_type, col_default in [
+                        ("attempt_count", "INTEGER", "0"),
+                        ("max_attempts", "INTEGER", "3"),
+                        ("next_retry_at", "TEXT", "NULL"),
+                        ("last_attempt_at", "TEXT", "NULL"),
+                        ("last_failure_code", "TEXT", "NULL"),
+                        ("retryable", "INTEGER", "1"),
+                        ("report_version", "INTEGER", "NULL")
+                    ]:
                         try:
-                            conn.execute(f"ALTER TABLE email_deliveries ADD COLUMN {col} {col_type} DEFAULT {col_default};")
-                            self.logger.info(f"Added column {col} to table email_deliveries")
-                        except Exception as alt_err:
-                            self.logger.warning(f"Could not migrate email_deliveries column {col}: {alt_err}")
+                            conn.execute(f"SELECT {col} FROM email_deliveries LIMIT 1;")
+                        except sqlite3.OperationalError:
+                            try:
+                                conn.execute(f"ALTER TABLE email_deliveries ADD COLUMN {col} {col_type} DEFAULT {col_default};")
+                                self.logger.info(f"Added column {col} to table email_deliveries")
+                            except Exception as alt_err:
+                                self.logger.warning(f"Could not migrate email_deliveries column {col}: {alt_err}")
 
             self.logger.info("Database schema and analytics indices verified successfully.")
         except Exception as e:

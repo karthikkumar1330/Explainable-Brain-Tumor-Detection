@@ -33,12 +33,9 @@ class SQLiteUserRepository(IUserRepository):
             if "google_id" in columns:
                 self.logger.info("Legacy columns detected in users table. Cleaning and recreating security tables...")
                 cursor.execute("DROP TABLE IF EXISTS verification_tokens;")
+                cursor.execute("DROP TABLE IF EXISTS password_reset_tokens;")
                 cursor.execute("DROP TABLE IF EXISTS otp_codes;")
                 cursor.execute("DROP TABLE IF EXISTS users;")
-
-            # Also drop token/otp tables if they exist (since they are permanently removed)
-            cursor.execute("DROP TABLE IF EXISTS verification_tokens;")
-            cursor.execute("DROP TABLE IF EXISTS otp_codes;")
 
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -68,6 +65,32 @@ class SQLiteUserRepository(IUserRepository):
                 user_id INTEGER PRIMARY KEY,
                 otp_code TEXT NOT NULL,
                 expires_at TEXT NOT NULL,
+                attempt_count INTEGER DEFAULT 0,
+                max_attempts INTEGER DEFAULT 3,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            """)
+
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS verification_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token_hash TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                used_at TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            """)
+
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token_hash TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                used_at TEXT,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
@@ -151,11 +174,24 @@ class SQLiteUserRepository(IUserRepository):
                 cursor.execute("DROP TABLE _security_audit_logs_old;")
                 self.logger.info("security_audit_logs schema migration completed successfully.")
 
+            # Run column migrations for otp_codes if needed
+            for col, col_type in [("attempt_count", "INTEGER DEFAULT 0"),
+                                  ("max_attempts", "INTEGER DEFAULT 3")]:
+                try:
+                    cursor.execute(f"ALTER TABLE otp_codes ADD COLUMN {col} {col_type};")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column name" not in str(e).lower() and "already exists" not in str(e).lower():
+                        raise
+
             # Create Indexes
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_security_audit_logs_user ON security_audit_logs(user_id);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_security_audit_logs_timestamp ON security_audit_logs(timestamp);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON revoked_tokens(expires_at);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_revoked_tokens_user ON revoked_tokens(user_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_verification_tokens_user ON verification_tokens(user_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_verification_tokens_hash ON verification_tokens(token_hash);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_hash ON password_reset_tokens(token_hash);")
 
             conn.commit()
             self.logger.info("Security database tables initialized successfully.")
@@ -471,5 +507,75 @@ class SQLiteUserRepository(IUserRepository):
                             """, (jti, user_id, logout_time, expires_at))
                     except Exception:
                         pass
+        finally:
+            conn.close()
+
+    def save_verification_token(self, user_id: int, token_hash: str, expires_at: str) -> None:
+        conn = self._get_connection()
+        try:
+            with conn:
+                conn.execute("""
+                    INSERT INTO verification_tokens (user_id, token_hash, expires_at, created_at)
+                    VALUES (?, ?, ?, ?);
+                """, (user_id, token_hash, expires_at, datetime.datetime.utcnow().isoformat()))
+        finally:
+            conn.close()
+
+    def get_verification_token(self, token_hash: str) -> Optional[Dict[str, Any]]:
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, user_id, token_hash, expires_at, used_at, created_at
+                FROM verification_tokens WHERE token_hash = ?;
+            """, (token_hash,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def consume_verification_token(self, token_hash: str) -> None:
+        conn = self._get_connection()
+        try:
+            with conn:
+                now = datetime.datetime.utcnow().isoformat()
+                conn.execute("""
+                    UPDATE verification_tokens SET used_at = ? WHERE token_hash = ?;
+                """, (now, token_hash))
+        finally:
+            conn.close()
+
+    def save_password_reset_token(self, user_id: int, token_hash: str, expires_at: str) -> None:
+        conn = self._get_connection()
+        try:
+            with conn:
+                conn.execute("""
+                    INSERT INTO password_reset_tokens (user_id, token_hash, expires_at, created_at)
+                    VALUES (?, ?, ?, ?);
+                """, (user_id, token_hash, expires_at, datetime.datetime.utcnow().isoformat()))
+        finally:
+            conn.close()
+
+    def get_password_reset_token(self, token_hash: str) -> Optional[Dict[str, Any]]:
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, user_id, token_hash, expires_at, used_at, created_at
+                FROM password_reset_tokens WHERE token_hash = ?;
+            """, (token_hash,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def consume_password_reset_token(self, token_hash: str) -> None:
+        conn = self._get_connection()
+        try:
+            with conn:
+                now = datetime.datetime.utcnow().isoformat()
+                conn.execute("""
+                    UPDATE password_reset_tokens SET used_at = ? WHERE token_hash = ?;
+                """, (now, token_hash))
         finally:
             conn.close()

@@ -17,18 +17,22 @@ class TFAService:
 
     @staticmethod
     def save_otp(db_path: str, user_id: int, otp_code: str, expires_in_seconds: int = 300) -> None:
-        """Saves the OTP code to database, replacing any existing active OTP for the user."""
+        """Saves the OTP code to database as a SHA-256 hash, replacing any existing active OTP for the user."""
+        import hashlib
         now = datetime.datetime.utcnow()
         expires_at = (now + datetime.timedelta(seconds=expires_in_seconds)).isoformat()
         created_at = now.isoformat()
+
+        # Hash code using SHA-256
+        otp_hash = hashlib.sha256(otp_code.strip().encode("utf-8")).hexdigest()
 
         conn = sqlite3.connect(db_path)
         try:
             with conn:
                 conn.execute("""
-                    INSERT OR REPLACE INTO otp_codes (user_id, otp_code, expires_at, created_at)
-                    VALUES (?, ?, ?, ?);
-                """, (user_id, otp_code, expires_at, created_at))
+                    INSERT OR REPLACE INTO otp_codes (user_id, otp_code, expires_at, attempt_count, max_attempts, created_at)
+                    VALUES (?, ?, ?, 0, 3, ?);
+                """, (user_id, otp_hash, expires_at, created_at))
         finally:
             conn.close()
 
@@ -37,22 +41,34 @@ class TFAService:
         """
         Verifies the user's OTP code.
         If valid and not expired, returns True and deletes the code to prevent reuse (single-use constraint).
+        Enforces maximum verification attempts.
         """
         if not input_otp_code:
             return False
+
+        import hashlib
+        input_hash = hashlib.sha256(input_otp_code.strip().encode("utf-8")).hexdigest()
 
         conn = sqlite3.connect(db_path)
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT otp_code, expires_at FROM otp_codes WHERE user_id = ?;
+                SELECT otp_code, expires_at, attempt_count, max_attempts FROM otp_codes WHERE user_id = ?;
             """, (user_id,))
             row = cursor.fetchone()
             if not row:
                 return False
 
-            stored_otp, expires_at_str = row
-            
+            stored_otp_hash, expires_at_str = row[0], row[1]
+            attempt_count = row[2] if len(row) > 2 and row[2] is not None else 0
+            max_attempts = row[3] if len(row) > 3 and row[3] is not None else 3
+
+            # Check maximum attempts exceeded
+            if attempt_count >= max_attempts:
+                with conn:
+                    conn.execute("DELETE FROM otp_codes WHERE user_id = ?;", (user_id,))
+                return False
+
             # Check expiration
             expires_at = datetime.datetime.fromisoformat(expires_at_str)
             if datetime.datetime.utcnow() > expires_at:
@@ -62,15 +78,24 @@ class TFAService:
                 return False
 
             # Constant-time comparison
-            is_valid = secrets.compare_digest(stored_otp.strip(), input_otp_code.strip())
-            
+            is_valid = secrets.compare_digest(stored_otp_hash.strip(), input_hash.strip())
+
             if is_valid:
                 # Delete on use
                 with conn:
                     conn.execute("DELETE FROM otp_codes WHERE user_id = ?;", (user_id,))
                 return True
-            
-            return False
+            else:
+                new_attempts = attempt_count + 1
+                if new_attempts >= max_attempts:
+                    with conn:
+                        conn.execute("DELETE FROM otp_codes WHERE user_id = ?;", (user_id,))
+                else:
+                    with conn:
+                        conn.execute("""
+                            UPDATE otp_codes SET attempt_count = ? WHERE user_id = ?;
+                        """, (new_attempts, user_id))
+                return False
         finally:
             conn.close()
 
@@ -119,19 +144,52 @@ class TFAService:
 
     @staticmethod
     def send_otp_via_email(email: str, otp_code: str) -> None:
-        """Simulates sending the OTP code via email by writing it to secure logs."""
-        logger.info(f"[EMAIL SEND SUCCESS] Secure 2FA verification code sent to {email}. Code: {otp_code}")
-        # Print for terminal-based validation during manual checks
-        print(f"\n>>> [2FA OTP Dispatch] Sent OTP to {email}: {otp_code} <<<\n")
+        """Sends the OTP code via email using the configured SMTP server and templates."""
+        from security.application.use_cases import is_testing_env
+        if is_testing_env():
+            logger.info(f"[EMAIL SEND SUCCESS] Secure 2FA verification code sent to {email}. Code: {otp_code}")
+            print(f"\n>>> [2FA OTP Dispatch] Sent OTP to {email}: {otp_code} <<<\n")
+        else:
+            logger.info(f"[EMAIL SEND SUCCESS] Secure 2FA verification code sent successfully to {email}")
+            print(f"\n>>> [2FA OTP Dispatch] Sent OTP successfully <<<\n")
+
+        try:
+            import os
+            from clinical_reporting.presentation.email_templates import EmailTemplateRenderer
+            from security.application.use_cases import send_account_email
+
+            # Retrieve user name from email
+            db_path = os.environ.get("DB_PATH", "outputs/clinical_reports.db")
+
+            from security.infrastructure.repository import SQLiteUserRepository
+            repo = SQLiteUserRepository(db_path=db_path)
+            user = repo.get_by_email(email)
+            user_name = user.full_name if user else "User"
+
+            html_body, text_body = EmailTemplateRenderer.render_otp(
+                otp_code=otp_code,
+                user_name=user_name
+            )
+
+            send_account_email(
+                db_path=db_path,
+                recipient_email=email,
+                subject="Your AuraScan AI Verification Code",
+                body_text=text_body,
+                body_html=html_body,
+                email_type="OTP"
+            )
+        except Exception as e:
+            logger.error(f"Failed to send OTP email: {e}")
 
     @staticmethod
     def parse_user_agent(user_agent_str: str) -> tuple[str, str]:
         """Returns (browser, device) from User-Agent string."""
         if not user_agent_str:
             return "Unknown Browser", "Unknown Device"
-        
+
         ua = user_agent_str.lower()
-        
+
         # Parse Browser
         if "edg" in ua:
             browser = "Microsoft Edge"
@@ -147,7 +205,7 @@ class TFAService:
             browser = "Internet Explorer"
         else:
             browser = "Other Browser"
-            
+
         # Parse Device
         if "ipad" in ua:
             device = "Tablet (iPad)"
@@ -162,7 +220,7 @@ class TFAService:
             device = "Mobile Device"
         else:
             device = "Desktop"
-            
+
         return browser, device
 
     @staticmethod
@@ -172,7 +230,7 @@ class TFAService:
             return "Localhost"
         if ip.startswith("192.168.") or ip.startswith("10.") or ip.startswith("172."):
             return "Local Network"
-            
+
         try:
             import urllib.request
             import json
