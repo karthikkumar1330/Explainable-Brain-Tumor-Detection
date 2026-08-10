@@ -1167,13 +1167,33 @@
                     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         <!-- Fuzzy Text Search -->
                         <div class="flex flex-col gap-1.5">
-                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Search Query</label>
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Global Search</label>
                             <div class="relative w-full">
                                 <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-[11px] text-slate-500"></i>
-                                <input id="registry-search" type="text" placeholder="ID, Name, or Physician..." oninput="updateRegistryView()" class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
+                                <input id="registry-search" type="text" placeholder="Search ID, name, doctor..." oninput="debouncedUpdateRegistry()" onkeydown="if(event.key==='Enter') { updateRegistryView(); }" class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
                             </div>
                         </div>
 
+                        <!-- Patient Name Filter -->
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Patient Name</label>
+                            <input id="registry-patient-name" type="text" placeholder="Filter patient name..." oninput="debouncedUpdateRegistry()" onkeydown="if(event.key==='Enter') { updateRegistryView(); }" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
+                        </div>
+
+                        <!-- Patient ID Filter -->
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Patient ID</label>
+                            <input id="registry-patient-id" type="text" placeholder="Filter patient ID..." oninput="debouncedUpdateRegistry()" onkeydown="if(event.key==='Enter') { updateRegistryView(); }" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
+                        </div>
+
+                        <!-- Referring Doctor Filter -->
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Referring Doctor</label>
+                            <input id="registry-ref-physician" type="text" placeholder="Filter doctor name..." oninput="debouncedUpdateRegistry()" onkeydown="if(event.key==='Enter') { updateRegistryView(); }" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 border-t border-slate-850/60 pt-4">
                         <!-- Diagnosis Class Dropdown -->
                         <div class="flex flex-col gap-1.5">
                             <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Diagnosis Class</label>
@@ -1207,10 +1227,22 @@
                                 <input id="registry-confidence" type="range" min="0" max="100" value="0" oninput="updateRegistryConfidenceVal(this.value); updateRegistryView();" class="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-400">
                             </div>
                         </div>
+
+                        <!-- Report Status Dropdown -->
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Report Status</label>
+                            <select id="registry-status" onchange="updateRegistryView()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
+                                <option value="ALL">All Statuses</option>
+                                <option value="GENERATED">Generated</option>
+                                <option value="DRAFT">Draft</option>
+                                <option value="FINALIZED">Finalized</option>
+                                <option value="ARCHIVED">Archived</option>
+                            </select>
+                        </div>
                     </div>
 
-                    <!-- Date Range Filter Row -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-850/60 pt-4">
+                    <!-- Date Range & Action Row -->
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-slate-850/60 pt-4">
                         <div class="flex flex-col gap-1.5">
                             <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Scan Start Date</label>
                             <input id="registry-start-date" type="date" onchange="updateRegistryView()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
@@ -1219,6 +1251,19 @@
                             <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Scan End Date</label>
                             <input id="registry-end-date" type="date" onchange="updateRegistryView()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
                         </div>
+                        <div class="flex items-end gap-2.5">
+                            <button id="registry-apply-btn" onclick="updateRegistryView()" class="w-full text-xs bg-sky-600 hover:bg-sky-700 text-white font-bold h-9 px-4 rounded-xl transition flex items-center justify-center gap-1.5 shadow-md">
+                                <i class="fa-solid fa-check"></i> Apply Filters
+                            </button>
+                            <button id="registry-reset-btn" onclick="resetRegistryFilters()" class="w-full text-xs bg-slate-900 hover:bg-slate-800 text-slate-400 font-bold h-9 px-4 rounded-xl border border-slate-800 transition flex items-center justify-center gap-1.5">
+                                <i class="fa-solid fa-filter-circle-xmark"></i> Reset Filters
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Active Filter Indicators -->
+                    <div id="active-filter-indicators" class="flex flex-wrap gap-2 text-xs hidden pt-2 border-t border-slate-850/60">
+                        <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center mr-1">Active Filters:</span>
                     </div>
                 </div>
 
@@ -3286,6 +3331,16 @@
         }
 
         // Advanced Patient History Registry Workstation Operations
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+
+        const debouncedUpdateRegistry = debounce(updateRegistryView, 400);
+
         function loadRegistryData() {
             registryPage = 1;
             updateRegistryView();
@@ -3297,6 +3352,10 @@
 
         function resetRegistryFilters() {
             document.getElementById("registry-search").value = "";
+            if (document.getElementById("registry-patient-name")) document.getElementById("registry-patient-name").value = "";
+            if (document.getElementById("registry-patient-id")) document.getElementById("registry-patient-id").value = "";
+            if (document.getElementById("registry-ref-physician")) document.getElementById("registry-ref-physician").value = "";
+            if (document.getElementById("registry-status")) document.getElementById("registry-status").value = "ALL";
             document.getElementById("registry-class").value = "ALL";
             document.getElementById("registry-severity").value = "ALL";
             document.getElementById("registry-confidence").value = 0;
@@ -3307,169 +3366,186 @@
             updateRegistryView();
         }
 
-        function getFilteredRecords() {
-            if (!Array.isArray(allScans)) return [];
+        async function updateRegistryView() {
+            const tbody = document.getElementById("registry-table-body");
+            if (!tbody) return;
+            tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-500 font-medium"><i class="fa-solid fa-spinner fa-spin text-sky-400 mr-2"></i>Loading registry records...</td></tr>`;
 
-            const searchVal = document.getElementById("registry-search").value.trim().toLowerCase();
+            const searchVal = document.getElementById("registry-search").value.trim();
+            const patientNameVal = document.getElementById("registry-patient-name") ? document.getElementById("registry-patient-name").value.trim() : "";
+            const patientIdVal = document.getElementById("registry-patient-id") ? document.getElementById("registry-patient-id").value.trim() : "";
+            const refPhysicianVal = document.getElementById("registry-ref-physician") ? document.getElementById("registry-ref-physician").value.trim() : "";
             const classVal = document.getElementById("registry-class").value;
             const severityVal = document.getElementById("registry-severity").value;
             const minConf = parseFloat(document.getElementById("registry-confidence").value) / 100;
             const startDateVal = document.getElementById("registry-start-date").value;
             const endDateVal = document.getElementById("registry-end-date").value;
+            const statusVal = document.getElementById("registry-status") ? document.getElementById("registry-status").value : "ALL";
 
-            return allScans.filter(r => {
-                // 1. Fuzzy Text Matching
-                if (searchVal) {
-                    const matchName = (r.patient_name || '').toLowerCase().includes(searchVal);
-                    const matchId = (r.patient_id || '').toLowerCase().includes(searchVal);
-                    const matchReportId = String(r.report_id).includes(searchVal);
-                    if (!matchName && !matchId && !matchReportId) return false;
+            // Render Active Filter Indicators
+            const indicatorsContainer = document.getElementById("active-filter-indicators");
+            if (indicatorsContainer) {
+                indicatorsContainer.innerHTML = '<span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center mr-1">Active Filters:</span>';
+                let activeFiltersCount = 0;
+
+                function addIndicator(label, clearFunc) {
+                    activeFiltersCount++;
+                    const badge = document.createElement("div");
+                    badge.className = "flex items-center gap-1 bg-slate-800 text-sky-400 px-2 py-0.5 rounded-lg border border-slate-700 text-[10px] font-bold";
+                    badge.innerHTML = `<span>${label}</span><button type="button" class="hover:text-red-400 text-slate-500 font-extrabold ml-1">&times;</button>`;
+                    badge.querySelector("button").onclick = () => {
+                        clearFunc();
+                        updateRegistryView();
+                    };
+                    indicatorsContainer.appendChild(badge);
                 }
 
-                // 2. Class Match
-                if (classVal !== 'ALL') {
-                    if (r.predicted_class !== classVal) return false;
-                }
-
-                // 3. Severity Match
-                if (severityVal !== 'ALL') {
-                    if (r.rule_based_severity !== severityVal) return false;
-                }
-
-                // 4. Min Confidence
-                if (r.confidence_score < minConf) return false;
-
-                // 5. Date Range Match
-                if (startDateVal) {
-                    const recordDate = new Date(r.scan_date);
-                    const startFilter = new Date(startDateVal);
-                    if (recordDate < startFilter) return false;
-                }
-                if (endDateVal) {
-                    const recordDate = new Date(r.scan_date);
-                    const endFilter = new Date(endDateVal + "T23:59:59");
-                    if (recordDate > endFilter) return false;
-                }
-
-                return true;
-            });
-        }
-
-        function updateRegistryView() {
-            let filtered = getFilteredRecords();
-
-            // Apply Sorting
-            filtered.sort((a, b) => {
-                let valA = a[registrySortColumn];
-                let valB = b[registrySortColumn];
-
-                if (registrySortColumn === 'scan_date' || registrySortColumn === 'created_at') {
-                    valA = new Date(valA);
-                    valB = new Date(valB);
-                }
-
-                if (valA < valB) return registrySortOrder === 'asc' ? -1 : 1;
-                if (valA > valB) return registrySortOrder === 'asc' ? 1 : -1;
-                return 0;
-            });
-
-            // Pagination Calculations
-            const totalRecords = filtered.length;
-            const totalPages = Math.max(Math.ceil(totalRecords / registryPageSize), 1);
-            if (registryPage > totalPages) registryPage = totalPages;
-
-            const startIndex = (registryPage - 1) * registryPageSize;
-            const endIndex = Math.min(startIndex + registryPageSize, totalRecords);
-            const paginated = filtered.slice(startIndex, endIndex);
-
-            // Populate table
-            const tbody = document.getElementById("registry-table-body");
-            tbody.innerHTML = "";
-
-            if (paginated.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-500 font-medium">No registry records match your criteria.</td></tr>`;
-            } else {
-                paginated.forEach(r => {
-                    const confPct = (r.confidence_score * 100).toFixed(1);
-                    const severityStyle = r.rule_based_severity.toLowerCase() === 'high' ? 'badge badge-error' :
-                                          r.rule_based_severity.toLowerCase() === 'medium' ? 'badge badge-warning' :
-                                          'badge badge-success';
-
-                    const nameParts = (r.patient_name || 'Patient').split(' ');
-                    const initials = nameParts.length >= 2 ? (nameParts[0][0] + nameParts[nameParts.length-1][0]).toUpperCase() : (r.patient_name || 'PT').substring(0,2).toUpperCase();
-
-                    tbody.innerHTML += `
-                    <tr class="table-row-hover">
-                        <td class="p-4 font-bold text-slate-300 font-mono">#${r.report_id}</td>
-                        <td class="p-4">
-                            <div class="flex items-center space-x-2.5">
-                                <div class="h-8 w-8 rounded-full bg-slate-800 text-sky-400 font-extrabold flex items-center justify-center text-[10px] border border-slate-700">
-                                    ${initials}
-                                </div>
-                                <div>
-                                    <div class="font-bold text-slate-200 text-xs">${r.patient_name}</div>
-                                    <div class="text-[10px] text-slate-400 font-mono">${r.patient_id}</div>
-                                </div>
-                            </div>
-                        </td>
-                        <td class="p-4 text-slate-400 font-medium text-xs">${r.scan_date}</td>
-                        <td class="p-4 font-extrabold text-slate-100 text-xs">
-                            <i class="fa-solid fa-brain text-sky-400 mr-1.5"></i> ${r.predicted_class}
-                        </td>
-                        <td class="p-4">
-                            <span class="${severityStyle}">
-                                ${r.rule_based_severity}
-                            </span>
-                        </td>
-                        <td class="p-4">
-                            <div class="w-24">
-                                <div class="flex justify-between text-[10px] font-bold mb-1 text-slate-300">
-                                    <span>Conf</span>
-                                    <span>${confPct}%</span>
-                                </div>
-                                <div class="progress-track w-full">
-                                    <div class="progress-fill" style="width: ${confPct}%"></div>
-                                </div>
-                            </div>
-                        </td>
-                        <td class="p-4 text-center">
-                            <div class="flex items-center justify-center space-x-2">
-                                <button onclick="viewDetails(${r.report_id})" class="btn-secondary text-[11px] h-8 px-2.5">
-                                    <i class="fa-solid fa-eye text-sky-400"></i> Visuals
-                                </button>
-                                <button onclick="openReportPreview(${r.report_id})" class="btn-secondary text-[11px] h-8 px-2.5 cursor-pointer">
-                                    <i class="fa-solid fa-eye text-sky-400"></i> Preview
-                                </button>
-                                <a href="/api/report/${r.report_id}/json" target="_blank" class="btn-secondary text-[11px] h-8 px-2.5 flex items-center gap-1 border border-slate-700">
-                                    <i class="fa-solid fa-file-code text-amber-400"></i> JSON
-                                </a>
-                                <a href="/api/report/${r.report_id}/pdf" target="_blank" class="btn-primary text-[11px] h-8 px-2.5">
-                                    <i class="fa-solid fa-file-pdf"></i> PDF
-                                </a>
-                            </div>
-                        </td>
-                    </tr>
-                    `;
+                if (searchVal) addIndicator(`Query: "${searchVal}"`, () => { document.getElementById("registry-search").value = ""; });
+                if (patientNameVal) addIndicator(`Name: "${patientNameVal}"`, () => { document.getElementById("registry-patient-name").value = ""; });
+                if (patientIdVal) addIndicator(`ID: "${patientIdVal}"`, () => { document.getElementById("registry-patient-id").value = ""; });
+                if (refPhysicianVal) addIndicator(`Doctor: "${refPhysicianVal}"`, () => { document.getElementById("registry-ref-physician").value = ""; });
+                if (classVal !== "ALL") addIndicator(`Class: ${classVal}`, () => { document.getElementById("registry-class").value = "ALL"; });
+                if (severityVal !== "ALL") addIndicator(`Severity: ${severityVal}`, () => { document.getElementById("registry-severity").value = "ALL"; });
+                if (minConf > 0) addIndicator(`Conf >= ${(minConf * 100).toFixed(0)}%`, () => {
+                    document.getElementById("registry-confidence").value = 0;
+                    document.getElementById("registry-confidence-val").innerText = "0%";
                 });
+                if (startDateVal) addIndicator(`From: ${startDateVal}`, () => { document.getElementById("registry-start-date").value = ""; });
+                if (endDateVal) addIndicator(`To: ${endDateVal}`, () => { document.getElementById("registry-end-date").value = ""; });
+                if (statusVal !== "ALL") addIndicator(`Status: ${statusVal}`, () => { document.getElementById("registry-status").value = "ALL"; });
+
+                if (activeFiltersCount > 0) {
+                    indicatorsContainer.classList.remove("hidden");
+                } else {
+                    indicatorsContainer.classList.add("hidden");
+                }
             }
 
-            // Update Pagination display
-            document.getElementById("registry-pagination-info").innerText =
-                totalRecords > 0 ? `Showing ${startIndex + 1} to ${endIndex} of ${totalRecords} records` : "Showing 0 to 0 of 0 records";
+            const params = new URLSearchParams();
+            if (searchVal) params.append("q", searchVal);
+            if (patientNameVal) params.append("patient_name", patientNameVal);
+            if (patientIdVal) params.append("patient_id", patientIdVal);
+            if (refPhysicianVal) params.append("referring_doctor", refPhysicianVal);
+            if (classVal !== "ALL") params.append("classification", classVal);
+            if (severityVal !== "ALL") params.append("severity", severityVal);
+            if (minConf > 0) params.append("min_confidence", minConf);
+            if (startDateVal) params.append("start_date", startDateVal);
+            if (endDateVal) params.append("end_date", endDateVal);
+            if (statusVal !== "ALL") params.append("report_status", statusVal);
 
-            document.getElementById("registry-prev-btn").disabled = (registryPage === 1);
-            document.getElementById("registry-next-btn").disabled = (registryPage === totalPages);
+            params.append("sort_by", registrySortColumn);
+            params.append("sort_order", registrySortOrder);
+            params.append("page", registryPage);
+            params.append("page_size", registryPageSize);
 
-            // Render Sort arrow icons
-            ['report_id', 'patient_name', 'scan_date', 'predicted_class', 'rule_based_severity', 'confidence_score'].forEach(col => {
-                const el = document.getElementById(`sort-icon-${col}`);
-                if (!el) return;
-                if (registrySortColumn === col) {
-                    el.innerHTML = registrySortOrder === 'asc' ? '<i class="fa-solid fa-caret-up text-[10px] ml-1 text-sky-400"></i>' : '<i class="fa-solid fa-caret-down text-[10px] ml-1 text-sky-400"></i>';
-                } else {
-                    el.innerHTML = '<i class="fa-solid fa-sort text-[9px] ml-1 text-slate-500"></i>';
+            try {
+                const res = await fetchWithAuth(`/api/search?${params.toString()}`);
+                if (!res.ok) {
+                    throw new Error(`Server returned ${res.status} ${res.statusText}`);
                 }
-            });
+                const data = await res.json();
+
+                const items = data.items || [];
+                const totalRecords = data.total_count || 0;
+                const totalPages = data.total_pages || 1;
+
+                tbody.innerHTML = "";
+
+                if (items.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-500 font-medium">No registry records match your criteria.</td></tr>`;
+                } else {
+                    items.forEach(r => {
+                        const confPct = (r.confidence_score * 100).toFixed(1);
+                        const severityStyle = r.rule_based_severity.toLowerCase() === 'high' ? 'badge badge-error' :
+                                              r.rule_based_severity.toLowerCase() === 'medium' ? 'badge badge-warning' :
+                                              'badge badge-success';
+
+                        const nameParts = (r.patient_name || 'Patient').split(' ');
+                        const initials = nameParts.length >= 2 ? (nameParts[0][0] + nameParts[nameParts.length-1][0]).toUpperCase() : (r.patient_name || 'PT').substring(0,2).toUpperCase();
+
+                        tbody.innerHTML += `
+                        <tr class="table-row-hover">
+                            <td class="p-4 font-bold text-slate-300 font-mono">#${r.report_id}</td>
+                            <td class="p-4">
+                                <div class="flex items-center space-x-2.5">
+                                    <div class="h-8 w-8 rounded-full bg-slate-800 text-sky-400 font-extrabold flex items-center justify-center text-[10px] border border-slate-700">
+                                        ${initials}
+                                    </div>
+                                    <div>
+                                        <div class="font-bold text-slate-200 text-xs">${r.patient_name}</div>
+                                        <div class="text-[10px] text-slate-400 font-mono">${r.patient_id}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="p-4 text-slate-400 font-medium text-xs">
+                                <div>${r.scan_date}</div>
+                                <div class="text-[9px] text-slate-500 font-mono">Doctor: ${r.referring_doctor || 'N/A'}</div>
+                            </td>
+                            <td class="p-4 font-extrabold text-slate-100 text-xs">
+                                <i class="fa-solid fa-brain text-sky-400 mr-1.5"></i> ${r.predicted_class}
+                            </td>
+                            <td class="p-4">
+                                <span class="${severityStyle}">
+                                    ${r.rule_based_severity}
+                                </span>
+                                <div class="text-[9px] text-slate-500 mt-1 uppercase font-bold tracking-wider">${r.report_status || 'GENERATED'}</div>
+                            </td>
+                            <td class="p-4">
+                                <div class="w-24">
+                                    <div class="flex justify-between text-[10px] font-bold mb-1 text-slate-300">
+                                        <span>Conf</span>
+                                        <span>${confPct}%</span>
+                                    </div>
+                                    <div class="progress-track w-full">
+                                        <div class="progress-fill" style="width: ${confPct}%"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="p-4 text-center">
+                                <div class="flex items-center justify-center space-x-2">
+                                    <button onclick="viewDetails(${r.report_id})" class="btn-secondary text-[11px] h-8 px-2.5">
+                                        <i class="fa-solid fa-eye text-sky-400"></i> Visuals
+                                    </button>
+                                    <button onclick="openReportPreview(${r.report_id})" class="btn-secondary text-[11px] h-8 px-2.5 cursor-pointer">
+                                        <i class="fa-solid fa-eye text-sky-400"></i> Preview
+                                    </button>
+                                    <a href="/api/report/${r.report_id}/json" target="_blank" class="btn-secondary text-[11px] h-8 px-2.5 flex items-center gap-1 border border-slate-700">
+                                        <i class="fa-solid fa-file-code text-amber-400"></i> JSON
+                                    </a>
+                                    <a href="/api/report/${r.report_id}/pdf" target="_blank" class="btn-primary text-[11px] h-8 px-2.5">
+                                        <i class="fa-solid fa-file-pdf"></i> PDF
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        `;
+                    });
+                }
+
+                // Update Pagination display
+                const startIndex = (registryPage - 1) * registryPageSize;
+                const endIndex = Math.min(startIndex + items.length, totalRecords);
+                document.getElementById("registry-pagination-info").innerText =
+                    totalRecords > 0 ? `Showing ${startIndex + 1} to ${endIndex} of ${totalRecords} records` : "Showing 0 to 0 of 0 records";
+
+                document.getElementById("registry-prev-btn").disabled = (registryPage === 1);
+                document.getElementById("registry-next-btn").disabled = (registryPage === totalPages);
+
+                // Render Sort arrow icons
+                ['report_id', 'patient_name', 'scan_date', 'predicted_class', 'rule_based_severity', 'confidence_score'].forEach(col => {
+                    const el = document.getElementById(`sort-icon-${col}`);
+                    if (!el) return;
+                    if (registrySortColumn === col) {
+                        el.innerHTML = registrySortOrder === 'asc' ? '<i class="fa-solid fa-caret-up text-[10px] ml-1 text-sky-400"></i>' : '<i class="fa-solid fa-caret-down text-[10px] ml-1 text-sky-400"></i>';
+                    } else {
+                        el.innerHTML = '<i class="fa-solid fa-sort text-[9px] ml-1 text-slate-500"></i>';
+                    }
+                });
+
+            } catch (err) {
+                console.error("Failed to load clinical registry from backend: ", err);
+                tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-red-400 font-bold">Failed to load clinical registry from server.</td></tr>`;
+            }
         }
 
         function toggleRegistrySort(column) {
@@ -3496,50 +3572,76 @@
         }
 
         function nextRegistryPage() {
-            const filtered = getFilteredRecords();
-            const totalPages = Math.ceil(filtered.length / registryPageSize);
-            if (registryPage < totalPages) {
-                registryPage++;
-                updateRegistryView();
-            }
+            registryPage++;
+            updateRegistryView();
         }
 
-        function exportRegistryToCSV() {
-            const records = getFilteredRecords();
-            if (records.length === 0) {
-                alert("No records matches the current filters to export.");
-                return;
+        async function exportRegistryToCSV() {
+            const searchVal = document.getElementById("registry-search").value.trim();
+            const patientNameVal = document.getElementById("registry-patient-name") ? document.getElementById("registry-patient-name").value.trim() : "";
+            const patientIdVal = document.getElementById("registry-patient-id") ? document.getElementById("registry-patient-id").value.trim() : "";
+            const refPhysicianVal = document.getElementById("registry-ref-physician") ? document.getElementById("registry-ref-physician").value.trim() : "";
+            const classVal = document.getElementById("registry-class").value;
+            const severityVal = document.getElementById("registry-severity").value;
+            const minConf = parseFloat(document.getElementById("registry-confidence").value) / 100;
+            const startDateVal = document.getElementById("registry-start-date").value;
+            const endDateVal = document.getElementById("registry-end-date").value;
+            const statusVal = document.getElementById("registry-status") ? document.getElementById("registry-status").value : "ALL";
+
+            const params = new URLSearchParams();
+            if (searchVal) params.append("q", searchVal);
+            if (patientNameVal) params.append("patient_name", patientNameVal);
+            if (patientIdVal) params.append("patient_id", patientIdVal);
+            if (refPhysicianVal) params.append("referring_doctor", refPhysicianVal);
+            if (classVal !== "ALL") params.append("classification", classVal);
+            if (severityVal !== "ALL") params.append("severity", severityVal);
+            if (minConf > 0) params.append("min_confidence", minConf);
+            if (startDateVal) params.append("start_date", startDateVal);
+            if (endDateVal) params.append("end_date", endDateVal);
+            if (statusVal !== "ALL") params.append("report_status", statusVal);
+            params.append("sort_by", registrySortColumn);
+            params.append("sort_order", registrySortOrder);
+
+            try {
+                const res = await fetchWithAuth(`/api/search?${params.toString()}`);
+                const records = await res.json();
+                if (!Array.isArray(records) || records.length === 0) {
+                    alert("No records matches the current filters to export.");
+                    return;
+                }
+
+                let csvContent = "";
+                const headers = ["Report ID", "Patient ID", "Patient Name", "Scan Date", "Referring Doctor", "Diagnosis Category", "Rule Severity Priority", "Report Status", "Confidence Score (%)", "Tumor Size Area (mm2)"];
+                csvContent += headers.map(h => `"${h}"`).join(",") + "\r\n";
+
+                records.forEach(r => {
+                    const row = [
+                        `#${r.report_id}`,
+                        r.patient_id,
+                        r.patient_name,
+                        r.scan_date,
+                        r.referring_doctor || 'N/A',
+                        r.predicted_class,
+                        r.rule_based_severity,
+                        r.report_status || 'GENERATED',
+                        (r.confidence_score * 100).toFixed(1),
+                        r.tumor_area_mm2.toFixed(2)
+                    ];
+                    csvContent += row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",") + "\r\n";
+                });
+
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("download", `AuraScan_Patient_Registry_${new Date().toISOString().split('T')[0]}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } catch (err) {
+                alert("Failed to export registry: " + err);
             }
-
-            let csvContent = "";
-            // Header Row
-            const headers = ["Report ID", "Patient ID", "Patient Name", "Scan Date", "Diagnosis Category", "Rule Severity Priority", "Confidence Score (%)", "Tumor Size Area (mm2)"];
-            csvContent += headers.map(h => `"${h}"`).join(",") + "\r\n";
-
-            // Data Rows
-            records.forEach(r => {
-                const row = [
-                    `#${r.report_id}`,
-                    r.patient_id,
-                    r.patient_name,
-                    r.scan_date,
-                    r.predicted_class,
-                    r.rule_based_severity,
-                    (r.confidence_score * 100).toFixed(1),
-                    r.tumor_area_mm2.toFixed(2)
-                ];
-                csvContent += row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",") + "\r\n";
-            });
-
-            // Trigger Browser file download link
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.setAttribute("href", url);
-            link.setAttribute("download", `AuraScan_Patient_Registry_${new Date().toISOString().split('T')[0]}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+        }
         }
 
         // Form Submission report generation

@@ -1023,13 +1023,111 @@ def create_app(db_path: str) -> Flask:
     @app.route("/api/search")
     @login_required
     def search(current_user: User):
-        q = request.args.get("q", "").strip()
+        # 1. Parsing query parameters
+        q = request.args.get("q", "").strip() or None
+        patient_id = request.args.get("patient_id", "").strip() or None
+        patient_name = request.args.get("patient_name", "").strip() or None
+        referring_doctor = request.args.get("referring_doctor", "").strip() or None
+        classification = request.args.get("classification", "").strip() or None
+        severity = request.args.get("severity", "").strip() or None
+
+        # Validate min_confidence range
+        min_confidence_str = request.args.get("min_confidence", "").strip()
+        min_confidence = None
+        if min_confidence_str:
+            try:
+                min_confidence = float(min_confidence_str)
+                if not (0.0 <= min_confidence <= 1.0):
+                    return jsonify({"error": "min_confidence must be between 0.0 and 1.0"}), 400
+            except ValueError:
+                return jsonify({"error": "min_confidence must be a valid float"}), 400
+
+        # Validate scan date formats
+        import datetime
+        start_date = request.args.get("start_date", "").strip() or None
+        if start_date:
+            try:
+                datetime.datetime.strptime(start_date, "%Y-%m-%d")
+            except ValueError:
+                return jsonify({"error": "start_date must be in YYYY-MM-DD format"}), 400
+
+        end_date = request.args.get("end_date", "").strip() or None
+        if end_date:
+            try:
+                datetime.datetime.strptime(end_date, "%Y-%m-%d")
+            except ValueError:
+                return jsonify({"error": "end_date must be in YYYY-MM-DD format"}), 400
+
+        report_status = request.args.get("report_status", "").strip() or None
+
+        # Validate sorting fields
+        sort_by = request.args.get("sort_by", "").strip() or None
+        valid_sort_fields = [
+            "report_id", "prediction_id", "patient_id", "patient_name",
+            "scan_date", "predicted_class", "confidence_score", "tumor_area_mm2",
+            "rule_based_severity", "created_at", "referring_doctor", "report_status"
+        ]
+        if sort_by and sort_by not in valid_sort_fields:
+            return jsonify({"error": f"Invalid sort_by field. Must be one of {valid_sort_fields}"}), 400
+
+        sort_order = request.args.get("sort_order", "").strip() or None
+        if sort_order and sort_order.lower() not in ["asc", "desc"]:
+            return jsonify({"error": "sort_order must be 'asc' or 'desc'"}), 400
+
+        # Validate page / page_size
+        page_str = request.args.get("page", "").strip()
+        page = None
+        if page_str:
+            try:
+                page = int(page_str)
+                if page < 1:
+                    return jsonify({"error": "page must be greater than or equal to 1"}), 400
+            except ValueError:
+                return jsonify({"error": "page must be a valid integer"}), 400
+
+        page_size_str = request.args.get("page_size", "").strip()
+        page_size = None
+        if page_size_str:
+            try:
+                page_size = int(page_size_str)
+                if not (1 <= page_size <= 100):
+                    return jsonify({"error": "page_size must be between 1 and 100"}), 400
+            except ValueError:
+                return jsonify({"error": "page_size must be a valid integer"}), 400
+
+        # Apply Patient RBAC restrictions
+        restrict_uuid = None
+        restrict_name = None
+        if current_user.role == Role.PATIENT:
+            restrict_uuid = current_user.uuid
+            restrict_name = current_user.full_name
+
         try:
-            criteria = HistorySearchCriteria(patient_id=q if q else None)
+            criteria = HistorySearchCriteria(
+                patient_id=patient_id,
+                report_id=None,
+                scan_date=None,
+                q=q,
+                patient_name=patient_name,
+                referring_doctor=referring_doctor,
+                classification=classification,
+                severity=severity,
+                min_confidence=min_confidence,
+                start_date=start_date,
+                end_date=end_date,
+                report_status=report_status,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                page=page,
+                page_size=page_size,
+                restrict_to_patient_uuid=restrict_uuid,
+                restrict_to_patient_name=restrict_name
+            )
             summaries = history_repo.search_history(criteria)
 
             data = []
             for s in summaries:
+                # Defensive check in case database returned unfiltered records (RBAC boundary check)
                 if current_user.role == Role.PATIENT:
                     if s.patient_name.lower() != current_user.full_name.lower() and s.patient_id.lower() != current_user.uuid.lower():
                         continue
@@ -1044,8 +1142,24 @@ def create_app(db_path: str) -> Flask:
                     "tumor_area_mm2": s.tumor_area_mm2,
                     "rule_based_severity": s.rule_based_severity,
                     "created_at": s.created_at,
+                    "referring_doctor": s.referring_doctor,
+                    "report_status": s.report_status
                 })
-            return jsonify(data)
+
+            if page is not None:
+                total_count = getattr(summaries, "total_count", len(summaries))
+                import math
+                p_size = page_size or 10
+                total_pages = math.ceil(total_count / p_size)
+                return jsonify({
+                    "items": data,
+                    "total_count": total_count,
+                    "page": page,
+                    "page_size": p_size,
+                    "total_pages": total_pages
+                })
+            else:
+                return jsonify(data)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 

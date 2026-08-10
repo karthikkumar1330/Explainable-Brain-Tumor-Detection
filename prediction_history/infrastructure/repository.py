@@ -5,6 +5,13 @@ from prediction_history.domain.entities import HistorySearchCriteria, Prediction
 from prediction_history.domain.interfaces import IPredictionHistoryRepository
 
 
+class PaginatedList(list):
+    """Subclass of list that carries total count metadata for pagination."""
+    def __init__(self, items, total_count: int) -> None:
+        super().__init__(items)
+        self.total_count = total_count
+
+
 class SQLitePredictionHistoryRepository(IPredictionHistoryRepository):
     """SQLite concrete repository querying clinical and prediction database records."""
 
@@ -41,7 +48,7 @@ class SQLitePredictionHistoryRepository(IPredictionHistoryRepository):
             criteria: Search criteria constraints.
 
         Returns:
-            A list of PredictionSummary dataclasses.
+            A list of PredictionSummary dataclasses (or PaginatedList).
         """
         self.logger.info(f"Querying SQLite database: {self.db_path}")
         
@@ -56,19 +63,54 @@ class SQLitePredictionHistoryRepository(IPredictionHistoryRepository):
             pr.confidence_score,
             pr.tumor_area_mm2,
             pr.rule_based_severity,
-            cr.created_at
+            cr.created_at,
+            s.ref_physician as referring_doctor,
+            r.status as report_status
         FROM patients p
         JOIN mri_scans s ON p.patient_id = s.patient_id
         JOIN predictions pr ON s.id = pr.scan_id
         JOIN clinical_reports cr ON pr.id = cr.prediction_id
+        LEFT JOIN reports r ON cr.id = r.report_id
+        """
+
+        count_base_query = """
+        SELECT COUNT(*) as cnt
+        FROM patients p
+        JOIN mri_scans s ON p.patient_id = s.patient_id
+        JOIN predictions pr ON s.id = pr.scan_id
+        JOIN clinical_reports cr ON pr.id = cr.prediction_id
+        LEFT JOIN reports r ON cr.id = r.report_id
         """
 
         conditions = []
         params: List[Any] = []
 
+        # Patient RBAC filter
+        if criteria.restrict_to_patient_uuid is not None and criteria.restrict_to_patient_name is not None:
+            conditions.append("(p.patient_id = ? OR LOWER(p.name) = LOWER(?))")
+            params.append(criteria.restrict_to_patient_uuid)
+            params.append(criteria.restrict_to_patient_name)
+
+        # Global search input query
+        if criteria.q is not None:
+            q_clean = f"%{criteria.q}%"
+            conditions.append("(p.patient_id LIKE ? OR p.name LIKE ? OR s.ref_physician LIKE ?)")
+            params.append(q_clean)
+            params.append(q_clean)
+            params.append(q_clean)
+
+        # Exact/Partial matches
         if criteria.patient_id is not None:
             conditions.append("p.patient_id LIKE ?")
             params.append(f"%{criteria.patient_id}%")
+
+        if criteria.patient_name is not None:
+            conditions.append("p.name LIKE ?")
+            params.append(f"%{criteria.patient_name}%")
+
+        if criteria.referring_doctor is not None:
+            conditions.append("s.ref_physician LIKE ?")
+            params.append(f"%{criteria.referring_doctor}%")
 
         if criteria.report_id is not None:
             conditions.append("cr.id = ?")
@@ -78,19 +120,79 @@ class SQLitePredictionHistoryRepository(IPredictionHistoryRepository):
             conditions.append("s.scan_date LIKE ?")
             params.append(f"%{criteria.scan_date}%")
 
-        # Compile final query
+        # Specific Dropdowns / Ranges
+        if criteria.classification is not None:
+            conditions.append("LOWER(pr.predicted_class) = LOWER(?)")
+            params.append(criteria.classification)
+
+        if criteria.severity is not None:
+            conditions.append("LOWER(pr.rule_based_severity) = LOWER(?)")
+            params.append(criteria.severity)
+
+        if criteria.min_confidence is not None:
+            conditions.append("pr.confidence_score >= ?")
+            params.append(criteria.min_confidence)
+
+        if criteria.start_date is not None:
+            conditions.append("s.scan_date >= ?")
+            params.append(criteria.start_date)
+
+        if criteria.end_date is not None:
+            conditions.append("s.scan_date <= ?")
+            params.append(criteria.end_date)
+
+        if criteria.report_status is not None:
+            conditions.append("LOWER(r.status) = LOWER(?)")
+            params.append(criteria.report_status)
+
+        # Compile final queries
+        where_clause = ""
         if conditions:
-            query = base_query + " WHERE " + " AND ".join(conditions)
-        else:
-            query = base_query
+            where_clause = " WHERE " + " AND ".join(conditions)
 
-        # Order by newest reports first
-        query += " ORDER BY cr.created_at DESC"
+        count_query = count_base_query + where_clause
+        main_query = base_query + where_clause
 
+        # Safe Sorting Whitelist
+        sort_by_map = {
+            "report_id": "cr.id",
+            "prediction_id": "pr.id",
+            "patient_id": "p.patient_id",
+            "patient_name": "p.name",
+            "scan_date": "s.scan_date",
+            "predicted_class": "pr.predicted_class",
+            "confidence_score": "pr.confidence_score",
+            "tumor_area_mm2": "pr.tumor_area_mm2",
+            "rule_based_severity": "pr.rule_based_severity",
+            "created_at": "cr.created_at",
+            "referring_doctor": "s.ref_physician",
+            "report_status": "r.status",
+        }
+        sort_col = sort_by_map.get(criteria.sort_by, "cr.created_at")
+        sort_dir = "ASC" if criteria.sort_order and criteria.sort_order.lower() == "asc" else "DESC"
+        order_clause = f" ORDER BY {sort_col} {sort_dir}"
+
+        # Get total count before pagination
         conn = self._get_connection()
+        total_count = 0
         try:
             cursor = conn.cursor()
-            cursor.execute(query, params)
+            cursor.execute(count_query, params)
+            row = cursor.fetchone()
+            if row:
+                total_count = row["cnt"]
+
+            # Execute main query
+            query = main_query + order_clause
+            final_params = list(params)
+
+            if criteria.page is not None and criteria.page_size is not None:
+                offset = (criteria.page - 1) * criteria.page_size
+                query += " LIMIT ? OFFSET ?"
+                final_params.append(criteria.page_size)
+                final_params.append(offset)
+
+            cursor.execute(query, final_params)
             rows = cursor.fetchall()
             
             results = []
@@ -105,9 +207,11 @@ class SQLitePredictionHistoryRepository(IPredictionHistoryRepository):
                     confidence_score=row["confidence_score"],
                     tumor_area_mm2=row["tumor_area_mm2"],
                     rule_based_severity=row["rule_based_severity"],
-                    created_at=row["created_at"]
+                    created_at=row["created_at"],
+                    referring_doctor=row["referring_doctor"],
+                    report_status=row["report_status"]
                 ))
-            return results
+            return PaginatedList(results, total_count)
         except Exception as e:
             self.logger.error(f"Failed to query database for history: {e}")
             raise e
