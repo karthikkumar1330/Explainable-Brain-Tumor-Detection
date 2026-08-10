@@ -226,6 +226,63 @@ class SQLiteUserRepository(IUserRepository):
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);")
 
+            # G8.3 Prediction Feedback & Quality Flagging Table Initializations
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS prediction_feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prediction_id INTEGER NOT NULL,
+                report_id INTEGER NOT NULL,
+                patient_id TEXT NOT NULL,
+                submitted_by_user_id INTEGER NOT NULL,
+                submitted_by_role TEXT NOT NULL,
+                rating INTEGER NOT NULL,
+                feedback_type TEXT NOT NULL,
+                comment TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE CASCADE,
+                FOREIGN KEY (report_id) REFERENCES reports(report_id) ON DELETE CASCADE,
+                FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE,
+                FOREIGN KEY (submitted_by_user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            """)
+
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS prediction_quality_flags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prediction_id INTEGER NOT NULL,
+                report_id INTEGER NOT NULL,
+                patient_id TEXT NOT NULL,
+                flagged_by_user_id INTEGER NOT NULL,
+                flag_type TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                description TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'OPEN',
+                reviewed_by_user_id INTEGER,
+                reviewed_at TEXT,
+                resolution_note TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE CASCADE,
+                FOREIGN KEY (report_id) REFERENCES reports(report_id) ON DELETE CASCADE,
+                FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE,
+                FOREIGN KEY (flagged_by_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (reviewed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+            );
+            """)
+
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_prediction_feedback_pred_id ON prediction_feedback(prediction_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_prediction_feedback_rep_id ON prediction_feedback(report_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_prediction_feedback_pat_id ON prediction_feedback(patient_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_prediction_feedback_user_id ON prediction_feedback(submitted_by_user_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_prediction_feedback_created ON prediction_feedback(created_at);")
+
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_quality_flags_pred_id ON prediction_quality_flags(prediction_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_quality_flags_rep_id ON prediction_quality_flags(report_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_quality_flags_pat_id ON prediction_quality_flags(patient_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_quality_flags_user_id ON prediction_quality_flags(flagged_by_user_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_quality_flags_created ON prediction_quality_flags(created_at);")
+
             conn.commit()
             self.logger.info("Security database tables initialized successfully.")
         except Exception as e:

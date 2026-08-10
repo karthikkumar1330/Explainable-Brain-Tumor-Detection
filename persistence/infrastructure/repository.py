@@ -224,6 +224,50 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         );
         """
 
+        create_feedback_table_sql = """
+        CREATE TABLE IF NOT EXISTS prediction_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prediction_id INTEGER NOT NULL,
+            report_id INTEGER NOT NULL,
+            patient_id TEXT NOT NULL,
+            submitted_by_user_id INTEGER NOT NULL,
+            submitted_by_role TEXT NOT NULL,
+            rating INTEGER NOT NULL,
+            feedback_type TEXT NOT NULL,
+            comment TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE CASCADE,
+            FOREIGN KEY (report_id) REFERENCES reports(report_id) ON DELETE CASCADE,
+            FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE,
+            FOREIGN KEY (submitted_by_user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        """
+
+        create_quality_flags_table_sql = """
+        CREATE TABLE IF NOT EXISTS prediction_quality_flags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prediction_id INTEGER NOT NULL,
+            report_id INTEGER NOT NULL,
+            patient_id TEXT NOT NULL,
+            flagged_by_user_id INTEGER NOT NULL,
+            flag_type TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            description TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'OPEN',
+            reviewed_by_user_id INTEGER,
+            reviewed_at TEXT,
+            resolution_note TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE CASCADE,
+            FOREIGN KEY (report_id) REFERENCES reports(report_id) ON DELETE CASCADE,
+            FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE,
+            FOREIGN KEY (flagged_by_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (reviewed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+        );
+        """
+
         # Analytics and Delivery Indices
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_patients_age_gender ON patients(age, gender);",
@@ -241,7 +285,17 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             "CREATE INDEX IF NOT EXISTS idx_email_deliveries_report ON email_deliveries(report_id);",
             "CREATE INDEX IF NOT EXISTS idx_email_deliveries_actor ON email_deliveries(actor_user_id);",
             "CREATE INDEX IF NOT EXISTS idx_email_deliveries_status ON email_deliveries(status);",
-            "CREATE INDEX IF NOT EXISTS idx_email_deliveries_attempted ON email_deliveries(attempted_at);"
+            "CREATE INDEX IF NOT EXISTS idx_email_deliveries_attempted ON email_deliveries(attempted_at);",
+            "CREATE INDEX IF NOT EXISTS idx_prediction_feedback_pred_id ON prediction_feedback(prediction_id);",
+            "CREATE INDEX IF NOT EXISTS idx_prediction_feedback_rep_id ON prediction_feedback(report_id);",
+            "CREATE INDEX IF NOT EXISTS idx_prediction_feedback_pat_id ON prediction_feedback(patient_id);",
+            "CREATE INDEX IF NOT EXISTS idx_prediction_feedback_user_id ON prediction_feedback(submitted_by_user_id);",
+            "CREATE INDEX IF NOT EXISTS idx_prediction_feedback_created ON prediction_feedback(created_at);",
+            "CREATE INDEX IF NOT EXISTS idx_quality_flags_pred_id ON prediction_quality_flags(prediction_id);",
+            "CREATE INDEX IF NOT EXISTS idx_quality_flags_rep_id ON prediction_quality_flags(report_id);",
+            "CREATE INDEX IF NOT EXISTS idx_quality_flags_pat_id ON prediction_quality_flags(patient_id);",
+            "CREATE INDEX IF NOT EXISTS idx_quality_flags_user_id ON prediction_quality_flags(flagged_by_user_id);",
+            "CREATE INDEX IF NOT EXISTS idx_quality_flags_created ON prediction_quality_flags(created_at);"
         ]
 
         conn = self._get_connection()
@@ -258,6 +312,8 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 conn.execute(create_report_versions_table_sql)
                 conn.execute(create_report_sequence_table_sql)
                 conn.execute(create_email_deliveries_table_sql)
+                conn.execute(create_feedback_table_sql)
+                conn.execute(create_quality_flags_table_sql)
                 for idx_sql in indices:
                     conn.execute(idx_sql)
 

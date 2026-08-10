@@ -1272,6 +1272,504 @@ def create_app(db_path: str) -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/predictions/<int:prediction_id>/feedback", methods=["POST"])
+    @login_required
+    def api_submit_feedback(current_user: User, prediction_id: int):
+        import html
+        import datetime
+        from clinical_reporting.application.services import ReportService
+        from security.domain.entities import SecurityAuditLog
+
+        data = request.get_json() or {}
+        rating = data.get("rating")
+        feedback_type = data.get("feedback_type")
+        comment = data.get("comment", "")
+
+        # Server-side validations
+        if rating is None or not isinstance(rating, int) or rating < 1 or rating > 5:
+            return jsonify({"error": "Rating must be an integer between 1 and 5"}), 400
+
+        valid_feedback_types = ["ACCURATE", "INACCURATE", "UNCERTAIN", "TECHNICAL_QUALITY_ISSUE", "CLINICAL_REVIEW_REQUIRED"]
+        if feedback_type not in valid_feedback_types:
+            return jsonify({"error": "Invalid feedback type"}), 400
+
+        if comment:
+            comment_str = str(comment).strip()
+            if len(comment_str) > 1000:
+                return jsonify({"error": "Comment exceeds 1000 characters limit"}), 400
+            comment = html.escape(comment_str)
+        else:
+            comment = ""
+
+        conn = sqlite3.connect(app.config["DB_PATH"])
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute("""
+                SELECT cr.id as report_id, s.patient_id
+                FROM clinical_reports cr
+                JOIN predictions pr ON cr.prediction_id = pr.id
+                JOIN mri_scans s ON pr.scan_id = s.id
+                WHERE pr.id = ?;
+            """, (prediction_id,)).fetchone()
+            if not row:
+                return jsonify({"error": "Prediction not found"}), 404
+
+            report_id = row["report_id"]
+            patient_id = row["patient_id"]
+
+            # Enforce report access controls
+            service = ReportService(db_path=app.config["DB_PATH"])
+            access_status = service.check_report_access(report_id, current_user)
+            if access_status == "FORBIDDEN":
+                return jsonify({"error": "Access denied to prediction report"}), 403
+            elif access_status == "NOT_FOUND":
+                return jsonify({"error": "Report not found"}), 404
+            elif access_status == "UNAUTHORIZED":
+                return jsonify({"error": "Authentication required"}), 401
+
+            now_str = datetime.datetime.utcnow().isoformat()
+
+            # Idempotency / duplicate check (G8.3.9)
+            existing = conn.execute("""
+                SELECT id FROM prediction_feedback
+                WHERE prediction_id = ? AND submitted_by_user_id = ?;
+            """, (prediction_id, current_user.id)).fetchone()
+
+            role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
+
+            if existing:
+                conn.execute("""
+                    UPDATE prediction_feedback
+                    SET rating = ?, feedback_type = ?, comment = ?, updated_at = ?
+                    WHERE id = ?;
+                """, (rating, feedback_type, comment, now_str, existing["id"]))
+                conn.commit()
+                feedback_id = existing["id"]
+            else:
+                cursor = conn.execute("""
+                    INSERT INTO prediction_feedback (
+                        prediction_id, report_id, patient_id, submitted_by_user_id, submitted_by_role,
+                        rating, feedback_type, comment, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """, (prediction_id, report_id, patient_id, current_user.id, role_val, rating, feedback_type, comment, now_str, now_str))
+                conn.commit()
+                feedback_id = cursor.lastrowid
+
+            # Log audit event
+            user_repo.log_security_event(SecurityAuditLog(
+                id=None,
+                timestamp=now_str,
+                event_type="FEEDBACK_SUBMITTED",
+                user_id=current_user.id,
+                email=current_user.email,
+                ip_address=request.remote_addr or "127.0.0.1",
+                status="SUCCESS",
+                details=f"User {current_user.email} submitted feedback ID {feedback_id} for prediction {prediction_id}",
+                user_agent=request.headers.get("User-Agent", "Unknown")
+            ))
+
+            return jsonify({"success": True, "feedback_id": feedback_id})
+        finally:
+            conn.close()
+
+    @app.route("/api/predictions/<int:prediction_id>/feedback", methods=["GET"])
+    @login_required
+    def api_get_feedback(current_user: User, prediction_id: int):
+        from clinical_reporting.application.services import ReportService
+
+        conn = sqlite3.connect(app.config["DB_PATH"])
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute("""
+                SELECT cr.id as report_id
+                FROM clinical_reports cr
+                WHERE cr.prediction_id = ?;
+            """, (prediction_id,)).fetchone()
+            if not row:
+                return jsonify({"error": "Prediction not found"}), 404
+
+            report_id = row["report_id"]
+
+            # Enforce access controls
+            service = ReportService(db_path=app.config["DB_PATH"])
+            access_status = service.check_report_access(report_id, current_user)
+            if access_status == "FORBIDDEN":
+                return jsonify({"error": "Access denied"}), 403
+            elif access_status == "NOT_FOUND":
+                return jsonify({"error": "Report not found"}), 404
+            elif access_status == "UNAUTHORIZED":
+                return jsonify({"error": "Authentication required"}), 401
+
+            role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role).lower()
+
+            if role_val == "patient":
+                # Patients can only see their own feedback
+                rows = conn.execute("""
+                    SELECT * FROM prediction_feedback
+                    WHERE prediction_id = ? AND submitted_by_user_id = ?
+                    ORDER BY created_at DESC;
+                """, (prediction_id, current_user.id)).fetchall()
+            else:
+                # Doctors/Admins see all feedback for this prediction
+                rows = conn.execute("""
+                    SELECT * FROM prediction_feedback
+                    WHERE prediction_id = ?
+                    ORDER BY created_at DESC;
+                """, (prediction_id,)).fetchall()
+
+            res = []
+            for r in rows:
+                res.append(dict(r))
+            return jsonify(res)
+        finally:
+            conn.close()
+
+    @app.route("/api/predictions/<int:prediction_id>/flags", methods=["POST"])
+    @login_required
+    def api_submit_quality_flag(current_user: User, prediction_id: int):
+        import html
+        import json
+        import datetime
+        from clinical_reporting.application.services import ReportService
+        from security.domain.entities import SecurityAuditLog
+
+        data = request.get_json() or {}
+        flag_type = data.get("flag_type")
+        severity = data.get("severity")
+        description = data.get("description", "")
+
+        valid_flag_types = [
+            "LOW_CONFIDENCE", "POSSIBLE_FALSE_POSITIVE", "POSSIBLE_FALSE_NEGATIVE",
+            "POOR_IMAGE_QUALITY", "SEGMENTATION_CONCERN", "CLASSIFICATION_CONCERN",
+            "REPORT_CONCERN", "CLINICAL_REVIEW_REQUIRED", "OTHER"
+        ]
+        valid_severities = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+
+        if flag_type not in valid_flag_types:
+            return jsonify({"error": f"Invalid flag type: {flag_type}"}), 400
+
+        if severity not in valid_severities:
+            return jsonify({"error": f"Invalid severity: {severity}"}), 400
+
+        if not description or not str(description).strip():
+            return jsonify({"error": "Description is required"}), 400
+
+        desc_str = str(description).strip()
+        if len(desc_str) > 1000:
+            return jsonify({"error": "Description exceeds 1000 characters limit"}), 400
+        description = html.escape(desc_str)
+
+        conn = sqlite3.connect(app.config["DB_PATH"])
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute("""
+                SELECT cr.id as report_id, s.patient_id
+                FROM clinical_reports cr
+                JOIN predictions pr ON cr.prediction_id = pr.id
+                JOIN mri_scans s ON pr.scan_id = s.id
+                WHERE pr.id = ?;
+            """, (prediction_id,)).fetchone()
+            if not row:
+                return jsonify({"error": "Prediction not found"}), 404
+
+            report_id = row["report_id"]
+            patient_id = row["patient_id"]
+
+            # Enforce access controls
+            service = ReportService(db_path=app.config["DB_PATH"])
+            access_status = service.check_report_access(report_id, current_user)
+            if access_status == "FORBIDDEN":
+                return jsonify({"error": "Access denied"}), 403
+            elif access_status == "NOT_FOUND":
+                return jsonify({"error": "Report not found"}), 404
+            elif access_status == "UNAUTHORIZED":
+                return jsonify({"error": "Authentication required"}), 401
+
+            now_str = datetime.datetime.utcnow().isoformat()
+
+            # Idempotency / duplicate check (G8.3.9) - if same user, prediction, and flag_type is already OPEN
+            existing = conn.execute("""
+                SELECT id FROM prediction_quality_flags
+                WHERE prediction_id = ? AND flagged_by_user_id = ? AND flag_type = ? AND status = 'OPEN';
+            """, (prediction_id, current_user.id, flag_type)).fetchone()
+
+            if existing:
+                conn.execute("""
+                    UPDATE prediction_quality_flags
+                    SET severity = ?, description = ?, updated_at = ?
+                    WHERE id = ?;
+                """, (severity, description, now_str, existing["id"]))
+                conn.commit()
+                flag_id = existing["id"]
+            else:
+                cursor = conn.execute("""
+                    INSERT INTO prediction_quality_flags (
+                        prediction_id, report_id, patient_id, flagged_by_user_id, flag_type,
+                        severity, description, status, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?);
+                """, (prediction_id, report_id, patient_id, current_user.id, flag_type, severity, description, now_str, now_str))
+                conn.commit()
+                flag_id = cursor.lastrowid
+
+            # Log audit trail
+            user_repo.log_security_event(SecurityAuditLog(
+                id=None,
+                timestamp=now_str,
+                event_type="QUALITY_FLAG_CREATED",
+                user_id=current_user.id,
+                email=current_user.email,
+                ip_address=request.remote_addr or "127.0.0.1",
+                status="SUCCESS",
+                details=f"User {current_user.email} raised quality flag ID {flag_id} (severity: {severity}, type: {flag_type}) for prediction {prediction_id}",
+                user_agent=request.headers.get("User-Agent", "Unknown")
+            ))
+
+            # Notification integration (G8.3.12) - notify doctors/admins for HIGH/CRITICAL flags
+            if severity in ["HIGH", "CRITICAL"]:
+                try:
+                    from clinical_reporting.application.notification_service import NotificationService
+                    notif_svc = NotificationService(db_path=app.config["DB_PATH"])
+                    # Retrieve all Doctor and Admin users
+                    reviewers = [u for u in user_repo.list_users(limit=100) if u.role in [Role.DOCTOR, Role.ADMIN]]
+                    for rev in reviewers:
+                        notif_svc.create_notification(
+                            user_id=rev.id,
+                            type_="QUALITY_FLAG_CREATED",
+                            title="Urgent Quality Flag Raised",
+                            message=f"A {severity} severity quality flag ({flag_type}) was raised for patient {patient_id}.",
+                            metadata_json=json.dumps({"prediction_id": prediction_id, "report_id": report_id, "severity": severity, "flag_id": flag_id})
+                        )
+                except Exception as notif_err:
+                    app.logger.error(f"Failed to send flag creation notification: {notif_err}")
+
+            return jsonify({"success": True, "flag_id": flag_id})
+        finally:
+            conn.close()
+
+    @app.route("/api/predictions/<int:prediction_id>/flags", methods=["GET"])
+    @login_required
+    def api_get_prediction_flags(current_user: User, prediction_id: int):
+        from clinical_reporting.application.services import ReportService
+
+        conn = sqlite3.connect(app.config["DB_PATH"])
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute("""
+                SELECT cr.id as report_id
+                FROM clinical_reports cr
+                WHERE cr.prediction_id = ?;
+            """, (prediction_id,)).fetchone()
+            if not row:
+                return jsonify({"error": "Prediction not found"}), 404
+
+            report_id = row["report_id"]
+
+            # Enforce access controls
+            service = ReportService(db_path=app.config["DB_PATH"])
+            access_status = service.check_report_access(report_id, current_user)
+            if access_status == "FORBIDDEN":
+                return jsonify({"error": "Access denied"}), 403
+            elif access_status == "NOT_FOUND":
+                return jsonify({"error": "Report not found"}), 404
+            elif access_status == "UNAUTHORIZED":
+                return jsonify({"error": "Authentication required"}), 401
+
+            role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role).lower()
+
+            if role_val == "patient":
+                # Patients can only see their own flags
+                rows = conn.execute("""
+                    SELECT * FROM prediction_quality_flags
+                    WHERE prediction_id = ? AND flagged_by_user_id = ?
+                    ORDER BY created_at DESC;
+                """, (prediction_id, current_user.id)).fetchall()
+            else:
+                rows = conn.execute("""
+                    SELECT * FROM prediction_quality_flags
+                    WHERE prediction_id = ?
+                    ORDER BY created_at DESC;
+                """, (prediction_id,)).fetchall()
+
+            res = []
+            for r in rows:
+                res.append(dict(r))
+            return jsonify(res)
+        finally:
+            conn.close()
+
+    @app.route("/api/quality-flags", methods=["GET"])
+    @login_required
+    def api_list_quality_flags(current_user: User):
+        status_filter = request.args.get("status")
+        severity_filter = request.args.get("severity")
+        flag_type_filter = request.args.get("flag_type")
+        start_date = request.args.get("start_date")
+        end_date = request.args.get("end_date")
+
+        conn = sqlite3.connect(app.config["DB_PATH"])
+        conn.row_factory = sqlite3.Row
+        try:
+            where_clauses = []
+            params = []
+
+            role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role).lower()
+
+            if role_val == "patient":
+                # Patients can only see their own flags
+                where_clauses.append("flagged_by_user_id = ?")
+                params.append(current_user.id)
+
+            if status_filter:
+                where_clauses.append("status = ?")
+                params.append(status_filter)
+
+            if severity_filter:
+                where_clauses.append("severity = ?")
+                params.append(severity_filter)
+
+            if flag_type_filter:
+                where_clauses.append("flag_type = ?")
+                params.append(flag_type_filter)
+
+            if start_date:
+                where_clauses.append("created_at >= ?")
+                params.append(start_date)
+
+            if end_date:
+                where_clauses.append("created_at <= ?")
+                params.append(end_date)
+
+            where_str = ""
+            if where_clauses:
+                where_str = " WHERE " + " AND ".join(where_clauses)
+
+            query = f"""
+                SELECT f.*, p.name as patient_name, pr.predicted_class, pr.confidence_score
+                FROM prediction_quality_flags f
+                JOIN patients p ON f.patient_id = p.patient_id
+                JOIN predictions pr ON f.prediction_id = pr.id
+                {where_str}
+                ORDER BY f.created_at DESC;
+            """
+            rows = conn.execute(query, params).fetchall()
+
+            res = []
+            for r in rows:
+                res.append(dict(r))
+            return jsonify(res)
+        finally:
+            conn.close()
+
+    @app.route("/api/quality-flags/<int:flag_id>", methods=["GET"])
+    @login_required
+    def api_get_quality_flag_details(current_user: User, flag_id: int):
+        conn = sqlite3.connect(app.config["DB_PATH"])
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute("""
+                SELECT f.*, p.name as patient_name, pr.predicted_class, pr.confidence_score
+                FROM prediction_quality_flags f
+                JOIN patients p ON f.patient_id = p.patient_id
+                JOIN predictions pr ON f.prediction_id = pr.id
+                WHERE f.id = ?;
+            """, (flag_id,)).fetchone()
+            if not row:
+                return jsonify({"error": "Quality flag not found"}), 404
+
+            role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role).lower()
+
+            if role_val == "patient":
+                # Verify patient ownership
+                if row["flagged_by_user_id"] != current_user.id:
+                    return jsonify({"error": "Access denied to quality flag"}), 403
+
+            return jsonify(dict(row))
+        finally:
+            conn.close()
+
+    @app.route("/api/quality-flags/<int:flag_id>", methods=["PATCH"])
+    @login_required
+    def api_update_quality_flag(current_user: User, flag_id: int):
+        import html
+        import json
+        import datetime
+        from security.domain.entities import SecurityAuditLog
+
+        role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role).lower()
+        if role_val == "patient":
+            # Patients MUST NOT review or resolve flags
+            return jsonify({"error": "Access denied. Patient role cannot update quality flag status."}), 403
+
+        data = request.get_json() or {}
+        new_status = data.get("status")
+        resolution_note = data.get("resolution_note", "")
+
+        valid_statuses = ["OPEN", "IN_REVIEW", "RESOLVED", "DISMISSED"]
+        if new_status not in valid_statuses:
+            return jsonify({"error": f"Invalid status: {new_status}"}), 400
+
+        # Enforce resolution note for RESOLVED
+        if new_status == "RESOLVED" and (not resolution_note or not str(resolution_note).strip()):
+            return jsonify({"error": "Resolution note is required when resolving a quality flag."}), 400
+
+        if resolution_note:
+            resolution_note = html.escape(str(resolution_note).strip())
+            if len(resolution_note) > 1000:
+                return jsonify({"error": "Resolution note exceeds 1000 characters limit"}), 400
+
+        conn = sqlite3.connect(app.config["DB_PATH"])
+        conn.row_factory = sqlite3.Row
+        try:
+            flag_record = conn.execute("SELECT * FROM prediction_quality_flags WHERE id = ?;", (flag_id,)).fetchone()
+            if not flag_record:
+                return jsonify({"error": "Quality flag not found"}), 404
+
+            current_status = flag_record["status"]
+            now_str = datetime.datetime.utcnow().isoformat()
+
+            conn.execute("""
+                UPDATE prediction_quality_flags
+                SET status = ?, resolution_note = ?, reviewed_by_user_id = ?, reviewed_at = ?, updated_at = ?
+                WHERE id = ?;
+            """, (new_status, resolution_note, current_user.id, now_str, now_str, flag_id))
+            conn.commit()
+
+            audit_event_type = "QUALITY_FLAG_STATUS_CHANGED"
+            if new_status == "RESOLVED":
+                audit_event_type = "QUALITY_FLAG_RESOLVED"
+            elif new_status == "DISMISSED":
+                audit_event_type = "QUALITY_FLAG_DISMISSED"
+
+            user_repo.log_security_event(SecurityAuditLog(
+                id=None,
+                timestamp=now_str,
+                event_type=audit_event_type,
+                user_id=current_user.id,
+                email=current_user.email,
+                ip_address=request.remote_addr or "127.0.0.1",
+                status="SUCCESS",
+                details=f"User {current_user.email} updated quality flag ID {flag_id} status from {current_status} to {new_status}.",
+                user_agent=request.headers.get("User-Agent", "Unknown")
+            ))
+
+            # Notify the relevant user who raised the flag
+            try:
+                from clinical_reporting.application.notification_service import NotificationService
+                notif_svc = NotificationService(db_path=app.config["DB_PATH"])
+                notif_svc.create_notification(
+                    user_id=flag_record["flagged_by_user_id"],
+                    type_="QUALITY_FLAG_RESOLVED",
+                    title=f"Quality Flag {new_status.capitalize()}",
+                    message=f"Your quality flag for prediction {flag_record['prediction_id']} has been {new_status.lower()}.",
+                    metadata_json=json.dumps({"flag_id": flag_id, "status": new_status, "resolution_note": resolution_note})
+                )
+            except Exception as notif_err:
+                app.logger.error(f"Failed to send flag status update notification: {notif_err}")
+
+            return jsonify({"success": True})
+        finally:
+            conn.close()
+
     @app.route("/api/report/<int:report_id>")
     @login_required
     def get_report_details(current_user: User, report_id: int):
@@ -1296,7 +1794,7 @@ def create_app(db_path: str) -> Flask:
             try:
                 query = """
                 SELECT
-                    cr.id as report_id, p.patient_id, p.name as patient_name,
+                    cr.id as report_id, cr.prediction_id, p.patient_id, p.name as patient_name,
                     pr.predicted_class, pr.confidence_score, pr.tumor_area_mm2, pr.tumor_percentage_brain,
                     pr.rule_based_severity, pr.severity_rule_description, cr.created_at
                 FROM clinical_reports cr

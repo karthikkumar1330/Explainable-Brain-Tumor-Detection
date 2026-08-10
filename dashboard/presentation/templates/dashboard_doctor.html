@@ -517,6 +517,10 @@
                     <i class="fa-solid fa-paper-plane text-lg w-5 shrink-0"></i>
                     <span>Email History</span>
                 </button>
+                <button onclick="switchTab('quality-queue')" id="nav-quality-queue" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" title="Review Queue">
+                    <i class="fa-solid fa-triangle-exclamation text-lg w-5 shrink-0 text-yellow-500/85"></i>
+                    <span>Review Queue</span>
+                </button>
             </nav>
         </div>
 
@@ -1731,6 +1735,69 @@
                     </div>
                 </div>
             </div>
+            <!-- TAB: QUALITY REVIEW QUEUE (G8.3.13) -->
+            <div id="tab-quality-queue" class="hidden space-y-6">
+                <div class="glass-panel rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+                    <div class="p-5 bg-slate-900/80 border-b border-slate-800/80 flex flex-col md:flex-row justify-between items-center gap-4">
+                        <div>
+                            <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2">
+                                <i class="fa-solid fa-triangle-exclamation text-yellow-500"></i>
+                                Prediction Quality Review Queue
+                            </h4>
+                            <p class="text-xs text-slate-400">Manage, review, and resolve quality flags raised for AI predictions.</p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <select id="quality-filter-status" onchange="loadQualityFlagsData()" class="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                <option value="">All Statuses</option>
+                                <option value="OPEN">Open</option>
+                                <option value="IN_REVIEW">In Review</option>
+                                <option value="RESOLVED">Resolved</option>
+                                <option value="DISMISSED">Dismissed</option>
+                            </select>
+                            <select id="quality-filter-severity" onchange="loadQualityFlagsData()" class="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                <option value="">All Severities</option>
+                                <option value="LOW">Low</option>
+                                <option value="MEDIUM">Medium</option>
+                                <option value="HIGH">High</option>
+                                <option value="CRITICAL">Critical</option>
+                            </select>
+                            <select id="quality-filter-type" onchange="loadQualityFlagsData()" class="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                <option value="">All Types</option>
+                                <option value="LOW_CONFIDENCE">Low Confidence</option>
+                                <option value="POSSIBLE_FALSE_POSITIVE">Possible False Positive</option>
+                                <option value="POSSIBLE_FALSE_NEGATIVE">Possible False Negative</option>
+                                <option value="POOR_IMAGE_QUALITY">Poor Image Quality</option>
+                                <option value="SEGMENTATION_CONCERN">Segmentation Concern</option>
+                                <option value="CLASSIFICATION_CONCERN">Classification Concern</option>
+                                <option value="REPORT_CONCERN">Report Concern</option>
+                                <option value="CLINICAL_REVIEW_REQUIRED">Clinical Review Required</option>
+                                <option value="OTHER">Other</option>
+                            </select>
+                            <button onclick="loadQualityFlagsData()" class="text-xs bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl transition cursor-pointer">
+                                <i class="fa-solid fa-rotate"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-950/90 text-slate-400 text-xs uppercase font-bold tracking-wider border-b border-slate-800">
+                                <tr>
+                                    <th class="p-4">Created At</th>
+                                    <th class="p-4">Patient</th>
+                                    <th class="p-4">Prediction</th>
+                                    <th class="p-4">Flag Type</th>
+                                    <th class="p-4">Severity</th>
+                                    <th class="p-4">Status</th>
+                                    <th class="p-4">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="quality-flags-table-body" class="divide-y divide-slate-800/60 text-xs">
+                                <tr><td colspan="7" class="p-8 text-center text-slate-500 font-medium">No quality flags found.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -1861,6 +1928,90 @@
                 <p id="modal-rule-desc" class="italic text-slate-200 text-sm">-</p>
             </div>
 
+            <!-- G8.3: Prediction Feedback & Quality Review Sections -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <!-- Prediction Feedback Form -->
+                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs text-slate-300">
+                    <span class="font-bold text-slate-400 block mb-2 uppercase tracking-wider text-[10px]"><i class="fa-solid fa-thumbs-up text-sky-400"></i> Was this result useful?</span>
+                    <div class="space-y-3">
+                        <div class="flex items-center gap-3">
+                            <button id="fb-thumb-yes" onclick="setFeedbackRating(5)" class="bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 hover:border-sky-500 font-bold transition flex items-center gap-1.5 cursor-pointer">
+                                👍 Yes
+                            </button>
+                            <button id="fb-thumb-no" onclick="setFeedbackRating(2)" class="bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 hover:border-red-500 font-bold transition flex items-center gap-1.5 cursor-pointer">
+                                👎 No
+                            </button>
+                            <div class="flex items-center gap-1.5 ml-2">
+                                <span class="text-[10px] text-slate-405">Rating:</span>
+                                <select id="fb-rating" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                    <option value="5">5 - Excellent</option>
+                                    <option value="4">4 - Good</option>
+                                    <option value="3">3 - Acceptable</option>
+                                    <option value="2">2 - Poor</option>
+                                    <option value="1">1 - Very poor</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="space-y-1.5">
+                            <span class="text-[10px] text-slate-450 block font-bold">Feedback Type:</span>
+                            <select id="fb-type" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                <option value="ACCURATE">Accurate</option>
+                                <option value="INACCURATE">Inaccurate</option>
+                                <option value="UNCERTAIN">Uncertain</option>
+                                <option value="TECHNICAL_QUALITY_ISSUE">Technical Quality Issue</option>
+                                <option value="CLINICAL_REVIEW_REQUIRED">Clinical Review Required</option>
+                            </select>
+                        </div>
+                        <div class="space-y-1.5">
+                            <span class="text-[10px] text-slate-450 block font-bold">Optional Comment (Max 1000 chars):</span>
+                            <textarea id="fb-comment" rows="2" placeholder="Provide details about accuracy or issues..." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
+                        </div>
+                        <button onclick="submitPredictionFeedback()" class="w-full bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold py-1.5 rounded-xl transition cursor-pointer">
+                            Submit Feedback
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Quality Flag Form -->
+                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs text-slate-300">
+                    <span class="font-bold text-slate-400 block mb-2 uppercase tracking-wider text-[10px]"><i class="fa-solid fa-flag text-red-400"></i> Flag for Clinical Review</span>
+                    <div class="space-y-3">
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="space-y-1">
+                                <span class="text-[10px] text-slate-450 block font-bold">Flag Type:</span>
+                                <select id="flag-type" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                    <option value="LOW_CONFIDENCE">Low Confidence</option>
+                                    <option value="POSSIBLE_FALSE_POSITIVE">Possible False Positive</option>
+                                    <option value="POSSIBLE_FALSE_NEGATIVE">Possible False Negative</option>
+                                    <option value="POOR_IMAGE_QUALITY">Poor Image Quality</option>
+                                    <option value="SEGMENTATION_CONCERN">Segmentation Concern</option>
+                                    <option value="CLASSIFICATION_CONCERN">Classification Concern</option>
+                                    <option value="REPORT_CONCERN">Report Concern</option>
+                                    <option value="CLINICAL_REVIEW_REQUIRED">Clinical Review Required</option>
+                                    <option value="OTHER">Other</option>
+                                </select>
+                            </div>
+                            <div class="space-y-1">
+                                <span class="text-[10px] text-slate-450 block font-bold">Severity:</span>
+                                <select id="flag-severity" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                    <option value="LOW">Low</option>
+                                    <option value="MEDIUM">Medium</option>
+                                    <option value="HIGH">High</option>
+                                    <option value="CRITICAL">Critical</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="space-y-1.5">
+                            <span class="text-[10px] text-slate-450 block font-bold">Description:</span>
+                            <textarea id="flag-description" rows="2" placeholder="Why are you flagging this prediction?..." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
+                        </div>
+                        <button onclick="submitPredictionFlag()" class="w-full bg-red-650 hover:bg-red-650/80 text-white font-bold py-1.5 rounded-xl transition cursor-pointer">
+                            Submit Quality Flag
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Dynamic Actions Container (F2.1) -->
             <div class="flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-slate-800 pt-4">
                 <div id="modal-actions-container" class="flex flex-wrap items-center gap-2">
@@ -1883,6 +2034,52 @@
                         <i class="fa-solid fa-file-pdf"></i> Download PDF Clinical Report
                     </a>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- QUALITY FLAG RESOLUTION MODAL (G8.3.10 / G8.3.13) -->
+    <div id="quality-resolution-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4">
+        <div class="bg-slate-900/95 border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl relative">
+            <button onclick="closeModal('quality-resolution-modal')" class="absolute top-5 right-5 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 h-9 w-9 rounded-full flex items-center justify-center transition cursor-pointer">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <h3 class="font-extrabold text-xl text-slate-100 mb-2">Review Quality Flag</h3>
+            <p id="resolution-flag-meta" class="text-xs text-slate-400 mb-4"></p>
+
+            <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs text-slate-350 mb-4 space-y-2">
+                <div>
+                    <span class="text-slate-400 block uppercase font-bold text-[9px]">Description:</span>
+                    <p id="resolution-flag-desc" class="text-slate-200 mt-0.5 whitespace-pre-wrap font-medium"></p>
+                </div>
+                <div class="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-800">
+                    <div>
+                        <span class="text-slate-400 block uppercase font-bold text-[9px]">Type:</span>
+                        <span id="resolution-flag-type" class="text-slate-200 font-semibold"></span>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block uppercase font-bold text-[9px]">Severity:</span>
+                        <span id="resolution-flag-severity" class="font-bold"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                <div class="space-y-1.5">
+                    <span class="text-xs text-slate-400 block font-bold">Action / Status:</span>
+                    <select id="resolution-status" onchange="toggleResolutionNoteField()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                        <option value="IN_REVIEW">Mark In Review</option>
+                        <option value="RESOLVED">Resolve Flag (Requires Note)</option>
+                        <option value="DISMISSED">Dismiss Flag</option>
+                    </select>
+                </div>
+                <div id="resolution-note-container" class="space-y-1.5">
+                    <span class="text-xs text-slate-400 block font-bold">Resolution Note:</span>
+                    <textarea id="resolution-note" rows="3" placeholder="Enter findings, action taken, or reason for dismissal..." class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
+                </div>
+                <button onclick="submitQualityFlagUpdate()" class="w-full bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold py-2 rounded-xl transition cursor-pointer">
+                    Apply Status Change
+                </button>
             </div>
         </div>
     </div>

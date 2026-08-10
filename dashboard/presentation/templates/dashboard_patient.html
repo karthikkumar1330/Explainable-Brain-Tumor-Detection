@@ -1245,6 +1245,90 @@
                 <p id="modal-rule-desc" class="italic text-slate-200 text-sm leading-relaxed">-</p>
             </div>
 
+            <!-- G8.3: Prediction Feedback & Quality Review Sections -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <!-- Prediction Feedback Form -->
+                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs text-slate-300">
+                    <span class="font-bold text-slate-400 block mb-2 uppercase tracking-wider text-[10px]"><i class="fa-solid fa-thumbs-up text-sky-400"></i> Was this result useful?</span>
+                    <div class="space-y-3">
+                        <div class="flex items-center gap-3">
+                            <button id="fb-thumb-yes" onclick="setFeedbackRating(5)" class="bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 hover:border-sky-500 font-bold transition flex items-center gap-1.5 cursor-pointer">
+                                👍 Yes
+                            </button>
+                            <button id="fb-thumb-no" onclick="setFeedbackRating(2)" class="bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 hover:border-red-500 font-bold transition flex items-center gap-1.5 cursor-pointer">
+                                👎 No
+                            </button>
+                            <div class="flex items-center gap-1.5 ml-2">
+                                <span class="text-[10px] text-slate-405">Rating:</span>
+                                <select id="fb-rating" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                    <option value="5">5 - Excellent</option>
+                                    <option value="4">4 - Good</option>
+                                    <option value="3">3 - Acceptable</option>
+                                    <option value="2">2 - Poor</option>
+                                    <option value="1">1 - Very poor</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="space-y-1.5">
+                            <span class="text-[10px] text-slate-450 block font-bold">Feedback Type:</span>
+                            <select id="fb-type" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                <option value="ACCURATE">Accurate</option>
+                                <option value="INACCURATE">Inaccurate</option>
+                                <option value="UNCERTAIN">Uncertain</option>
+                                <option value="TECHNICAL_QUALITY_ISSUE">Technical Quality Issue</option>
+                                <option value="CLINICAL_REVIEW_REQUIRED">Clinical Review Required</option>
+                            </select>
+                        </div>
+                        <div class="space-y-1.5">
+                            <span class="text-[10px] text-slate-450 block font-bold">Optional Comment (Max 1000 chars):</span>
+                            <textarea id="fb-comment" rows="2" placeholder="Provide details about accuracy or issues..." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
+                        </div>
+                        <button onclick="submitPredictionFeedback()" class="w-full bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold py-1.5 rounded-xl transition cursor-pointer">
+                            Submit Feedback
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Quality Flag Form -->
+                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs text-slate-300">
+                    <span class="font-bold text-slate-400 block mb-2 uppercase tracking-wider text-[10px]"><i class="fa-solid fa-flag text-red-400"></i> Flag for Clinical Review</span>
+                    <div class="space-y-3">
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="space-y-1">
+                                <span class="text-[10px] text-slate-450 block font-bold">Flag Type:</span>
+                                <select id="flag-type" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                    <option value="LOW_CONFIDENCE">Low Confidence</option>
+                                    <option value="POSSIBLE_FALSE_POSITIVE">Possible False Positive</option>
+                                    <option value="POSSIBLE_FALSE_NEGATIVE">Possible False Negative</option>
+                                    <option value="POOR_IMAGE_QUALITY">Poor Image Quality</option>
+                                    <option value="SEGMENTATION_CONCERN">Segmentation Concern</option>
+                                    <option value="CLASSIFICATION_CONCERN">Classification Concern</option>
+                                    <option value="REPORT_CONCERN">Report Concern</option>
+                                    <option value="CLINICAL_REVIEW_REQUIRED">Clinical Review Required</option>
+                                    <option value="OTHER">Other</option>
+                                </select>
+                            </div>
+                            <div class="space-y-1">
+                                <span class="text-[10px] text-slate-450 block font-bold">Severity:</span>
+                                <select id="flag-severity" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                    <option value="LOW">Low</option>
+                                    <option value="MEDIUM">Medium</option>
+                                    <option value="HIGH">High</option>
+                                    <option value="CRITICAL">Critical</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="space-y-1.5">
+                            <span class="text-[10px] text-slate-450 block font-bold">Description:</span>
+                            <textarea id="flag-description" rows="2" placeholder="Why are you flagging this prediction?..." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
+                        </div>
+                        <button onclick="submitPredictionFlag()" class="w-full bg-red-650 hover:bg-red-650/80 text-white font-bold py-1.5 rounded-xl transition cursor-pointer">
+                            Submit Quality Flag
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Disclaimer explaining scan absence -->
             <div class="mb-6 p-3.5 bg-sky-500/10 border border-sky-500/20 rounded-2xl text-[11px] text-sky-300">
                 <i class="fa-solid fa-info-circle mr-1"></i> Patient privacy protocol enforcements: Direct brain MRI scan visualizations and segmentation overlays are restricted to clinicians. You can download the official radiology report below.
@@ -2196,6 +2280,110 @@
 
 
 
+        // Global variables for G8.3 feature integration
+        let currentSelectedPredictionId = null;
+        let currentSelectedFeedbackRating = 5;
+
+        // Feedback Form Functions
+        function setFeedbackRating(rating) {
+            currentSelectedFeedbackRating = rating;
+            document.getElementById("fb-rating").value = rating.toString();
+
+            // Style yes/no buttons to show active status
+            const yesBtn = document.getElementById("fb-thumb-yes");
+            const noBtn = document.getElementById("fb-thumb-no");
+            if (rating >= 4) {
+                yesBtn.className = "bg-sky-900/60 px-3 py-1.5 rounded-xl border border-sky-500 font-bold transition flex items-center gap-1.5 cursor-pointer text-sky-400";
+                noBtn.className = "bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 hover:border-red-500 font-bold transition flex items-center gap-1.5 cursor-pointer text-slate-350";
+            } else {
+                yesBtn.className = "bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 hover:border-sky-500 font-bold transition flex items-center gap-1.5 cursor-pointer text-slate-350";
+                noBtn.className = "bg-red-950/60 px-3 py-1.5 rounded-xl border border-red-500 font-bold transition flex items-center gap-1.5 cursor-pointer text-red-400";
+            }
+        }
+
+        async function submitPredictionFeedback() {
+            if (!currentSelectedPredictionId) {
+                showToast("No prediction selected for feedback.", "error");
+                return;
+            }
+            const rating = parseInt(document.getElementById("fb-rating").value);
+            const feedback_type = document.getElementById("fb-type").value;
+            const comment = document.getElementById("fb-comment").value;
+
+            try {
+                const res = await fetchWithAuth(`/api/predictions/${currentSelectedPredictionId}/feedback`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rating, feedback_type, comment })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast("Feedback submitted successfully!", "success");
+                } else {
+                    showToast(data.error || "Failed to submit feedback", "error");
+                }
+            } catch (err) {
+                console.error("Feedback submit error:", err);
+                showToast("Network error submitting feedback.", "error");
+            }
+        }
+
+        async function submitPredictionFlag() {
+            if (!currentSelectedPredictionId) {
+                showToast("No prediction selected for flagging.", "error");
+                return;
+            }
+            const flag_type = document.getElementById("flag-type").value;
+            const severity = document.getElementById("flag-severity").value;
+            const description = document.getElementById("flag-description").value;
+
+            if (!description.trim()) {
+                showToast("Please provide a description of why you are flagging this result.", "error");
+                return;
+            }
+
+            try {
+                const res = await fetchWithAuth(`/api/predictions/${currentSelectedPredictionId}/flags`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ flag_type, severity, description })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast("Quality flag raised successfully!", "success");
+                    document.getElementById("flag-description").value = "";
+                } else {
+                    showToast(data.error || "Failed to raise quality flag", "error");
+                }
+            } catch (err) {
+                console.error("Quality flag submit error:", err);
+                showToast("Network error raising quality flag.", "error");
+            }
+        }
+
+        // Feedback loading helpers to prefill form
+        async function loadPredictionFeedbackDetails(predictionId) {
+            try {
+                const res = await fetchWithAuth(`/api/predictions/${predictionId}/feedback`);
+                if (res.ok) {
+                    const feedbacks = await res.json();
+                    const mine = feedbacks.find(f => f.submitted_by_user_id === currentUser.id);
+                    if (mine) {
+                        setFeedbackRating(mine.rating);
+                        document.getElementById("fb-type").value = mine.feedback_type;
+                        document.getElementById("fb-comment").value = mine.comment || "";
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to load feedback details for prediction:", err);
+            }
+            // Defaults if no existing feedback
+            setFeedbackRating(5);
+            document.getElementById("fb-type").value = "ACCURATE";
+            document.getElementById("fb-comment").value = "";
+        }
+
         function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
         function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
@@ -2529,6 +2717,8 @@
                 if (data.error) { alert("Report details could not be loaded: " + data.error); return; }
 
                 currentSelectedReportId = data.report_id;
+                currentSelectedPredictionId = data.prediction_id;
+                loadPredictionFeedbackDetails(data.prediction_id);
 
                 document.getElementById("modal-title").innerText = `Clinical Report Details: #${data.report_id}`;
                 document.getElementById("modal-patient-meta").innerText = `Patient ID: ${data.patient_id} | Name: ${data.patient_name}`;

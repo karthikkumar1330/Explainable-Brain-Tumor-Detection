@@ -32,7 +32,9 @@ class NotificationService:
             "SECURITY_LOGIN",
             "SECURITY_WARNING",
             "ACCOUNT_UPDATE",
-            "SYSTEM_ALERT"
+            "SYSTEM_ALERT",
+            "QUALITY_FLAG_CREATED",
+            "QUALITY_FLAG_RESOLVED"
         ]
         if type_ not in valid_types:
             raise ValueError(f"Invalid notification type: {type_}")
@@ -75,7 +77,7 @@ class NotificationService:
     def _get_pref_category(self, type_: str) -> str:
         if type_ == "ANALYSIS_COMPLETED":
             return "analysis"
-        elif type_ in ["REPORT_READY", "EMAIL_DELIVERY_FAILED", "EMAIL_RETRY_PENDING"]:
+        elif type_ in ["REPORT_READY", "EMAIL_DELIVERY_FAILED", "EMAIL_RETRY_PENDING", "QUALITY_FLAG_CREATED", "QUALITY_FLAG_RESOLVED"]:
             return "report"
         elif type_ in ["SECURITY_LOGIN", "SECURITY_WARNING"]:
             return "security"
