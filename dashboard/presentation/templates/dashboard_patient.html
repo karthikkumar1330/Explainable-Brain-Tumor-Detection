@@ -1717,7 +1717,12 @@
                 if (response.ok && data.success) {
                     alert(data.message || "Report email sent successfully!");
                 } else {
-                    alert(data.detail || data.error || "Failed to email report.");
+                    const errorMsg = data.detail || data.error || "";
+                    if (response.status === 503 || errorMsg.includes("not configured") || errorMsg.includes("SMTP_HOST") || errorMsg.includes("configuration parameter is missing")) {
+                        alert("Email service is not configured. Please configure the SMTP settings before sending reports.");
+                    } else {
+                        alert(errorMsg || "Failed to email report.");
+                    }
                 }
             } catch (err) {
                 console.error("Email send error:", err);
