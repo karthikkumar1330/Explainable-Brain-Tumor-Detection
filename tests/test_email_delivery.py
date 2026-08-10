@@ -558,6 +558,31 @@ class TestEmailDelivery(unittest.TestCase):
         self.assertEqual(response_doc.status_code, 200)
         self.assertIn("items", response_doc.json)
 
+    @patch("clinical_reporting.infrastructure.email_service.EmailService.send")
+    def test_21_flask_and_fastapi_configuration_failure_returns_503(self, mock_send) -> None:
+        """Verify that SMTP configuration errors return a 503 Service Unavailable error without server crash."""
+        from clinical_reporting.infrastructure.email_service import ConfigurationException
+        mock_send.side_effect = ConfigurationException("Sender email address (EMAIL_FROM) is not configured.")
+
+        # 1. FastAPI Endpoint
+        response_api = self.client.post(
+            "/api/reports/1/email",
+            json={"recipient_email": "patient1@aurascan.ai"},
+            headers=self.doc_headers
+        )
+        self.assertEqual(response_api.status_code, 503)
+        self.assertIn("Sender email address (EMAIL_FROM) is not configured.", response_api.json()["detail"])
+
+        # 2. Flask Endpoint
+        headers = {"Authorization": f"Bearer {self.doc_token}"}
+        response_flask = self.flask_client.post(
+            "/api/reports/1/email",
+            json={"recipient_email": "patient1@aurascan.ai"},
+            headers=headers
+        )
+        self.assertEqual(response_flask.status_code, 503)
+        self.assertIn("Sender email address (EMAIL_FROM) is not configured.", response_flask.json["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

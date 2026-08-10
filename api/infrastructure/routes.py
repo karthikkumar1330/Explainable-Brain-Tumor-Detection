@@ -1533,6 +1533,7 @@ def email_report_api(
 ):
     """Emails a clinical report PDF to an authorized recipient."""
     from clinical_reporting.application.services import ReportNotFoundException, VersionNotFoundException
+    from clinical_reporting.infrastructure.email_service import ConfigurationException
     service = ReportService(db_path=DEFAULT_DB_PATH)
     try:
         result = service.send_report_email(
@@ -1552,6 +1553,8 @@ def email_report_api(
         raise HTTPException(status_code=400, detail=str(e))
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail="PDF report file not found on the server.")
+    except ConfigurationException as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.error(f"Error emailing report: {e}")
         raise HTTPException(status_code=500, detail="Internal server error sending report email.")

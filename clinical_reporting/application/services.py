@@ -2875,7 +2875,7 @@ class ReportService:
             raise e
 
         # 4. Dispatch email via EmailService
-        from clinical_reporting.infrastructure.email_service import EmailService
+        from clinical_reporting.infrastructure.email_service import EmailService, ConfigurationException
         email_svc = EmailService()
         try:
             email_svc.send(
@@ -2907,6 +2907,18 @@ class ReportService:
                 f"Clinical report email sent to {recipient_email}."
             )
             return {"success": True, "message": "Report email sent successfully"}
+        except ConfigurationException as e:
+            # Handle failure with classification and retry check
+            self._handle_delivery_failure(
+                delivery_id=delivery_id,
+                exception=e,
+                actor=actor,
+                report_id=report_id,
+                recipient_email=recipient_email,
+                attempt_count=attempt_count + 1,
+                max_attempts=max_attempts
+            )
+            raise e
         except Exception as e:
             # Handle failure with classification and retry check
             self._handle_delivery_failure(
@@ -2947,7 +2959,7 @@ class ReportService:
             conn.close()
 
         # Dispatch email via EmailService
-        from clinical_reporting.infrastructure.email_service import EmailService
+        from clinical_reporting.infrastructure.email_service import EmailService, ConfigurationException
         email_svc = EmailService()
         try:
             email_svc.send(
@@ -2978,6 +2990,18 @@ class ReportService:
                 f"Account email ({subject}) sent to {recipient_email}."
             )
             return {"success": True, "message": "Account email sent successfully"}
+        except ConfigurationException as e:
+            # Handle failure with classification and retry check
+            self._handle_delivery_failure(
+                delivery_id=delivery_id,
+                exception=e,
+                actor=None,
+                report_id=None,
+                recipient_email=recipient_email,
+                attempt_count=attempt_count + 1,
+                max_attempts=max_attempts
+            )
+            raise e
         except Exception as e:
             # Handle failure with classification and retry check
             self._handle_delivery_failure(

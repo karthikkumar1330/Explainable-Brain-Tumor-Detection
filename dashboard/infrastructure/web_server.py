@@ -2673,6 +2673,7 @@ def create_app(db_path: str) -> Flask:
     @login_required
     def email_report_flask(current_user: User, report_id: int):
         from clinical_reporting.application.services import ReportService, ReportNotFoundException, VersionNotFoundException
+        from clinical_reporting.infrastructure.email_service import ConfigurationException
         service = ReportService(db_path=app.config["DB_PATH"])
         data = request.get_json() or {}
         recipient_email = data.get("recipient_email")
@@ -2703,6 +2704,8 @@ def create_app(db_path: str) -> Flask:
             return jsonify({"error": str(e)}), 400
         except FileNotFoundError as e:
             return jsonify({"error": "PDF report file not found on the server."}), 404
+        except ConfigurationException as e:
+            return jsonify({"error": str(e)}), 503
         except Exception as e:
             app.logger.error(f"Error emailing report: {e}")
             return jsonify({"error": "Internal server error sending report email."}), 500
