@@ -2669,4 +2669,85 @@ def create_app(db_path: str) -> Flask:
             """
             return render_template_string(html_content), 200
 
+    @app.route("/api/reports/<int:report_id>/email", methods=["POST"])
+    @login_required
+    def email_report_flask(current_user: User, report_id: int):
+        from clinical_reporting.application.services import ReportService, ReportNotFoundException, VersionNotFoundException
+        service = ReportService(db_path=app.config["DB_PATH"])
+        data = request.get_json() or {}
+        recipient_email = data.get("recipient_email")
+        version = data.get("version")
+
+        # Enforce version validation if provided
+        if version is not None:
+            try:
+                version = validate_version_param(version)
+            except ValueError as e:
+                return jsonify({"error": str(e)}), 400
+
+        try:
+            result = service.send_report_email(
+                report_id=report_id,
+                actor=current_user,
+                recipient_email=recipient_email,
+                version=version
+            )
+            return jsonify(result)
+        except ReportNotFoundException as e:
+            return jsonify({"error": str(e)}), 404
+        except VersionNotFoundException as e:
+            return jsonify({"error": str(e)}), 404
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except FileNotFoundError as e:
+            return jsonify({"error": "PDF report file not found on the server."}), 404
+        except Exception as e:
+            app.logger.error(f"Error emailing report: {e}")
+            return jsonify({"error": "Internal server error sending report email."}), 500
+
+    @app.route("/api/reports/email/history", methods=["GET"])
+    @login_required
+    def get_email_history_flask(current_user: User):
+        from clinical_reporting.application.services import ReportService
+        service = ReportService(db_path=app.config["DB_PATH"])
+
+        try:
+            page = int(request.args.get("page", 1))
+            per_page = int(request.args.get("per_page", 10))
+            if page < 1:
+                page = 1
+            if per_page < 1 or per_page > 100:
+                per_page = 10
+        except ValueError:
+            page = 1
+            per_page = 10
+
+        status = request.args.get("status")
+        search = request.args.get("search")
+        report_id_str = request.args.get("report_id")
+        report_id = None
+        if report_id_str:
+            try:
+                report_id = int(report_id_str)
+            except ValueError:
+                return jsonify({"error": "Invalid report_id parameter."}), 400
+
+        try:
+            result = service.get_email_history(
+                actor=current_user,
+                page=page,
+                per_page=per_page,
+                status=status,
+                search=search,
+                report_id=report_id
+            )
+            return jsonify(result)
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
+        except Exception as e:
+            app.logger.error(f"Error fetching email history: {e}")
+            return jsonify({"error": "Internal server error fetching email history."}), 500
+
     return app

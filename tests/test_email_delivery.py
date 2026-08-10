@@ -120,6 +120,24 @@ class TestEmailDelivery(unittest.TestCase):
         with open(self.pdf_file_path, "wb") as f:
             f.write(b"%PDF-1.4 Mock PDF Content")
 
+        # Write mock JSON files with calculated checksums
+        import json
+        from clinical_reporting.domain.entities import generate_integrity_hash
+
+        self.json_path1 = os.path.join(self.pdf_dir, "report_1.json")
+        self.json_path2 = os.path.join(self.pdf_dir, "report_2.json")
+
+        report_data1 = {"report_id": 1, "patient_id": "pat-uuid-2222", "scan_id": 1}
+        report_data2 = {"report_id": 2, "patient_id": "pat-uuid-3333", "scan_id": 2}
+
+        with open(self.json_path1, "w", encoding="utf-8") as f:
+            json.dump(report_data1, f)
+        with open(self.json_path2, "w", encoding="utf-8") as f:
+            json.dump(report_data2, f)
+
+        hash1 = generate_integrity_hash(report_data1)
+        hash2 = generate_integrity_hash(report_data2)
+
         conn = sqlite3.connect(self.db_path)
         try:
             # Insert patient
@@ -140,8 +158,8 @@ class TestEmailDelivery(unittest.TestCase):
             """)
             conn.execute("""
                 INSERT INTO report_versions (version_id, report_id, version_number, created_at, pdf_path, json_path, checksum, status)
-                VALUES (1, 1, 1, '2026-08-09T00:00:00', ?, 'outputs/clinical_reports/report_1.json', 'hash123', 'FINAL');
-            """, (self.pdf_file_path,))
+                VALUES (1, 1, 1, '2026-08-09T00:00:00', ?, 'outputs/clinical_reports/report_1.json', ?, 'FINAL');
+            """, (self.pdf_file_path, hash1))
 
             # Insert report 2 (belongs to Patient 2)
             conn.execute("""
@@ -150,8 +168,8 @@ class TestEmailDelivery(unittest.TestCase):
             """)
             conn.execute("""
                 INSERT INTO report_versions (version_id, report_id, version_number, created_at, pdf_path, json_path, checksum, status)
-                VALUES (2, 2, 1, '2026-08-09T00:00:00', ?, 'outputs/clinical_reports/report_2.json', 'hash456', 'FINAL');
-            """, (self.pdf_file_path,))
+                VALUES (2, 2, 1, '2026-08-09T00:00:00', ?, 'outputs/clinical_reports/report_2.json', ?, 'FINAL');
+            """, (self.pdf_file_path, hash2))
 
             conn.commit()
         finally:
@@ -161,6 +179,13 @@ class TestEmailDelivery(unittest.TestCase):
         self.test_client_ctx = TestClient(app)
         self.client = self.test_client_ctx.__enter__()
 
+        # 6. Flask TestClient
+        from dashboard.infrastructure.web_server import create_app
+        self.flask_app = create_app(db_path=self.db_path)
+        self.flask_app.config["TESTING"] = True
+        self.flask_app.config["DISABLE_CSRF"] = True
+        self.flask_client = self.flask_app.test_client()
+
     def tearDown(self):
         self.test_client_ctx.__exit__()
         if os.path.exists(self.pdf_file_path):
@@ -168,6 +193,12 @@ class TestEmailDelivery(unittest.TestCase):
                 os.remove(self.pdf_file_path)
             except Exception:
                 pass
+        for jp in [getattr(self, "json_path1", None), getattr(self, "json_path2", None)]:
+            if jp and os.path.exists(jp):
+                try:
+                    os.remove(jp)
+                except Exception:
+                    pass
         if os.path.exists(self.db_path):
             try:
                 os.remove(self.db_path)
@@ -256,17 +287,28 @@ class TestEmailDelivery(unittest.TestCase):
     @patch("clinical_reporting.infrastructure.email_service.EmailService.send")
     def test_08_missing_pdf_file_returns_404(self, mock_send) -> None:
         """Verify that if the PDF is deleted/missing from disk, a 404 is returned."""
-        # Temporarily delete PDF
+        # Temporarily delete PDF and JSON to prevent regeneration
         if os.path.exists(self.pdf_file_path):
             os.remove(self.pdf_file_path)
+        if os.path.exists(self.json_path1):
+            os.remove(self.json_path1)
             
-        response = self.client.post(
-            "/api/reports/1/email",
-            json={},
-            headers=self.doc_headers
-        )
-        self.assertEqual(response.status_code, 404)
-        mock_send.assert_not_called()
+        try:
+            response = self.client.post(
+                "/api/reports/1/email",
+                json={},
+                headers=self.doc_headers
+            )
+            self.assertEqual(response.status_code, 404)
+            mock_send.assert_not_called()
+        finally:
+            # Recreate files for subsequent tests
+            with open(self.pdf_file_path, "wb") as f:
+                f.write(b"%PDF-1.4 Mock PDF Content")
+            import json
+            report_data1 = {"report_id": 1, "patient_id": "pat-uuid-2222", "scan_id": 1}
+            with open(self.json_path1, "w", encoding="utf-8") as f:
+                json.dump(report_data1, f)
 
     @patch("clinical_reporting.infrastructure.email_service.EmailService.send")
     def test_09_smtp_transmission_failure_handled_gracefully(self, mock_send) -> None:
@@ -463,6 +505,58 @@ class TestEmailDelivery(unittest.TestCase):
         items_search = response_search.json()["items"]
         self.assertEqual(len(items_search), 1)
         self.assertEqual(items_search[0]["recipient_email"], "re****@aurascan.ai")
+
+    @patch("clinical_reporting.infrastructure.email_service.EmailService.send")
+    def test_17_flask_authorized_doctor_can_send_email(self, mock_send) -> None:
+        """Verify that an authorized doctor can send an email via the Flask route."""
+        mock_send.return_value = True
+
+        # Flask requests require 'Authorization' header
+        headers = {"Authorization": f"Bearer {self.doc_token}"}
+
+        response = self.flask_client.post(
+            "/api/reports/1/email",
+            json={"recipient_email": "patient1@aurascan.ai"},
+            headers=headers
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json["success"])
+
+    @patch("clinical_reporting.infrastructure.email_service.EmailService.send")
+    def test_18_flask_unauthorized_user_cannot_send_email(self, mock_send) -> None:
+        """Verify that an unauthenticated user is rejected by the Flask route."""
+        response = self.flask_client.post(
+            "/api/reports/1/email",
+            json={"recipient_email": "patient1@aurascan.ai"}
+        )
+        self.assertEqual(response.status_code, 401)
+
+    @patch("clinical_reporting.infrastructure.email_service.EmailService.send")
+    def test_19_flask_patient_ownership_enforcement(self, mock_send) -> None:
+        """Verify patient ownership checks on the Flask endpoint."""
+        mock_send.return_value = True
+
+        # Bob trying to request Alice's report (ID 1)
+        headers = {"Authorization": f"Bearer {self.pat2_token}"}
+
+        response = self.flask_client.post(
+            "/api/reports/1/email",
+            json={"recipient_email": "bob@example.com"},
+            headers=headers
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_20_flask_email_history_access_control(self) -> None:
+        """Verify Flask history endpoints enforce access controls."""
+        # Unauthenticated rejected
+        response_anon = self.flask_client.get("/api/reports/email/history")
+        self.assertEqual(response_anon.status_code, 401)
+
+        # Authenticated doctor can fetch history
+        headers = {"Authorization": f"Bearer {self.doc_token}"}
+        response_doc = self.flask_client.get("/api/reports/email/history", headers=headers)
+        self.assertEqual(response_doc.status_code, 200)
+        self.assertIn("items", response_doc.json)
 
 
 if __name__ == "__main__":

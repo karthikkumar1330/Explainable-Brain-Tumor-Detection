@@ -324,6 +324,27 @@ class TestEmailService(unittest.TestCase):
         self.assertNotIn(smtp_pass, logs_content)
         self.assertNotIn("pwd", logs_content)
 
+    def test_18_missing_or_invalid_sender_raises_configuration_exception(self) -> None:
+        """Verify that missing or invalid sender/reply-to email raises ConfigurationException in send."""
+        # 1. Missing sender
+        service = EmailService(smtp_host="smtp.example.com", smtp_port=587, email_from=None)
+        with self.assertRaises(ConfigurationException) as ctx:
+            service.send(to_email="rec@example.com", subject="Hi", body_text="Hello")
+        self.assertIn("Sender email address (EMAIL_FROM) is not configured", str(ctx.exception))
+
+        # 2. Invalid sender format
+        service2 = EmailService(smtp_host="smtp.example.com", smtp_port=587, email_from="invalid_from")
+        with self.assertRaises(ConfigurationException) as ctx:
+            service2.send(to_email="rec@example.com", subject="Hi", body_text="Hello")
+        self.assertIn("Invalid sender email address configuration", str(ctx.exception))
+
+        # 3. Invalid reply_to format
+        service3 = EmailService(smtp_host="smtp.example.com", smtp_port=587, email_from="sender@example.com", email_reply_to="invalid_reply")
+        with self.assertRaises(ConfigurationException) as ctx:
+            service3.send(to_email="rec@example.com", subject="Hi", body_text="Hello")
+        self.assertIn("Invalid reply-to email address configuration", str(ctx.exception))
+
+
 
 if __name__ == "__main__":
     unittest.main()

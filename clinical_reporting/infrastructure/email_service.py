@@ -220,9 +220,20 @@ class EmailService:
         """Constructs and transmits the email message. Auto-connects if not in active context."""
         # Validate headers to prevent injection attacks
         validate_email_address(to_email)
-        validate_email_address(self.email_from)
+
+        if not self.email_from:
+            raise ConfigurationException("Sender email address (EMAIL_FROM) is not configured.")
+        try:
+            validate_email_address(self.email_from)
+        except InvalidAddressException as iae:
+            raise ConfigurationException(f"Invalid sender email address configuration: {iae}")
+
         if self.email_reply_to:
-            validate_email_address(self.email_reply_to)
+            try:
+                validate_email_address(self.email_reply_to)
+            except InvalidAddressException as iae:
+                raise ConfigurationException(f"Invalid reply-to email address configuration: {iae}")
+
         validate_subject(subject)
 
         # Build RFC MIME message
