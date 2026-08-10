@@ -104,10 +104,10 @@ def create_app(db_path: str) -> Flask:
         # Configure robust Enterprise Security Headers
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
             "font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; "
-            "img-src 'self' data:; "
+            "img-src 'self' data: https://lh3.googleusercontent.com; "
             "connect-src 'self';"
         )
         response.headers["X-Frame-Options"] = "DENY"
