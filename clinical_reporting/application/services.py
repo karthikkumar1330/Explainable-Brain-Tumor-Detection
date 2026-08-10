@@ -3078,6 +3078,21 @@ class ReportService:
             f"Failed to email {msg_prefix} to {recipient_email} (Permanent: {reason}). Error: {error_msg}"
         )
 
+        try:
+            if actor and hasattr(actor, "id") and actor.id:
+                from clinical_reporting.application.notification_service import NotificationService
+                import json
+                notif_svc = NotificationService(db_path=self.db_path)
+                notif_svc.create_notification(
+                    user_id=actor.id,
+                    type_="EMAIL_DELIVERY_FAILED",
+                    title="Email Delivery Failed",
+                    message=f"Failed to email clinical report to {recipient_email}. Error: {error_msg}",
+                    metadata_json=json.dumps({"report_id": report_id, "reason": reason})
+                )
+        except Exception as notif_err:
+            self.logger.error(f"Failed to create email failure notification: {notif_err}")
+
     def _handle_delivery_failure(
         self,
         delivery_id: int,
@@ -3132,6 +3147,21 @@ class ReportService:
                 "FAILED",
                 f"Failed to email {msg_prefix} to {recipient_email} (Transient: {reason}). Scheduled retry {attempt_count + 1}/{max_attempts} at {next_retry_at}. Error: {exception}"
             )
+
+            try:
+                if actor and hasattr(actor, "id") and actor.id:
+                    from clinical_reporting.application.notification_service import NotificationService
+                    import json
+                    notif_svc = NotificationService(db_path=self.db_path)
+                    notif_svc.create_notification(
+                        user_id=actor.id,
+                        type_="EMAIL_RETRY_PENDING",
+                        title="Email Retry Scheduled",
+                        message=f"Transient email delivery failure to {recipient_email}. Retrying soon.",
+                        metadata_json=json.dumps({"report_id": report_id, "reason": reason, "next_retry_at": next_retry_at})
+                    )
+            except Exception as notif_err:
+                self.logger.error(f"Failed to create email retry notification: {notif_err}")
         else:
             conn = self._get_connection()
             try:
@@ -3153,6 +3183,21 @@ class ReportService:
                 "FAILED",
                 f"Failed to email {msg_prefix} to {recipient_email} (Permanent or Max Attempts Reached). Error: {exception}"
             )
+
+            try:
+                if actor and hasattr(actor, "id") and actor.id:
+                    from clinical_reporting.application.notification_service import NotificationService
+                    import json
+                    notif_svc = NotificationService(db_path=self.db_path)
+                    notif_svc.create_notification(
+                        user_id=actor.id,
+                        type_="EMAIL_DELIVERY_FAILED",
+                        title="Email Delivery Failed",
+                        message=f"Failed to email report to {recipient_email}. Max attempts reached.",
+                        metadata_json=json.dumps({"report_id": report_id, "reason": reason})
+                    )
+            except Exception as notif_err:
+                self.logger.error(f"Failed to create email failure notification: {notif_err}")
 
     def get_email_history(
         self,

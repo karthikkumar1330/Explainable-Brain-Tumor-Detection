@@ -193,6 +193,39 @@ class SQLiteUserRepository(IUserRepository):
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_hash ON password_reset_tokens(token_hash);")
 
+            # G8.2.2 Create Notifications Table
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                is_read INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                read_at TEXT,
+                metadata_json TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            """)
+
+            # G8.2.6 Create Notification Preferences Table
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS notification_preferences (
+                user_id INTEGER PRIMARY KEY,
+                analysis_enabled INTEGER DEFAULT 1,
+                report_enabled INTEGER DEFAULT 1,
+                security_enabled INTEGER DEFAULT 1,
+                account_enabled INTEGER DEFAULT 1,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            """)
+
+            # G8.2.2 Create Notifications Indexes
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);")
+
             conn.commit()
             self.logger.info("Security database tables initialized successfully.")
         except Exception as e:

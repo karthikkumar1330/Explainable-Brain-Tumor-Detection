@@ -842,6 +842,64 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
         db_repo.initialize_db()
         report_db_id = db_repo.save_report(clinical_report, output_dir=OUTPUT_REPORTS_DIR)
 
+        # Trigger in-app notifications (G8.2.7)
+        try:
+            from clinical_reporting.application.notification_service import NotificationService
+            from security.infrastructure.repository import SQLiteUserRepository
+            import json
+
+            notif_svc = NotificationService(db_path=DEFAULT_DB_PATH)
+            user_repo = SQLiteUserRepository(db_path=DEFAULT_DB_PATH)
+
+            # Resolve doctor and patient users
+            doctor_id = current_user.id if current_user else None
+            patient_user = user_repo.get_by_uuid(clinical_report.patient_info.patient_id)
+
+            # Prepare notifications
+            analysis_title = "MRI Analysis Completed"
+            analysis_msg = f"MRI Scan analysis completed for patient {clinical_report.patient_info.name} ({clinical_report.patient_info.patient_id}). Diagnosis: {clinical_report.classification.class_name}."
+            analysis_meta = json.dumps({"report_id": report_db_id, "patient_id": clinical_report.patient_info.patient_id})
+
+            report_title = "Clinical Report Ready"
+            report_msg = f"Clinical report has been successfully generated for scan date {clinical_report.patient_info.scan_date}."
+            report_meta = json.dumps({"report_id": report_db_id, "patient_id": clinical_report.patient_info.patient_id})
+
+            # Send to doctor
+            if doctor_id:
+                notif_svc.create_notification(
+                    user_id=doctor_id,
+                    type_="ANALYSIS_COMPLETED",
+                    title=analysis_title,
+                    message=analysis_msg,
+                    metadata_json=analysis_meta
+                )
+                notif_svc.create_notification(
+                    user_id=doctor_id,
+                    type_="REPORT_READY",
+                    title=report_title,
+                    message=report_msg,
+                    metadata_json=report_meta
+                )
+
+            # Send to patient
+            if patient_user and patient_user.id and patient_user.id != doctor_id:
+                notif_svc.create_notification(
+                    user_id=patient_user.id,
+                    type_="ANALYSIS_COMPLETED",
+                    title=analysis_title,
+                    message=analysis_msg,
+                    metadata_json=analysis_meta
+                )
+                notif_svc.create_notification(
+                    user_id=patient_user.id,
+                    type_="REPORT_READY",
+                    title=report_title,
+                    message=report_msg,
+                    metadata_json=report_meta
+                )
+        except Exception as notif_err:
+            logger.error(f"Failed to trigger G8.2 notifications: {notif_err}")
+
         # Record Security Audit Log for report creation (F2.4)
         try:
             from clinical_reporting.application.services import ReportService

@@ -256,6 +256,18 @@ class AuthUseCases:
                         id=None, timestamp=now, event_type="ACCOUNT_LOCKED", user_id=user.id,
                         email=email_clean, ip_address=ip_address, status="LOCKED", details="Account locked due to 5 consecutive login failures", user_agent=user_agent
                     ))
+                    try:
+                        from clinical_reporting.application.notification_service import NotificationService
+                        notif_svc = NotificationService(db_path=self.user_repo.db_path)
+                        notif_svc.create_notification(
+                            user_id=user.id,
+                            type_="SECURITY_WARNING",
+                            title="Account Locked",
+                            message=f"Your account has been temporarily locked due to 5 consecutive failed login attempts from IP {ip_address}.",
+                            metadata_json=json.dumps({"ip_address": ip_address})
+                        )
+                    except Exception as notif_err:
+                        pass
                     raise ValueError("Account is temporarily locked due to too many failed login attempts. Please try again in 15 minutes.")
                 else:
                     self.user_repo.update_user(user)
@@ -361,6 +373,19 @@ class AuthUseCases:
             id=None, timestamp=now, event_type="LOGIN_SUCCESS", user_id=user.id, email=user.email,
             ip_address=ip_address, status="SUCCESS", details=json.dumps(details_dict), user_agent=user_agent
         ))
+
+        try:
+            from clinical_reporting.application.notification_service import NotificationService
+            notif_svc = NotificationService(db_path=self.user_repo.db_path)
+            notif_svc.create_notification(
+                user_id=user.id,
+                type_="SECURITY_LOGIN",
+                title="Successful Login",
+                message=f"A new login was detected from IP address {ip_address} using {browser} on {device}.",
+                metadata_json=json.dumps({"ip_address": ip_address, "user_agent": user_agent})
+            )
+        except Exception as notif_err:
+            pass
 
         return {
             "requires_2fa": False,
@@ -505,6 +530,19 @@ class AuthUseCases:
                 user.two_factor_recovery_codes = None
 
         updated = self.user_repo.update_user(user)
+        try:
+            from clinical_reporting.application.notification_service import NotificationService
+            import json
+            notif_svc = NotificationService(db_path=self.user_repo.db_path)
+            notif_svc.create_notification(
+                user_id=user.id,
+                type_="ACCOUNT_UPDATE",
+                title="Profile Updated",
+                message="Your profile details have been successfully updated.",
+                metadata_json=json.dumps({"email_changed": email_changed, "two_factor_changed": enable_2fa is not None})
+            )
+        except Exception as notif_err:
+            pass
         res = {
             "message": "Profile updated successfully.",
             "email_changed": email_changed,
@@ -571,6 +609,19 @@ class AuthUseCases:
             ip_address=ip_address, status="SUCCESS", details=json.dumps(details_dict), user_agent=user_agent
         ))
 
+        try:
+            from clinical_reporting.application.notification_service import NotificationService
+            notif_svc = NotificationService(db_path=self.user_repo.db_path)
+            notif_svc.create_notification(
+                user_id=user.id,
+                type_="SECURITY_LOGIN",
+                title="Successful Login",
+                message=f"A new login was detected from IP address {ip_address} using {browser} on {device}.",
+                metadata_json=json.dumps({"ip_address": ip_address, "user_agent": user_agent})
+            )
+        except Exception as notif_err:
+            pass
+
         return {
             "message": "Two-factor verification successful.",
             "access_token": access_token,
@@ -597,6 +648,20 @@ class AuthUseCases:
             id=None, timestamp=now, event_type="PASSWORD_CHANGE", user_id=user.id, email=user.email,
             ip_address=ip_address, status="SUCCESS", details="User changed password"
         ))
+
+        try:
+            from clinical_reporting.application.notification_service import NotificationService
+            import json
+            notif_svc = NotificationService(db_path=self.user_repo.db_path)
+            notif_svc.create_notification(
+                user_id=user.id,
+                type_="ACCOUNT_UPDATE",
+                title="Password Changed",
+                message="Your account password was updated successfully.",
+                metadata_json=json.dumps({"ip_address": ip_address})
+            )
+        except Exception as notif_err:
+            pass
 
         return {"message": "Password changed successfully."}
 
@@ -837,6 +902,20 @@ class AuthUseCases:
             body_html=html_body,
             email_type="PASSWORD_RESET_CONFIRMATION"
         )
+
+        try:
+            from clinical_reporting.application.notification_service import NotificationService
+            import json
+            notif_svc = NotificationService(db_path=self.user_repo.db_path)
+            notif_svc.create_notification(
+                user_id=user.id,
+                type_="ACCOUNT_UPDATE",
+                title="Password Reset",
+                message="Your account password has been successfully reset.",
+                metadata_json=json.dumps({"ip_address": ip_address})
+            )
+        except Exception as notif_err:
+            pass
 
         return {"message": "Password successfully reset."}
 

@@ -583,6 +583,38 @@
                             <i class="fa-solid fa-circle text-[6px] text-blue-600 dark:text-cyan-400"></i>
                         </span>
                     </button>
+                    <!-- Notification Bell & Panel Dropdown -->
+                    <div class="relative mr-2">
+                        <button id="notification-bell-btn" onclick="toggleNotificationPanel(event)" class="h-9 w-9 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 flex items-center justify-center border border-slate-700/60 shadow-sm transition hover:scale-105 relative cursor-pointer" title="In-App Notifications">
+                            <i class="fa-solid fa-bell text-slate-350 text-sm"></i>
+                            <span id="notification-badge" class="absolute -top-1 -right-1 bg-red-500 text-white font-black text-[9px] h-4 w-4 rounded-full flex items-center justify-center border border-slate-900 hidden">0</span>
+                        </button>
+
+                        <!-- Notification Panel Dropdown Container -->
+                        <div id="notification-panel" class="absolute right-0 mt-3 w-80 sm:w-96 bg-slate-900/95 backdrop-blur-md border border-slate-800 rounded-2xl shadow-2xl p-4 hidden z-50 space-y-3">
+                            <div class="flex justify-between items-center border-b border-slate-800 pb-2.5">
+                                <h4 class="font-extrabold text-sm text-slate-100 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-bell text-sky-400"></i> Notifications
+                                </h4>
+                                <div class="flex items-center space-x-2">
+                                    <button onclick="markAllNotificationsAsRead(event)" class="text-[10px] text-sky-400 hover:text-sky-300 font-bold transition">Mark all read</button>
+                                    <span class="text-slate-700 text-xs">|</span>
+                                    <button onclick="clearNotificationList(event)" class="text-[10px] text-red-400 hover:text-red-300 font-bold transition">Clear</button>
+                                </div>
+                            </div>
+                            <!-- Notifications scrollable body -->
+                            <div id="notification-list-body" class="max-h-80 overflow-y-auto space-y-2 pr-1 divide-y divide-slate-850">
+                                <div class="text-xs text-slate-500 text-center py-6">No new notifications.</div>
+                            </div>
+                            <div id="notification-loading-spinner" class="text-xs text-slate-400 text-center py-4 hidden">
+                                <i class="fa-solid fa-spinner fa-spin text-sky-400 mr-2"></i>Loading notifications...
+                            </div>
+                            <div class="flex justify-between items-center pt-2 border-t border-slate-800">
+                                <button id="notification-load-more-btn" onclick="loadMoreNotifications(event)" class="text-[10px] text-slate-400 hover:text-sky-400 font-bold transition hidden">Load More</button>
+                                <span id="notification-pagination-info" class="text-[9px] text-slate-500 font-medium"></span>
+                            </div>
+                        </div>
+                    </div>
                     <button id="profile-avatar-btn" onclick="switchTab('profile')" class="h-9 w-9 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center border border-sky-400/30 shadow-sm transition hover:scale-105" title="User Profile">
                         <i class="fa-solid fa-user-md text-white text-sm"></i>
                     </button>
@@ -1548,6 +1580,44 @@
                             </div>
                         </div>
 
+                        <!-- Notification Preferences Panel -->
+                        <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
+                            <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2 border-b border-slate-800/60 pb-3">
+                                <i class="fa-solid fa-sliders text-sky-400"></i>
+                                Notification Preferences
+                            </h4>
+                            <div class="space-y-3">
+                                <label class="flex items-start space-x-3 cursor-pointer p-2.5 rounded-xl bg-slate-900/20 border border-slate-800/40 hover:border-indigo-500/40 transition">
+                                    <input id="pref-analysis-toggle" type="checkbox" onchange="saveNotificationPreferences()" class="rounded border-slate-700 text-indigo-500 focus:ring-0 h-4 w-4 mt-0.5">
+                                    <div>
+                                        <span class="font-bold text-xs text-slate-200 block">Analysis Alerts</span>
+                                        <span class="text-[10px] text-slate-400 block mt-0.5">Receive alerts when MRI scans complete processing.</span>
+                                    </div>
+                                </label>
+                                <label class="flex items-start space-x-3 cursor-pointer p-2.5 rounded-xl bg-slate-900/20 border border-slate-800/40 hover:border-indigo-500/40 transition">
+                                    <input id="pref-report-toggle" type="checkbox" onchange="saveNotificationPreferences()" class="rounded border-slate-700 text-indigo-500 focus:ring-0 h-4 w-4 mt-0.5">
+                                    <div>
+                                        <span class="font-bold text-xs text-slate-200 block">Report & Email Alerts</span>
+                                        <span class="text-[10px] text-slate-400 block mt-0.5">Alerts for report readiness and email delivery statuses.</span>
+                                    </div>
+                                </label>
+                                <label class="flex items-start space-x-3 cursor-pointer p-2.5 rounded-xl bg-slate-900/20 border border-slate-800/40 hover:border-indigo-500/40 transition">
+                                    <input id="pref-account-toggle" type="checkbox" onchange="saveNotificationPreferences()" class="rounded border-slate-700 text-indigo-500 focus:ring-0 h-4 w-4 mt-0.5">
+                                    <div>
+                                        <span class="font-bold text-xs text-slate-200 block">Account Alerts</span>
+                                        <span class="text-[10px] text-slate-400 block mt-0.5">Get notified on profile changes, settings, or updates.</span>
+                                    </div>
+                                </label>
+                                <label class="flex items-start space-x-3 cursor-not-allowed p-2.5 rounded-xl bg-slate-900/10 border border-slate-850 opacity-60">
+                                    <input id="pref-security-toggle" type="checkbox" checked disabled class="rounded border-slate-750 text-indigo-600 h-4 w-4 mt-0.5">
+                                    <div>
+                                        <span class="font-bold text-xs text-slate-350 block">Security Warnings</span>
+                                        <span class="text-[10px] text-slate-500 block mt-0.5">Critical logins and security warnings (cannot be disabled).</span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
                         <div class="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
                             <div class="flex justify-between items-center border-b border-slate-800/60 pb-3">
                                 <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2">
@@ -1907,6 +1977,254 @@
         let currentPdfBlob = null;
         let previewAbortController = null;
 
+        // In-App Notification Center Globals (G8.2)
+        let notificationPage = 1;
+        const notificationPageSize = 5;
+        let notificationsPanelOpen = false;
+        let notificationPollIntervalId = null;
+
+        // G8.2 Notification Center Functions
+        function toggleNotificationPanel(event) {
+            if (event) event.stopPropagation();
+            const panel = document.getElementById("notification-panel");
+            notificationsPanelOpen = !notificationsPanelOpen;
+            if (notificationsPanelOpen) {
+                panel.classList.remove("hidden");
+                notificationPage = 1;
+                loadNotificationList(1, false);
+            } else {
+                panel.classList.add("hidden");
+            }
+        }
+
+        // Close panel when clicking outside
+        document.addEventListener("click", function(event) {
+            const panel = document.getElementById("notification-panel");
+            const bell = document.getElementById("notification-bell-btn");
+            if (panel && bell && !panel.contains(event.target) && !bell.contains(event.target)) {
+                notificationsPanelOpen = false;
+                panel.classList.add("hidden");
+            }
+        });
+
+        async function fetchUnreadNotificationCount() {
+            try {
+                const res = await fetchWithAuth('/api/notifications/unread-count');
+                if (!res.ok) return;
+                const data = await res.json();
+                const badge = document.getElementById("notification-badge");
+                if (badge) {
+                    if (data.unread_count > 0) {
+                        badge.textContent = data.unread_count;
+                        badge.classList.remove("hidden");
+                    } else {
+                        badge.classList.add("hidden");
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to fetch unread notification count:", e);
+            }
+        }
+
+        async function loadNotificationList(page = 1, append = false) {
+            const body = document.getElementById("notification-list-body");
+            const spinner = document.getElementById("notification-loading-spinner");
+            const loadMoreBtn = document.getElementById("notification-load-more-btn");
+            const info = document.getElementById("notification-pagination-info");
+
+            if (!body) return;
+
+            if (page === 1 && !append) {
+                body.innerHTML = "";
+            }
+            if (spinner) spinner.classList.remove("hidden");
+            if (loadMoreBtn) loadMoreBtn.classList.add("hidden");
+
+            try {
+                const res = await fetchWithAuth(`/api/notifications?page=${page}&page_size=${notificationPageSize}`);
+                if (!res.ok) throw new Error("Failed to fetch");
+                const data = await res.json();
+
+                if (spinner) spinner.classList.add("hidden");
+
+                if (!data.items || data.items.length === 0) {
+                    if (page === 1) {
+                        body.innerHTML = `<div class="text-xs text-slate-500 text-center py-6">No notifications.</div>`;
+                    }
+                    if (info) info.textContent = "";
+                    return;
+                }
+
+                data.items.forEach(item => {
+                    const row = document.createElement("div");
+                    row.className = `p-2.5 text-xs transition duration-200 ${item.is_read ? 'opacity-70' : 'bg-sky-500/5 border-l-2 border-sky-500'} flex items-start justify-between gap-2.5`;
+                    row.id = `notif-item-${item.id}`;
+
+                    let iconHtml = '<i class="fa-solid fa-info-circle text-sky-400"></i>';
+                    if (item.type === 'SECURITY_WARNING') {
+                        iconHtml = '<i class="fa-solid fa-triangle-exclamation text-amber-500 animate-pulse"></i>';
+                    } else if (item.type === 'SECURITY_LOGIN') {
+                        iconHtml = '<i class="fa-solid fa-key text-emerald-400"></i>';
+                    } else if (item.type === 'EMAIL_DELIVERY_FAILED') {
+                        iconHtml = '<i class="fa-solid fa-envelope-circle-check text-red-400"></i>';
+                    } else if (item.type === 'ANALYSIS_COMPLETED') {
+                        iconHtml = '<i class="fa-solid fa-microscope text-indigo-400"></i>';
+                    }
+
+                    const dt = new Date(item.created_at);
+                    const formattedTime = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' + dt.toLocaleDateString([], { month: 'short', day: 'numeric' });
+
+                    row.innerHTML = `
+                        <div class="flex items-start space-x-2 flex-1 min-w-0">
+                            <span class="mt-0.5">${iconHtml}</span>
+                            <div class="min-w-0 flex-1">
+                                <div class="font-extrabold text-slate-200 truncate flex items-center gap-1.5">
+                                    ${item.title}
+                                    ${!item.is_read ? '<span class="h-1.5 w-1.5 rounded-full bg-sky-500 animate-ping"></span>' : ''}
+                                </div>
+                                <div class="text-slate-400 mt-0.5 break-words font-medium line-clamp-3">${item.message}</div>
+                                <div class="text-[9px] text-slate-500 mt-1 font-semibold">${formattedTime}</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-1 pl-1">
+                            ${!item.is_read ? `
+                            <button onclick="markNotificationSingleRead(${item.id}, event)" class="h-5 w-5 hover:bg-slate-800 rounded flex items-center justify-center text-slate-400 hover:text-sky-400 transition" title="Mark Read">
+                                <i class="fa-solid fa-check text-[10px]"></i>
+                            </button>
+                            ` : ''}
+                            <button onclick="deleteNotificationItem(${item.id}, event)" class="h-5 w-5 hover:bg-slate-800 rounded flex items-center justify-center text-slate-400 hover:text-red-400 transition" title="Delete">
+                                <i class="fa-solid fa-trash text-[10px]"></i>
+                            </button>
+                        </div>
+                    `;
+                    body.appendChild(row);
+                });
+
+                // Pagination updates
+                if (data.page < data.total_pages) {
+                    if (loadMoreBtn) loadMoreBtn.classList.remove("hidden");
+                }
+                if (info) {
+                    info.textContent = `Page ${data.page} of ${data.total_pages}`;
+                }
+                notificationPage = data.page;
+
+            } catch (e) {
+                if (spinner) spinner.classList.add("hidden");
+                console.error("Failed to load notifications:", e);
+            }
+        }
+
+        async function loadMoreNotifications(event) {
+            if (event) event.stopPropagation();
+            await loadNotificationList(notificationPage + 1, true);
+        }
+
+        async function markNotificationSingleRead(notifId, event) {
+            if (event) event.stopPropagation();
+            try {
+                const res = await fetchWithAuth(`/api/notifications/${notifId}/read`, { method: 'PATCH' });
+                if (res.ok) {
+                    const el = document.getElementById(`notif-item-${notifId}`);
+                    if (el) {
+                        el.classList.add("opacity-70");
+                        el.classList.remove("bg-sky-500/5", "border-l-2", "border-sky-500");
+                        const checkBtn = el.querySelector("button[title='Mark Read']");
+                        if (checkBtn) checkBtn.remove();
+                    }
+                    await fetchUnreadNotificationCount();
+                }
+            } catch (e) {
+                console.error("Failed to mark read:", e);
+            }
+        }
+
+        async function markAllNotificationsAsRead(event) {
+            if (event) event.stopPropagation();
+            try {
+                const res = await fetchWithAuth('/api/notifications/read-all', { method: 'PATCH' });
+                if (res.ok) {
+                    notificationPage = 1;
+                    await loadNotificationList(1, false);
+                    await fetchUnreadNotificationCount();
+                }
+            } catch (e) {
+                console.error("Failed to mark all read:", e);
+            }
+        }
+
+        async function deleteNotificationItem(notifId, event) {
+            if (event) event.stopPropagation();
+            try {
+                const res = await fetchWithAuth(`/api/notifications/${notifId}`, { method: 'DELETE' });
+                if (res.ok) {
+                    const el = document.getElementById(`notif-item-${notifId}`);
+                    if (el) el.remove();
+                    await fetchUnreadNotificationCount();
+                    const body = document.getElementById("notification-list-body");
+                    if (body && body.children.length === 0) {
+                        body.innerHTML = `<div class="text-xs text-slate-500 text-center py-6">No notifications.</div>`;
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to delete notification:", e);
+            }
+        }
+
+        async function clearNotificationList(event) {
+            if (event) event.stopPropagation();
+            const body = document.getElementById("notification-list-body");
+            if (!body) return;
+            const items = body.querySelectorAll("[id^='notif-item-']");
+            for (let item of items) {
+                const id = item.id.replace("notif-item-", "");
+                try {
+                    await fetchWithAuth(`/api/notifications/${id}`, { method: 'DELETE' });
+                } catch (e) {}
+            }
+            body.innerHTML = `<div class="text-xs text-slate-500 text-center py-6">No notifications.</div>`;
+            const badge = document.getElementById("notification-badge");
+            if (badge) badge.classList.add("hidden");
+        }
+
+        async function loadNotificationPreferences() {
+            try {
+                const res = await fetchWithAuth('/api/notifications/preferences');
+                if (!res.ok) return;
+                const data = await res.json();
+
+                const analysis = document.getElementById("pref-analysis-toggle");
+                const report = document.getElementById("pref-report-toggle");
+                const account = document.getElementById("pref-account-toggle");
+
+                if (analysis) analysis.checked = data.analysis;
+                if (report) report.checked = data.report;
+                if (account) account.checked = data.account;
+            } catch (e) {
+                console.error("Failed to load preferences:", e);
+            }
+        }
+
+        async function saveNotificationPreferences() {
+            const analysis = document.getElementById("pref-analysis-toggle")?.checked ?? true;
+            const report = document.getElementById("pref-report-toggle")?.checked ?? true;
+            const account = document.getElementById("pref-account-toggle")?.checked ?? true;
+
+            try {
+                await fetchWithAuth('/api/notifications/preferences', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        analysis: analysis,
+                        report: report,
+                        account: account
+                    })
+                });
+            } catch (e) {
+                console.error("Failed to save preferences:", e);
+            }
+        }
+
         async function emailReport(reportId) {
             if (!reportId || isNaN(reportId)) {
                 alert("Invalid report ID selected.");
@@ -2176,6 +2494,13 @@
         document.addEventListener("DOMContentLoaded", async () => {
             initSidebarState();
             await checkAuthStatus();
+
+            // Initialize Notifications (G8.2)
+            await fetchUnreadNotificationCount();
+            await loadNotificationPreferences();
+            if (notificationPollIntervalId) clearInterval(notificationPollIntervalId);
+            notificationPollIntervalId = setInterval(fetchUnreadNotificationCount, 10000);
+
             // Start on Dashboard page
             switchTab('dashboard');
 
@@ -2355,6 +2680,9 @@
                 if (!settingsDataLoaded) {
                     loadSettingsData();
                 }
+                if (tabName === 'settings') {
+                    loadNotificationPreferences();
+                }
             }
             if (tabName === 'audit') {
                 loadAuditData();
@@ -2508,6 +2836,7 @@
         }
 
         function handleLogoutRedirect() {
+            if (notificationPollIntervalId) clearInterval(notificationPollIntervalId);
             authToken = null;
             currentUser = null;
             localStorage.removeItem("auth_token");

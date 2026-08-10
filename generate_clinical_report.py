@@ -401,6 +401,43 @@ def main() -> None:
             db_repo = SQLitePersistenceRepository(db_path=args.db_path, logger=logger)
             db_repo.initialize_db()
             db_report_id = db_repo.save_report(clinical_report, output_dir=args.output_dir)
+
+            # Trigger G8.2 notifications for patient user (if registered)
+            try:
+                from clinical_reporting.application.notification_service import NotificationService
+                from security.infrastructure.repository import SQLiteUserRepository
+                import json
+
+                notif_svc = NotificationService(db_path=args.db_path)
+                user_repo = SQLiteUserRepository(db_path=args.db_path)
+
+                patient_user = user_repo.get_by_uuid(clinical_report.patient_info.patient_id)
+                if patient_user and patient_user.id:
+                    analysis_title = "MRI Analysis Completed"
+                    analysis_msg = f"MRI Scan analysis completed for patient {clinical_report.patient_info.name} ({clinical_report.patient_info.patient_id}). Diagnosis: {clinical_report.classification.class_name}."
+                    analysis_meta = json.dumps({"report_id": db_report_id, "patient_id": clinical_report.patient_info.patient_id})
+
+                    report_title = "Clinical Report Ready"
+                    report_msg = f"Clinical report has been successfully generated for scan date {clinical_report.patient_info.scan_date}."
+                    report_meta = json.dumps({"report_id": db_report_id, "patient_id": clinical_report.patient_info.patient_id})
+
+                    notif_svc.create_notification(
+                        user_id=patient_user.id,
+                        type_="ANALYSIS_COMPLETED",
+                        title=analysis_title,
+                        message=analysis_msg,
+                        metadata_json=analysis_meta
+                    )
+                    notif_svc.create_notification(
+                        user_id=patient_user.id,
+                        type_="REPORT_READY",
+                        title=report_title,
+                        message=report_msg,
+                        metadata_json=report_meta
+                    )
+            except Exception as notif_err:
+                logger.error(f"Failed to trigger G8.2 notifications in CLI: {notif_err}")
+
             logger.info(f"Report findings successfully persisted in SQLite (Record ID: {db_report_id}).")
         except Exception as db_err:
             logger.error(f"Failed to persist report to SQLite: {db_err}")

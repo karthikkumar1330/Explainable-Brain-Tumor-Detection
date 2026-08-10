@@ -1163,6 +1163,115 @@ def create_app(db_path: str) -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/notifications", methods=["GET"])
+    @login_required
+    def api_list_notifications(current_user: User):
+        from clinical_reporting.application.notification_service import NotificationService
+        service = NotificationService(db_path=app.config["DB_PATH"])
+        try:
+            page = int(request.args.get("page", 1))
+            page_size = int(request.args.get("page_size", 10))
+            type_filter = request.args.get("type") or None
+            unread_only = request.args.get("unread_only", "").lower() == "true"
+
+            res = service.list_notifications(
+                user_id=current_user.id,
+                page=page,
+                page_size=page_size,
+                type_filter=type_filter,
+                unread_only=unread_only
+            )
+            return jsonify(res)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/notifications/unread-count", methods=["GET"])
+    @login_required
+    def api_notifications_unread_count(current_user: User):
+        from clinical_reporting.application.notification_service import NotificationService
+        service = NotificationService(db_path=app.config["DB_PATH"])
+        try:
+            count = service.get_unread_count(user_id=current_user.id)
+            return jsonify({"unread_count": count})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/notifications/<int:notification_id>/read", methods=["PATCH"])
+    @login_required
+    def api_mark_notification_read(current_user: User, notification_id: int):
+        from clinical_reporting.application.notification_service import NotificationService
+        service = NotificationService(db_path=app.config["DB_PATH"])
+        try:
+            success = service.mark_notification_read(user_id=current_user.id, notification_id=notification_id)
+            if not success:
+                return jsonify({"error": "Notification not found or unauthorized access"}), 404
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/notifications/read-all", methods=["PATCH"])
+    @login_required
+    def api_mark_all_notifications_read(current_user: User):
+        from clinical_reporting.application.notification_service import NotificationService
+        service = NotificationService(db_path=app.config["DB_PATH"])
+        try:
+            service.mark_all_notifications_read(user_id=current_user.id)
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/notifications/<int:notification_id>", methods=["DELETE"])
+    @login_required
+    def api_delete_notification(current_user: User, notification_id: int):
+        from clinical_reporting.application.notification_service import NotificationService
+        service = NotificationService(db_path=app.config["DB_PATH"])
+        try:
+            success = service.delete_notification(user_id=current_user.id, notification_id=notification_id)
+            if not success:
+                return jsonify({"error": "Notification not found or unauthorized access"}), 404
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/notifications/preferences", methods=["GET"])
+    @login_required
+    def api_get_notification_preferences(current_user: User):
+        from clinical_reporting.application.notification_service import NotificationService
+        service = NotificationService(db_path=app.config["DB_PATH"])
+        try:
+            prefs = service.get_preferences(user_id=current_user.id)
+            return jsonify(prefs)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/notifications/preferences", methods=["PUT"])
+    @login_required
+    def api_update_notification_preferences(current_user: User):
+        from clinical_reporting.application.notification_service import NotificationService
+        service = NotificationService(db_path=app.config["DB_PATH"])
+        try:
+            data = request.get_json() or {}
+            analysis = data.get("analysis", True)
+            report = data.get("report", True)
+            security = data.get("security", True)
+            account = data.get("account", True)
+
+            # Never allow a client-side preference to bypass critical security alerts
+            security = True
+
+            service.update_preferences(
+                user_id=current_user.id,
+                analysis=analysis,
+                report=report,
+                security=security,
+                account=account
+            )
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/report/<int:report_id>")
     @login_required
     def get_report_details(current_user: User, report_id: int):
