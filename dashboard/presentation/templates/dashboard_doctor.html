@@ -1946,7 +1946,10 @@
                         </h5>
                         <div class="flex items-center gap-2">
                             <button id="toggle-annotation-btn" onclick="toggleAnnotationMode()" class="bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1">
-                                <i class="fa-solid fa-location-dot"></i> Add Point
+                                <i class="fa-solid fa-location-dot text-sky-400"></i> Add Point
+                            </button>
+                            <button id="toggle-rectangle-btn" onclick="toggleRectangleMode()" class="bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1">
+                                <i class="fa-solid fa-vector-square text-sky-400"></i> Add Rectangle
                             </button>
                             <span id="label-overlay-opacity" class="text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-850">Opacity: 70%</span>
                         </div>
@@ -2298,11 +2301,16 @@
         let currentSelectedScanId = null;
         let editingNoteId = null;
 
-        // Point Annotation Globals (Phase H3.2-B)
+        // Point and Rectangle Annotation Globals (Phase H3.2-B & H3.2-C)
         let activeAnnotations = [];
+        let activeRectAnnotations = [];
         let annotationModeActive = false;
+        let rectangleModeActive = false;
         let selectedAnnotation = null;
         let placementCoordinates = null;
+        let isDragging = false;
+        let startX = 0;
+        let startY = 0;
         let currentPdfDoc = null;
         let currentPreviewPageNum = 1;
         let currentPreviewZoom = 1.0;
@@ -5890,12 +5898,16 @@
             }
         }
 
-        // --- Point Annotation Functions (Phase H3.2-B) ---
+        // --- Point and Rectangle Annotation Functions (Phase H3.2-B & H3.2-C) ---
         async function loadMriAnnotations(scanId) {
             activeAnnotations = [];
+            activeRectAnnotations = [];
             closeAnnotationPopover();
             if (annotationModeActive) {
                 toggleAnnotationMode();
+            }
+            if (rectangleModeActive) {
+                toggleRectangleMode();
             }
 
             const svg = document.getElementById("annotation-svg-overlay");
@@ -5905,15 +5917,21 @@
             if (!scanId) return;
 
             try {
+                // Fetch points
                 const response = await fetchWithAuth(`/api/doctor/scans/${scanId}/point-annotations`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error ${response.status}`);
+                if (response.ok) {
+                    activeAnnotations = await response.json();
                 }
-                const data = await response.json();
-                activeAnnotations = data;
+
+                // Fetch rectangles
+                const rectResponse = await fetchWithAuth(`/api/doctor/scans/${scanId}/rectangle-annotations`);
+                if (rectResponse.ok) {
+                    activeRectAnnotations = await rectResponse.json();
+                }
+
                 alignSvgOverlay();
             } catch (err) {
-                console.error("Failed to load point annotations:", err);
+                console.error("Failed to load annotations:", err);
             }
         }
 
@@ -5946,9 +5964,13 @@
             if (!svg) return;
 
             const previewCircle = svg.querySelector(".preview-marker");
+            const previewRect = svg.querySelector(".preview-rect");
             svg.innerHTML = "";
             if (previewCircle) {
                 svg.appendChild(previewCircle);
+            }
+            if (previewRect) {
+                svg.appendChild(previewRect);
             }
 
             const svgWidth = svg.clientWidth || svg.getBoundingClientRect().width;
@@ -5956,6 +5978,7 @@
 
             if (!svgWidth || !svgHeight) return;
 
+            // Render points
             activeAnnotations.forEach(ann => {
                 const cx = ann.x * svgWidth;
                 const cy = ann.y * svgHeight;
@@ -5993,6 +6016,53 @@
 
                 g.appendChild(ring);
                 g.appendChild(circle);
+                svg.appendChild(g);
+            });
+
+            // Render rectangles
+            activeRectAnnotations.forEach(ann => {
+                const rx = ann.x * svgWidth;
+                const ry = ann.y * svgHeight;
+                const rw = ann.width * svgWidth;
+                const rh = ann.height * svgHeight;
+
+                const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                g.setAttribute("class", "annotation-marker rectangle-marker cursor-pointer group/marker");
+                g.setAttribute("data-id", ann.annotation_id);
+
+                g.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    openRectangleEdit(ann, rx + rw / 2, ry + rh / 2);
+                });
+
+                // Strong outline on hover
+                const hoverRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                hoverRect.setAttribute("x", rx - 4);
+                hoverRect.setAttribute("y", ry - 4);
+                hoverRect.setAttribute("width", rw + 8);
+                hoverRect.setAttribute("height", rh + 8);
+                hoverRect.setAttribute("fill", "none");
+                hoverRect.setAttribute("stroke", "#38bdf8");
+                hoverRect.setAttribute("stroke-width", 2);
+                hoverRect.setAttribute("opacity", 0);
+                hoverRect.setAttribute("class", "transition duration-200 group-hover/marker:opacity-80");
+
+                // Main visible rectangle
+                const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                rect.setAttribute("x", rx);
+                rect.setAttribute("y", ry);
+                rect.setAttribute("width", rw);
+                rect.setAttribute("height", rh);
+                rect.setAttribute("fill", "none");
+                rect.setAttribute("stroke", "#0284c7");
+                rect.setAttribute("stroke-width", 2);
+
+                const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+                title.textContent = `${ann.label || 'Rectangle ROI'} - Observed by ${ann.doctor_name || ann.doctor_email}`;
+                g.appendChild(title);
+
+                g.appendChild(hoverRect);
+                g.appendChild(rect);
                 svg.appendChild(g);
             });
         }
@@ -6096,6 +6166,10 @@
             const btn = document.getElementById("toggle-annotation-btn");
             const svg = document.getElementById("annotation-svg-overlay");
 
+            if (annotationModeActive && rectangleModeActive) {
+                toggleRectangleMode();
+            }
+
             if (annotationModeActive) {
                 btn.innerHTML = '<i class="fa-solid fa-ban text-rose-450"></i> Cancel Point';
                 btn.className = "bg-rose-950/40 text-rose-300 border border-rose-800 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1";
@@ -6109,6 +6183,177 @@
                 const preview = svg.querySelector(".preview-marker");
                 if (preview) preview.remove();
             }
+        }
+
+        function toggleRectangleMode() {
+            rectangleModeActive = !rectangleModeActive;
+            const rectBtn = document.getElementById("toggle-rectangle-btn");
+            const svg = document.getElementById("annotation-svg-overlay");
+
+            if (rectangleModeActive && annotationModeActive) {
+                toggleAnnotationMode();
+            }
+
+            if (rectangleModeActive) {
+                rectBtn.innerHTML = '<i class="fa-solid fa-ban text-rose-450"></i> Cancel Rectangle';
+                rectBtn.className = "bg-rose-950/40 text-rose-300 border border-rose-800 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1";
+                svg.classList.add("cursor-crosshair");
+                closeAnnotationPopover();
+
+                svg.addEventListener("mousedown", handleSvgMouseDown);
+                svg.addEventListener("mousemove", handleSvgMouseMove);
+                svg.addEventListener("mouseup", handleSvgMouseUp);
+                svg.addEventListener("pointerdown", handleSvgMouseDown);
+                svg.addEventListener("pointermove", handleSvgMouseMove);
+                svg.addEventListener("pointerup", handleSvgMouseUp);
+            } else {
+                rectBtn.innerHTML = '<i class="fa-solid fa-vector-square text-sky-400"></i> Add Rectangle';
+                rectBtn.className = "bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1";
+                svg.classList.remove("cursor-crosshair");
+
+                svg.removeEventListener("mousedown", handleSvgMouseDown);
+                svg.removeEventListener("mousemove", handleSvgMouseMove);
+                svg.removeEventListener("mouseup", handleSvgMouseUp);
+                svg.removeEventListener("pointerdown", handleSvgMouseDown);
+                svg.removeEventListener("pointermove", handleSvgMouseMove);
+                svg.removeEventListener("pointerup", handleSvgMouseUp);
+
+                const preview = svg.querySelector(".preview-rect");
+                if (preview) preview.remove();
+
+                isDragging = false;
+            }
+        }
+
+        function handleSvgMouseDown(event) {
+            if (!rectangleModeActive) return;
+            event.stopPropagation();
+
+            const svg = document.getElementById("annotation-svg-overlay");
+            if (!svg) return;
+
+            const rect = svg.getBoundingClientRect();
+            isDragging = true;
+            startX = event.clientX - rect.left;
+            startY = event.clientY - rect.top;
+
+            let previewRect = svg.querySelector(".preview-rect");
+            if (!previewRect) {
+                previewRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                previewRect.setAttribute("class", "preview-rect");
+                previewRect.setAttribute("fill", "none");
+                previewRect.setAttribute("stroke", "#e11d48");
+                previewRect.setAttribute("stroke-width", 2);
+                previewRect.setAttribute("stroke-dasharray", "4 4");
+                svg.appendChild(previewRect);
+            }
+            previewRect.setAttribute("x", startX);
+            previewRect.setAttribute("y", startY);
+            previewRect.setAttribute("width", 0);
+            previewRect.setAttribute("height", 0);
+        }
+
+        function handleSvgMouseMove(event) {
+            if (!rectangleModeActive || !isDragging) return;
+            event.stopPropagation();
+
+            const svg = document.getElementById("annotation-svg-overlay");
+            if (!svg) return;
+
+            const rect = svg.getBoundingClientRect();
+            const currentX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+            const currentY = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+
+            const x = Math.min(startX, currentX);
+            const y = Math.min(startY, currentY);
+            const width = Math.abs(currentX - startX);
+            const height = Math.abs(currentY - startY);
+
+            const previewRect = svg.querySelector(".preview-rect");
+            if (previewRect) {
+                previewRect.setAttribute("x", x);
+                previewRect.setAttribute("y", y);
+                previewRect.setAttribute("width", width);
+                previewRect.setAttribute("height", height);
+            }
+        }
+
+        function handleSvgMouseUp(event) {
+            if (!rectangleModeActive || !isDragging) return;
+            event.stopPropagation();
+            isDragging = false;
+
+            const svg = document.getElementById("annotation-svg-overlay");
+            if (!svg) return;
+
+            const rect = svg.getBoundingClientRect();
+            const currentX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+            const currentY = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+
+            const sx = startX / rect.width;
+            const sy = startY / rect.height;
+            const cx = currentX / rect.width;
+            const cy = currentY / rect.height;
+
+            const xNorm = Math.max(0, Math.min(1, Math.min(sx, cx)));
+            const yNorm = Math.max(0, Math.min(1, Math.min(sy, cy)));
+            const wNorm = Math.max(0, Math.min(1 - xNorm, Math.abs(cx - sx)));
+            const hNorm = Math.max(0, Math.min(1 - yNorm, Math.abs(cy - sy)));
+
+            const widthPx = wNorm * rect.width;
+            const heightPx = hNorm * rect.height;
+
+            if (widthPx < 6 || heightPx < 6) {
+                alert("Please drag a larger region.");
+                const preview = svg.querySelector(".preview-rect");
+                if (preview) preview.remove();
+                return;
+            }
+
+            placementCoordinates = { x: xNorm, y: yNorm, width: wNorm, height: hNorm };
+            openRectangleCreate(currentX, currentY);
+        }
+
+        function openRectangleCreate(cx, cy) {
+            selectedAnnotation = null;
+
+            document.getElementById("popover-title").innerText = "New Rectangle Annotation";
+            document.getElementById("annotation-label-input").value = "";
+            document.getElementById("annotation-comment-input").value = "";
+            document.getElementById("delete-annotation-btn").classList.add("hidden");
+
+            const popover = document.getElementById("annotation-popover");
+            popover.classList.remove("hidden");
+
+            positionPopover(cx, cy);
+        }
+
+        function openRectangleEdit(ann, cx, cy) {
+            if (annotationModeActive) {
+                toggleAnnotationMode();
+            }
+            if (rectangleModeActive) {
+                toggleRectangleMode();
+            }
+
+            selectedAnnotation = ann;
+
+            document.getElementById("popover-title").innerText = "Edit Rectangle Annotation";
+            document.getElementById("annotation-label-input").value = ann.label || "";
+            document.getElementById("annotation-comment-input").value = ann.comment || "";
+
+            const deleteBtn = document.getElementById("delete-annotation-btn");
+            const isAuthor = currentUser && (ann.doctor_id === currentUser.id || currentUser.role === 'admin');
+            if (isAuthor) {
+                deleteBtn.classList.remove("hidden");
+            } else {
+                deleteBtn.classList.add("hidden");
+            }
+
+            const popover = document.getElementById("annotation-popover");
+            popover.classList.remove("hidden");
+
+            positionPopover(cx, cy);
         }
 
         async function saveMriAnnotation() {
@@ -6136,24 +6381,50 @@
             try {
                 let url, method, body;
                 if (selectedAnnotation) {
-                    url = `/api/doctor/point-annotations/${selectedAnnotation.annotation_id}`;
+                    const isRect = selectedAnnotation.width !== undefined;
+                    const endpoint = isRect ? "rectangle-annotations" : "point-annotations";
+                    url = `/api/doctor/${endpoint}/${selectedAnnotation.annotation_id}`;
                     method = "PUT";
-                    body = {
-                        x: selectedAnnotation.x,
-                        y: selectedAnnotation.y,
-                        label: label,
-                        comment: comment
-                    };
+                    if (isRect) {
+                        body = {
+                            x: selectedAnnotation.x,
+                            y: selectedAnnotation.y,
+                            width: selectedAnnotation.width,
+                            height: selectedAnnotation.height,
+                            label: label,
+                            comment: comment
+                        };
+                    } else {
+                        body = {
+                            x: selectedAnnotation.x,
+                            y: selectedAnnotation.y,
+                            label: label,
+                            comment: comment
+                        };
+                    }
                 } else {
                     if (!placementCoordinates) return;
-                    url = `/api/doctor/scans/${currentSelectedScanId}/point-annotations`;
+                    const isRect = placementCoordinates.width !== undefined;
+                    const endpoint = isRect ? "rectangle-annotations" : "point-annotations";
+                    url = `/api/doctor/scans/${currentSelectedScanId}/${endpoint}`;
                     method = "POST";
-                    body = {
-                        x: placementCoordinates.x,
-                        y: placementCoordinates.y,
-                        label: label,
-                        comment: comment
-                    };
+                    if (isRect) {
+                        body = {
+                            x: placementCoordinates.x,
+                            y: placementCoordinates.y,
+                            width: placementCoordinates.width,
+                            height: placementCoordinates.height,
+                            label: label,
+                            comment: comment
+                        };
+                    } else {
+                        body = {
+                            x: placementCoordinates.x,
+                            y: placementCoordinates.y,
+                            label: label,
+                            comment: comment
+                        };
+                    }
                 }
 
                 const response = await fetchWithAuth(url, {
@@ -6163,10 +6434,13 @@
                 });
                 const data = await response.json();
                 if (response.ok) {
-                    alert("Point annotation saved successfully.");
+                    alert("Annotation saved successfully.");
                     closeAnnotationPopover();
                     if (annotationModeActive) {
                         toggleAnnotationMode();
+                    }
+                    if (rectangleModeActive) {
+                        toggleRectangleMode();
                     }
                     loadMriAnnotations(currentSelectedScanId);
                 } else {
@@ -6174,7 +6448,7 @@
                 }
             } catch (err) {
                 console.error("Save annotation error:", err);
-                alert("Network error saving point annotation.");
+                alert("Network error saving annotation.");
             } finally {
                 saveBtn.disabled = false;
                 saveBtn.innerText = origText;
@@ -6183,15 +6457,18 @@
 
         async function deleteSelectedAnnotation() {
             if (!selectedAnnotation) return;
-            if (!confirm("Are you sure you want to delete/archive this point annotation?")) return;
+            const isRect = selectedAnnotation.width !== undefined;
+            const typeStr = isRect ? "rectangle ROI" : "point";
+            if (!confirm(`Are you sure you want to delete/archive this ${typeStr} annotation?`)) return;
 
             try {
-                const response = await fetchWithAuth(`/api/doctor/point-annotations/${selectedAnnotation.annotation_id}`, {
+                const endpoint = isRect ? "rectangle-annotations" : "point-annotations";
+                const response = await fetchWithAuth(`/api/doctor/${endpoint}/${selectedAnnotation.annotation_id}`, {
                     method: "DELETE"
                 });
                 const data = await response.json();
                 if (response.ok) {
-                    alert("Point annotation deleted.");
+                    alert(`${isRect ? 'Rectangle' : 'Point'} annotation deleted.`);
                     closeAnnotationPopover();
                     loadMriAnnotations(currentSelectedScanId);
                 } else {
@@ -6199,7 +6476,7 @@
                 }
             } catch (err) {
                 console.error("Delete annotation error:", err);
-                alert("Network error deleting point annotation.");
+                alert(`Network error deleting ${typeStr} annotation.`);
             }
         }
 
@@ -6212,6 +6489,8 @@
             if (svg) {
                 const preview = svg.querySelector(".preview-marker");
                 if (preview) preview.remove();
+                const previewRect = svg.querySelector(".preview-rect");
+                if (previewRect) previewRect.remove();
             }
         }
     </script>

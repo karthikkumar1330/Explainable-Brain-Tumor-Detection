@@ -48,10 +48,10 @@ class TestMriAnnotations(unittest.TestCase):
             conn_drop.commit()
         finally:
             conn_drop.close()
-        
+
         # Bootstrap users
         self.admin_user = self.user_repo.bootstrap_admin()
-        
+
         from security.infrastructure.password import PasswordHasher
         pass_hash = PasswordHasher.hash_password("Password@123")
 
@@ -176,7 +176,7 @@ class TestMriAnnotations(unittest.TestCase):
         svc = MriAnnotationService(self.db_path)
         ann = svc.create_annotation(self.doc_a, 100, 0.5, 0.5, "Delete me", "Delete comment")
         svc.archive_annotation(self.doc_a, ann["annotation_id"])
-        
+
         # Verify it does not appear in active list
         anns = svc.get_annotations_for_scan(self.doc_a, 100)
         self.assertEqual(len(anns), 0)
@@ -291,7 +291,7 @@ class TestMriAnnotations(unittest.TestCase):
         """Test: IDOR scan ownership enforced."""
         svc = MriAnnotationService(self.db_path)
         ann = svc.create_annotation(self.doc_a, 100, 0.5, 0.5, "L", "C")
-        
+
         # Doc B attempts to fetch annotation A
         headers_b = {"Authorization": f"Bearer {self.token_doc_b}"}
         resp = self.client.get("/api/doctor/scans/100/point-annotations", headers=headers_b)
@@ -302,7 +302,7 @@ class TestMriAnnotations(unittest.TestCase):
         svc = MriAnnotationService(self.db_path)
         comment_val = "Clinician private observation."
         ann = svc.create_annotation(self.doc_a, 100, 0.5, 0.5, "L", comment_val)
-        
+
         # Verify direct database read contains ciphertext only
         conn = sqlite3.connect(self.db_path)
         try:
@@ -327,22 +327,22 @@ class TestMriAnnotations(unittest.TestCase):
         """Test: Comment is decrypted only for authorized users."""
         svc = MriAnnotationService(self.db_path)
         ann = svc.create_annotation(self.doc_a, 100, 0.5, 0.5, "L", "Decrypted comment test")
-        
+
         anns = svc.get_annotations_for_scan(self.doc_a, 100)
         self.assertEqual(anns[0]["comment"], "Decrypted comment test")
 
     def test_24_archived_annotation_hidden(self):
         """Test: Archived annotations are hidden on scan retrieve list."""
         headers = {"Authorization": f"Bearer {self.token_doc_a}"}
-        
+
         # Create
         resp = self.client.post("/api/doctor/scans/100/point-annotations", json={"x": 0.5, "y": 0.5, "label": "L", "comment": "C"}, headers=headers)
         ann_id = resp.json()["annotation_id"]
-        
+
         # Delete
         resp_del = self.client.delete(f"/api/doctor/point-annotations/{ann_id}", headers=headers)
         self.assertEqual(resp_del.status_code, 200)
-        
+
         # Read list
         resp_list = self.client.get("/api/doctor/scans/100/point-annotations", headers=headers)
         self.assertEqual(len(resp_list.json()), 0)
@@ -351,7 +351,7 @@ class TestMriAnnotations(unittest.TestCase):
         """Test: Creating point annotation creates POINT_ANNOTATION_CREATED audit log event."""
         svc = MriAnnotationService(self.db_path)
         svc.create_annotation(self.doc_a, 100, 0.5, 0.5, "L", "C")
-        
+
         conn = sqlite3.connect(self.db_path)
         try:
             row = conn.execute("SELECT event_type, details FROM security_audit_logs WHERE event_type = 'POINT_ANNOTATION_CREATED';").fetchone()
@@ -363,22 +363,260 @@ class TestMriAnnotations(unittest.TestCase):
     def test_26_edge_coordinates_valid(self):
         """Test: Edge values (0.0 and 1.0) are valid, out of bounds rejected."""
         svc = MriAnnotationService(self.db_path)
-        
+
         # 0.0 is valid
         ann0 = svc.create_annotation(self.doc_a, 100, 0.0, 0.0, "Edge 0")
         self.assertEqual(ann0["x"], 0.0)
-        
+
         # 1.0 is valid
         ann1 = svc.create_annotation(self.doc_a, 100, 1.0, 1.0, "Edge 1")
         self.assertEqual(ann1["x"], 1.0)
-        
+
         # -0.001 is invalid
         with self.assertRaises(MriAnnotationServiceException):
             svc.create_annotation(self.doc_a, 100, -0.001, 0.5, "L")
-            
+
         # 1.001 is invalid
         with self.assertRaises(MriAnnotationServiceException):
             svc.create_annotation(self.doc_a, 100, 1.001, 0.5, "L")
+
+    def test_27_authorized_doctor_can_create_rectangle(self):
+        """Test: Doctor A can create a rectangle annotation on Patient A's Scan A."""
+        svc = MriAnnotationService(self.db_path)
+        ann = svc.create_rectangle_annotation(self.doc_a, 100, 0.2, 0.3, 0.4, 0.25, "Tumor ROI", "Suspicious region.")
+        self.assertEqual(ann["scan_id"], 100)
+        self.assertEqual(ann["patient_id"], "pat-uuid-a")
+        self.assertEqual(ann["x"], 0.2)
+        self.assertEqual(ann["y"], 0.3)
+        self.assertEqual(ann["width"], 0.4)
+        self.assertEqual(ann["height"], 0.25)
+        self.assertEqual(ann["label"], "Tumor ROI")
+        self.assertEqual(ann["comment"], "Suspicious region.")
+        self.assertEqual(ann["status"], "active")
+
+    def test_28_authorized_doctor_can_read_rectangles(self):
+        """Test: Doctor A can read rectangle annotations on Patient A's Scan A."""
+        svc = MriAnnotationService(self.db_path)
+        svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.1, 0.2, 0.2, "ROI 1", "Comment 1")
+        anns = svc.get_rectangle_annotations_for_scan(self.doc_a, 100)
+        self.assertEqual(len(anns), 1)
+        self.assertEqual(anns[0]["x"], 0.1)
+        self.assertEqual(anns[0]["width"], 0.2)
+        self.assertEqual(anns[0]["comment"], "Comment 1")
+        self.assertEqual(anns[0]["doctor_email"], "doctor_a@aurascan.ai")
+
+    def test_29_authorized_doctor_can_update_rectangle(self):
+        """Test: Doctor A can update their own rectangle annotation."""
+        svc = MriAnnotationService(self.db_path)
+        ann = svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.1, 0.2, 0.2, "Orig Label", "Orig Comment")
+        updated = svc.update_rectangle_annotation(self.doc_a, ann["annotation_id"], 0.15, 0.15, 0.25, 0.25, "New Label", "New Comment")
+        self.assertEqual(updated["x"], 0.15)
+        self.assertEqual(updated["width"], 0.25)
+        self.assertEqual(updated["label"], "New Label")
+        self.assertEqual(updated["comment"], "New Comment")
+
+    def test_30_authorized_doctor_can_archive_rectangle(self):
+        """Test: Doctor A can soft-archive/delete their own rectangle annotation."""
+        svc = MriAnnotationService(self.db_path)
+        ann = svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.1, 0.2, 0.2, "Delete me", "Delete comment")
+        svc.archive_rectangle_annotation(self.doc_a, ann["annotation_id"])
+        anns = svc.get_rectangle_annotations_for_scan(self.doc_a, 100)
+        self.assertEqual(len(anns), 0)
+
+    def test_31_unauthorized_doctor_cannot_create_rectangle(self):
+        """Test: Doctor A cannot create rectangle on Scan B (no assignment)."""
+        svc = MriAnnotationService(self.db_path)
+        with self.assertRaises(MriAnnotationServiceException) as ctx:
+            svc.create_rectangle_annotation(self.doc_a, 101, 0.1, 0.1, 0.2, 0.2, "L", "C")
+        self.assertIn("Access denied", str(ctx.exception))
+
+    def test_32_unauthorized_doctor_cannot_read_rectangles(self):
+        """Test: Doctor B cannot read rectangle annotations on Scan A."""
+        svc = MriAnnotationService(self.db_path)
+        svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.1, 0.2, 0.2)
+        with self.assertRaises(MriAnnotationServiceException) as ctx:
+            svc.get_rectangle_annotations_for_scan(self.doc_b, 100)
+        self.assertIn("Access denied", str(ctx.exception))
+
+    def test_33_unauthorized_doctor_cannot_update_rectangle(self):
+        """Test: Doctor B cannot update Doctor A's rectangle annotation (IDOR protection)."""
+        svc = MriAnnotationService(self.db_path)
+        ann = svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.1, 0.2, 0.2)
+        with self.assertRaises(MriAnnotationServiceException) as ctx:
+            svc.update_rectangle_annotation(self.doc_b, ann["annotation_id"], 0.15, 0.15, 0.25, 0.25)
+        self.assertIn("Access denied", str(ctx.exception))
+
+    def test_34_unauthorized_doctor_cannot_archive_rectangle(self):
+        """Test: Doctor B cannot archive Doctor A's rectangle annotation."""
+        svc = MriAnnotationService(self.db_path)
+        ann = svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.1, 0.2, 0.2)
+        with self.assertRaises(MriAnnotationServiceException) as ctx:
+            svc.archive_rectangle_annotation(self.doc_b, ann["annotation_id"])
+        self.assertIn("Access denied", str(ctx.exception))
+
+    def test_35_zero_assignment_doctor_cannot_create_rectangle(self):
+        """Test: Doctor with zero assignments cannot create rectangle on Scan A."""
+        svc = MriAnnotationService(self.db_path)
+        with self.assertRaises(MriAnnotationServiceException) as ctx:
+            svc.create_rectangle_annotation(self.doc_zero, 100, 0.1, 0.1, 0.2, 0.2)
+        self.assertIn("Access denied", str(ctx.exception))
+
+    def test_36_patient_cannot_create_rectangle(self):
+        """Test: Patients cannot create rectangle annotations."""
+        svc = MriAnnotationService(self.db_path)
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.pat_a, 100, 0.1, 0.1, 0.2, 0.2)
+
+    def test_37_negative_coordinates_rejected(self):
+        """Test: Negative x, y, width, or height rejected."""
+        svc = MriAnnotationService(self.db_path)
+        # Negative x
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.doc_a, 100, -0.01, 0.1, 0.2, 0.2)
+        # Negative y
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.doc_a, 100, 0.1, -0.01, 0.2, 0.2)
+        # Negative width
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.1, -0.2, 0.2)
+        # Negative height
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.1, 0.2, -0.2)
+
+    def test_38_zero_width_or_height_rejected(self):
+        """Test: Zero width or height rejected."""
+        svc = MriAnnotationService(self.db_path)
+        # Zero width
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.1, 0.0, 0.2)
+        # Zero height
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.1, 0.2, 0.0)
+
+    def test_39_coordinates_above_one_rejected(self):
+        """Test: Coordinates above 1.0 rejected."""
+        svc = MriAnnotationService(self.db_path)
+        # x > 1
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.doc_a, 100, 1.05, 0.1, 0.2, 0.2)
+        # y > 1
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 1.05, 0.2, 0.2)
+        # width > 1
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.1, 1.05, 0.2)
+        # height > 1
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.1, 0.2, 1.05)
+
+    def test_40_rectangle_outside_boundaries_rejected(self):
+        """Test: Rectangle extending past boundary rejected."""
+        svc = MriAnnotationService(self.db_path)
+        # x + width > 1.0 (0.9 + 0.2 = 1.1)
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.doc_a, 100, 0.9, 0.1, 0.2, 0.2)
+        # y + height > 1.0 (0.1 + 0.95 = 1.05)
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.9, 0.2, 0.2)
+
+    def test_41_non_numeric_and_nan_inf_rejected(self):
+        """Test: non-numeric, NaN, and Infinity coordinate values rejected."""
+        svc = MriAnnotationService(self.db_path)
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.doc_a, 100, float("nan"), 0.1, 0.2, 0.2)
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.doc_a, 100, 0.1, float("inf"), 0.2, 0.2)
+        with self.assertRaises(MriAnnotationServiceException):
+            svc.create_rectangle_annotation(self.doc_a, 100, "string_val", 0.1, 0.2, 0.2)
+
+    def test_42_mismatched_patient_scan_rejected(self):
+        """Test: Mismatched patient and scan coordinates rejected."""
+        svc = MriAnnotationService(self.db_path)
+        with self.assertRaises(MriAnnotationServiceException) as ctx:
+            svc.create_rectangle_annotation(self.doc_a, 9999, 0.1, 0.1, 0.2, 0.2)
+        self.assertIn("Scan not found", str(ctx.exception))
+
+    def test_43_rectangle_comment_encrypted_in_db(self):
+        """Test: Comment encrypted in database."""
+        svc = MriAnnotationService(self.db_path)
+        comment_val = "Clinician private observation."
+        ann = svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.1, 0.2, 0.2, "L", comment_val)
+
+        conn = sqlite3.connect(self.db_path)
+        try:
+            row = conn.execute("SELECT encrypted_comment FROM mri_rectangle_annotations WHERE annotation_id = ?;", (ann["annotation_id"],)).fetchone()
+            db_comment = row[0]
+            self.assertNotEqual(db_comment, comment_val)
+            self.assertTrue(db_comment.startswith("enc:v1:"))
+            self.assertNotIn(comment_val, db_comment)
+        finally:
+            conn.close()
+
+    def test_44_rectangle_comment_decrypted_correctly(self):
+        """Test: Comment decrypted correctly for authorized users."""
+        svc = MriAnnotationService(self.db_path)
+        svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.1, 0.2, 0.2, "L", "Decrypted comment test")
+        anns = svc.get_rectangle_annotations_for_scan(self.doc_a, 100)
+        self.assertEqual(anns[0]["comment"], "Decrypted comment test")
+
+    def test_45_rectangle_audit_log_created(self):
+        """Test: Creating/updating/archiving creates audit log events."""
+        svc = MriAnnotationService(self.db_path)
+        ann = svc.create_rectangle_annotation(self.doc_a, 100, 0.1, 0.1, 0.2, 0.2, "L", "C")
+        svc.update_rectangle_annotation(self.doc_a, ann["annotation_id"], 0.1, 0.1, 0.2, 0.2, "L2", "C2")
+        svc.archive_rectangle_annotation(self.doc_a, ann["annotation_id"])
+
+        conn = sqlite3.connect(self.db_path)
+        try:
+            rows = conn.execute("SELECT event_type FROM security_audit_logs WHERE event_type LIKE 'RECTANGLE_ANNOTATION_%';").fetchall()
+            event_types = [r[0] for r in rows]
+            self.assertIn("RECTANGLE_ANNOTATION_CREATED", event_types)
+            self.assertIn("RECTANGLE_ANNOTATION_UPDATED", event_types)
+            self.assertIn("RECTANGLE_ANNOTATION_ARCHIVED", event_types)
+        finally:
+            conn.close()
+
+    def test_46_api_doctor_can_manage_rectangles(self):
+        """Test API endpoints for rectangles."""
+        # Create
+        headers = {"Authorization": f"Bearer {self.token_doc_a}"}
+        payload = {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.4, "label": "API ROI", "comment": "API Comment"}
+        resp = self.client.post("/api/doctor/scans/100/rectangle-annotations", json=payload, headers=headers)
+        self.assertEqual(resp.status_code, 200)
+        ann_id = resp.json()["annotation_id"]
+
+        # Read
+        resp_get = self.client.get("/api/doctor/scans/100/rectangle-annotations", headers=headers)
+        self.assertEqual(resp_get.status_code, 200)
+        self.assertEqual(len(resp_get.json()), 1)
+        self.assertEqual(resp_get.json()[0]["comment"], "API Comment")
+
+        # Update
+        payload_update = {"x": 0.15, "y": 0.25, "width": 0.3, "height": 0.4, "label": "API ROI Updated", "comment": "API Comment Updated"}
+        resp_put = self.client.put(f"/api/doctor/rectangle-annotations/{ann_id}", json=payload_update, headers=headers)
+        self.assertEqual(resp_put.status_code, 200)
+
+        # Archive
+        resp_del = self.client.delete(f"/api/doctor/rectangle-annotations/{ann_id}", headers=headers)
+        self.assertEqual(resp_del.status_code, 200)
+
+        # Read after archive
+        resp_get2 = self.client.get("/api/doctor/scans/100/rectangle-annotations", headers=headers)
+        self.assertEqual(len(resp_get2.json()), 0)
+
+    def test_47_api_unauthorized_doctor_cannot_access_rectangles(self):
+        """Test API IDOR protection."""
+        headers_b = {"Authorization": f"Bearer {self.token_doc_b}"}
+
+        # Unauthorized Scan A GET
+        resp_get = self.client.get("/api/doctor/scans/100/rectangle-annotations", headers=headers_b)
+        self.assertEqual(resp_get.status_code, 403)
+
+        # Unauthorized Scan A POST
+        payload = {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.4}
+        resp_post = self.client.post("/api/doctor/scans/100/rectangle-annotations", json=payload, headers=headers_b)
+        self.assertEqual(resp_post.status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()

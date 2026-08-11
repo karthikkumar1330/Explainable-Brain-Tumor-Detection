@@ -315,6 +315,27 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         );
         """
 
+        create_mri_rectangle_annotations_sql = """
+        CREATE TABLE IF NOT EXISTS mri_rectangle_annotations (
+            annotation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scan_id INTEGER NOT NULL,
+            patient_id TEXT NOT NULL,
+            doctor_id INTEGER NOT NULL,
+            x_normalized REAL NOT NULL,
+            y_normalized REAL NOT NULL,
+            width_normalized REAL NOT NULL,
+            height_normalized REAL NOT NULL,
+            label TEXT,
+            encrypted_comment TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (scan_id) REFERENCES mri_scans(id) ON DELETE CASCADE,
+            FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE,
+            FOREIGN KEY (doctor_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        """
+
         # Analytics and Delivery Indices
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_patients_age_gender ON patients(age, gender);",
@@ -352,7 +373,11 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             "CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_scan ON mri_point_annotations(scan_id);",
             "CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_patient ON mri_point_annotations(patient_id);",
             "CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_doctor ON mri_point_annotations(doctor_id);",
-            "CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_created ON mri_point_annotations(created_at);"
+            "CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_created ON mri_point_annotations(created_at);",
+            "CREATE INDEX IF NOT EXISTS idx_mri_rectangle_annotations_scan ON mri_rectangle_annotations(scan_id);",
+            "CREATE INDEX IF NOT EXISTS idx_mri_rectangle_annotations_patient ON mri_rectangle_annotations(patient_id);",
+            "CREATE INDEX IF NOT EXISTS idx_mri_rectangle_annotations_doctor ON mri_rectangle_annotations(doctor_id);",
+            "CREATE INDEX IF NOT EXISTS idx_mri_rectangle_annotations_created ON mri_rectangle_annotations(created_at);"
         ]
 
         conn = self._get_connection()
@@ -374,6 +399,7 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 conn.execute(create_doctor_patient_assignments_sql)
                 conn.execute(create_clinician_notes_sql)
                 conn.execute(create_mri_point_annotations_sql)
+                conn.execute(create_mri_rectangle_annotations_sql)
                 for idx_sql in indices:
                     conn.execute(idx_sql)
 
