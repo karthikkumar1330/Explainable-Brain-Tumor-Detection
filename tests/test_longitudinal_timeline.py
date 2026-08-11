@@ -24,6 +24,7 @@ class MockUser:
         self.uuid = uuid
         self.full_name = full_name
         self.role = MockRole(role_val)
+        self.id = 999
 
 
 class TestLongitudinalTimelineDomain(unittest.TestCase):
@@ -387,6 +388,22 @@ class TestLongitudinalTimelineService(unittest.TestCase):
 
         self.persistence_repo = SQLitePersistenceRepository(db_path=self.db_path)
         self.persistence_repo.initialize_db()
+
+        self.user_repo = SQLiteUserRepository(db_path=self.db_path)
+        self.user_repo.initialize_security_tables()
+
+        # Seed doctor 999 so trigger auto-assign works when patient is inserted
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                "INSERT INTO users (id, uuid, email, password_hash, full_name, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
+                (999, "doc-1", "doctor@aurascan.ai", "fake", "Doctor User", "doctor", "2026-08-09T00:00:00", "2026-08-09T00:00:00")
+            )
+            conn.commit()
+        except Exception:
+            pass
+        finally:
+            conn.close()
 
         self.service = ReportService(db_path=self.db_path)
 

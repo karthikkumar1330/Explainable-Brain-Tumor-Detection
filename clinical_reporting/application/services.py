@@ -2136,19 +2136,7 @@ class ReportService:
             safe_log_audit("PATIENT_TIMELINE_ACCESSED", actor, "FAILED", "Timeline request rejected: Malformed path traversal characters in Patient ID.")
             raise ReportServiceException("Malformed patient ID.")
 
-        # 2. Enforce security access check
-        if actor is None:
-            safe_log_audit("PATIENT_TIMELINE_ACCESSED", None, "FAILED", f"Access denied to patient timeline for ID: {stripped_id}. Authentication required.")
-            raise ReportServiceException("Authentication required.")
-
-        role_val = actor.role.value if hasattr(actor.role, 'value') else str(actor.role).lower()
-        from security.application.authorization_service import AuthorizationService
-        auth_svc = AuthorizationService(db_path=self.db_path)
-        if not auth_svc.can_access_patient(actor, stripped_id):
-            safe_log_audit("PATIENT_TIMELINE_ACCESSED", actor, "FAILED", f"Access denied to patient timeline for ID: {stripped_id}. User not authorized.")
-            raise ReportServiceException("Access denied to patient timeline.")
-
-        # 3. Fetch patient name and verify existence
+        # 2. Fetch patient name and verify existence
         conn = self._get_connection()
         try:
             row_pat = conn.execute("SELECT name FROM patients WHERE patient_id = ?;", (stripped_id,)).fetchone()
@@ -2172,6 +2160,18 @@ class ReportService:
                     patient_name = pat_name_raw
             else:
                 patient_name = ""
+
+            # 3. Enforce security access check
+            if actor is None:
+                safe_log_audit("PATIENT_TIMELINE_ACCESSED", None, "FAILED", f"Access denied to patient timeline for ID: {stripped_id}. Authentication required.")
+                raise ReportServiceException("Authentication required.")
+
+            role_val = actor.role.value if hasattr(actor.role, 'value') else str(actor.role).lower()
+            from security.application.authorization_service import AuthorizationService
+            auth_svc = AuthorizationService(db_path=self.db_path)
+            if not auth_svc.can_access_patient(actor, stripped_id):
+                safe_log_audit("PATIENT_TIMELINE_ACCESSED", actor, "FAILED", f"Access denied to patient timeline for ID: {stripped_id}. User not authorized.")
+                raise ReportServiceException("Access denied to patient timeline.")
 
             # 4. Query all reports for patient
             query = """

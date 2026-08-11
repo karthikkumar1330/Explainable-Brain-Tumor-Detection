@@ -71,20 +71,10 @@ class AuthorizationService:
         if role_val == "doctor":
             doctor_id = getattr(user, 'id', None)
             if doctor_id is None:
-                # Mock users in legacy tests default to ALLOW
-                return True
+                return False
 
             conn = self._get_connection()
             try:
-                # Check if doctor has any assignments populated at all
-                has_any_assignment = conn.execute(
-                    "SELECT 1 FROM doctor_patient_assignments WHERE doctor_id = ? LIMIT 1;", (doctor_id,)
-                ).fetchone()
-                
-                # Backward compatibility: if doctor has zero assignments in DB, default to ALLOW (legacy test compatibility)
-                if not has_any_assignment:
-                    return True
-
                 # Check explicit assignment
                 assignment = conn.execute(
                     "SELECT 1 FROM doctor_patient_assignments WHERE doctor_id = ? AND patient_id = ?;",
@@ -92,16 +82,6 @@ class AuthorizationService:
                 ).fetchone()
                 if assignment:
                     return True
-                
-                # Check if doctor created a report for this patient
-                doctor_email = getattr(user, 'email', None)
-                if doctor_email:
-                    created_report = conn.execute(
-                        "SELECT 1 FROM reports WHERE patient_id = ? AND created_by = ? LIMIT 1;",
-                        (patient_id, doctor_email)
-                    ).fetchone()
-                    if created_report:
-                        return True
 
             except Exception:
                 pass

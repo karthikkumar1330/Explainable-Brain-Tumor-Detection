@@ -21,6 +21,7 @@ class TestH32SAuthorization(unittest.TestCase):
     """Focused security and role boundary tests for Phase H3.2-S."""
 
     def setUp(self):
+        os.environ["DISABLE_TEST_AUTO_ASSIGN"] = "1"
         self.db_path = os.environ.get("DB_PATH", "outputs/test_h32s_auth.db")
         if os.path.exists(self.db_path):
             try:
@@ -40,6 +41,16 @@ class TestH32SAuthorization(unittest.TestCase):
 
         self.user_repo = SQLiteUserRepository(db_path=self.db_path)
         self.user_repo.initialize_security_tables()
+
+        # Drop the auto-assignment triggers to ensure strict clean testing
+        conn_drop = sqlite3.connect(self.db_path)
+        try:
+            conn_drop.execute("DROP TRIGGER IF EXISTS auto_assign_doctor_on_insert;")
+            conn_drop.execute("DROP TRIGGER IF EXISTS auto_assign_patient_on_insert;")
+            conn_drop.execute("DELETE FROM doctor_patient_assignments;")
+            conn_drop.commit()
+        finally:
+            conn_drop.close()
         
         # Bootstrap users
         self.admin_user = self.user_repo.bootstrap_admin()
@@ -163,6 +174,8 @@ class TestH32SAuthorization(unittest.TestCase):
 
     def tearDown(self):
         self.test_client_ctx.__exit__(None, None, None)
+        if "DISABLE_TEST_AUTO_ASSIGN" in os.environ:
+            del os.environ["DISABLE_TEST_AUTO_ASSIGN"]
         if os.path.exists(self.db_path):
             try:
                 os.remove(self.db_path)
@@ -316,6 +329,19 @@ class TestH32SAuthorization(unittest.TestCase):
             self.assertNotIn("Bob Jones", details)
         finally:
             conn.close()
+
+    def test_21_doctor_with_zero_assignments_denied(self):
+        """Test: Doctor B with zero assignments is denied access to Patient A and Patient B."""
+        auth_svc = AuthorizationService(self.db_path)
+        self.assertFalse(auth_svc.can_access_patient(self.doc2, "pat-uuid-1"))
+        self.assertFalse(auth_svc.can_access_patient(self.doc2, "pat-uuid-2"))
+
+        # Test API response for Doctor B
+        headers = {"Authorization": f"Bearer {self.token_doc2}"}
+        resp1 = self.client.get("/api/reports/300", headers=headers)
+        self.assertEqual(resp1.status_code, 403)
+        resp2 = self.client.get("/api/reports/301", headers=headers)
+        self.assertEqual(resp2.status_code, 403)
 
 if __name__ == "__main__":
     unittest.main()
