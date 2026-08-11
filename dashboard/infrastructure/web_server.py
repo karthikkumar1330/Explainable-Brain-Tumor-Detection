@@ -1653,9 +1653,22 @@ def create_app(db_path: str) -> Flask:
             """
             rows = conn.execute(query, params).fetchall()
 
+            try:
+                from security.infrastructure.encryption_service import PIIEncryptionService
+                encryption_service = PIIEncryptionService()
+            except Exception:
+                encryption_service = None
+
             res = []
             for r in rows:
-                res.append(dict(r))
+                row_dict = dict(r)
+                p_name = row_dict.get("patient_name")
+                if p_name is not None:
+                    if str(p_name).startswith("enc:v1:"):
+                        if encryption_service is None:
+                            raise ValueError("Patient name is encrypted but PII_ENCRYPTION_KEY is missing.")
+                        row_dict["patient_name"] = encryption_service.decrypt(p_name)
+                res.append(row_dict)
             return jsonify(res)
         finally:
             conn.close()
@@ -1683,7 +1696,21 @@ def create_app(db_path: str) -> Flask:
                 if row["flagged_by_user_id"] != current_user.id:
                     return jsonify({"error": "Access denied to quality flag"}), 403
 
-            return jsonify(dict(row))
+            row_dict = dict(row)
+            try:
+                from security.infrastructure.encryption_service import PIIEncryptionService
+                encryption_service = PIIEncryptionService()
+            except Exception:
+                encryption_service = None
+
+            p_name = row_dict.get("patient_name")
+            if p_name is not None:
+                if str(p_name).startswith("enc:v1:"):
+                    if encryption_service is None:
+                        raise ValueError("Patient name is encrypted but PII_ENCRYPTION_KEY is missing.")
+                    row_dict["patient_name"] = encryption_service.decrypt(p_name)
+
+            return jsonify(row_dict)
         finally:
             conn.close()
 
@@ -1807,6 +1834,18 @@ def create_app(db_path: str) -> Flask:
                 if not row:
                     return jsonify({"error": "Report not found"}), 404
                 report_dict = dict(row)
+                try:
+                    from security.infrastructure.encryption_service import PIIEncryptionService
+                    encryption_service = PIIEncryptionService()
+                except Exception:
+                    encryption_service = None
+
+                p_name = report_dict.get("patient_name")
+                if p_name is not None:
+                    if str(p_name).startswith("enc:v1:"):
+                        if encryption_service is None:
+                            raise ValueError("Patient name is encrypted but PII_ENCRYPTION_KEY is missing.")
+                        report_dict["patient_name"] = encryption_service.decrypt(p_name)
             finally:
                 conn.close()
 

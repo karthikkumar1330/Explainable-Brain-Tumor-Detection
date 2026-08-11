@@ -23,3 +23,4 @@ qrcode>=8.0.0
 # Client Interface
 python-dotenv
 pyngrok
+cryptography>=41.0.0

@@ -913,7 +913,23 @@ class ReportService:
                 if not row_pat:
                     return "FORBIDDEN"
 
-                pat_name = row_pat["patient_name"].lower()
+                try:
+                    from security.infrastructure.encryption_service import PIIEncryptionService
+                    encryption_service = PIIEncryptionService()
+                except Exception:
+                    encryption_service = None
+
+                pat_name_raw = row_pat["patient_name"]
+                if pat_name_raw is not None:
+                    if str(pat_name_raw).startswith("enc:v1:"):
+                        if encryption_service is None:
+                            raise ValueError("Patient name is encrypted but PII_ENCRYPTION_KEY is missing.")
+                        pat_name = encryption_service.decrypt(pat_name_raw).lower()
+                    else:
+                        pat_name = pat_name_raw.lower()
+                else:
+                    pat_name = ""
+
                 pat_id = row_pat["patient_id"].lower()
                 user_name = user.full_name.lower() if user.full_name else ""
                 user_uuid = user.uuid.lower() if user.uuid else ""
@@ -2185,7 +2201,23 @@ class ReportService:
                 try:
                     row_pat = conn.execute("SELECT name FROM patients WHERE patient_id = ?;", (stripped_id,)).fetchone()
                     if row_pat:
-                        pat_name = row_pat["name"].lower()
+                        try:
+                            from security.infrastructure.encryption_service import PIIEncryptionService
+                            encryption_service = PIIEncryptionService()
+                        except Exception:
+                            encryption_service = None
+
+                        pat_name_raw = row_pat["name"]
+                        if pat_name_raw is not None:
+                            if str(pat_name_raw).startswith("enc:v1:"):
+                                if encryption_service is None:
+                                    raise ValueError("Patient name is encrypted but PII_ENCRYPTION_KEY is missing.")
+                                pat_name = encryption_service.decrypt(pat_name_raw).lower()
+                            else:
+                                pat_name = pat_name_raw.lower()
+                        else:
+                            pat_name = ""
+
                         if pat_name == user_name:
                             authorized = True
                 finally:
@@ -2202,7 +2234,23 @@ class ReportService:
             if not row_pat:
                 safe_log_audit("PATIENT_TIMELINE_ACCESSED", actor, "FAILED", f"Timeline request failed. Patient with ID {stripped_id} not found in database.")
                 raise ReportServiceException(f"Patient with ID {stripped_id} not found.")
-            patient_name = row_pat["name"]
+
+            try:
+                from security.infrastructure.encryption_service import PIIEncryptionService
+                encryption_service = PIIEncryptionService()
+            except Exception:
+                encryption_service = None
+
+            pat_name_raw = row_pat["name"]
+            if pat_name_raw is not None:
+                if str(pat_name_raw).startswith("enc:v1:"):
+                    if encryption_service is None:
+                        raise ValueError("Patient name is encrypted but PII_ENCRYPTION_KEY is missing.")
+                    patient_name = encryption_service.decrypt(pat_name_raw)
+                else:
+                    patient_name = pat_name_raw
+            else:
+                patient_name = ""
 
             # 4. Query all reports for patient
             query = """
@@ -2536,9 +2584,25 @@ class ReportService:
                 pat_id_key = str(row["patient_id"]).strip().lower()
                 patient_timeline_rows[pat_id_key].append(row)
 
+            try:
+                from security.infrastructure.encryption_service import PIIEncryptionService
+                encryption_service = PIIEncryptionService()
+            except Exception:
+                encryption_service = None
+
             for row_pat in rows_patients:
                 pat_id = row_pat["patient_id"]
-                pat_name = row_pat["name"]
+                pat_name_raw = row_pat["name"]
+                if pat_name_raw is not None:
+                    if str(pat_name_raw).startswith("enc:v1:"):
+                        if encryption_service is None:
+                            raise ValueError("Patient name is encrypted but PII_ENCRYPTION_KEY is missing.")
+                        pat_name = encryption_service.decrypt(pat_name_raw)
+                    else:
+                        pat_name = pat_name_raw
+                else:
+                    pat_name = ""
+
                 stripped_id = str(pat_id).strip()
                 lookup_key = stripped_id.lower()
 

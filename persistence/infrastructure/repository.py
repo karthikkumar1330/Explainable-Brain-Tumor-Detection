@@ -482,6 +482,16 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         try:
+            from security.infrastructure.encryption_service import PIIEncryptionService
+            encryption_service = PIIEncryptionService()
+            enc_name = encryption_service.encrypt(report.patient_info.name)
+            enc_age = encryption_service.encrypt(report.patient_info.age)
+            enc_gender = encryption_service.encrypt(report.patient_info.gender)
+        except Exception as enc_err:
+            self.logger.error(f"PII encryption failed during save_report: {enc_err}")
+            raise enc_err
+
+        try:
             with conn:
                 # 1. Insert/Update Patient Record
                 patient_sql = """
@@ -494,9 +504,9 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 """
                 conn.execute(patient_sql, (
                     report.patient_info.patient_id,
-                    report.patient_info.name,
-                    report.patient_info.age,
-                    report.patient_info.gender,
+                    enc_name,
+                    enc_age,
+                    enc_gender,
                     now_str
                 ))
 
@@ -797,7 +807,39 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             cursor = conn.cursor()
             cursor.execute(query, (patient_id,))
             rows = cursor.fetchall()
-            return [dict(row) for row in rows]
+
+            try:
+                from security.infrastructure.encryption_service import PIIEncryptionService
+                encryption_service = PIIEncryptionService()
+            except Exception:
+                encryption_service = None
+
+            results = []
+            for row in rows:
+                row_dict = dict(row)
+                for field in ["name", "age", "gender"]:
+                    val = row_dict.get(field)
+                    if val is not None:
+                        is_enc = str(val).startswith("enc:v1:")
+                        if is_enc:
+                            if encryption_service is None:
+                                raise ValueError(f"PII field '{field}' is encrypted but PII_ENCRYPTION_KEY is missing.")
+                            decrypted_val = encryption_service.decrypt(val)
+                            if field == "age" and decrypted_val is not None:
+                                try:
+                                    decrypted_val = int(decrypted_val)
+                                except ValueError:
+                                    pass
+                            row_dict[field] = decrypted_val
+                        else:
+                            # Parse age integer in plaintext records
+                            if field == "age" and val is not None:
+                                try:
+                                    row_dict[field] = int(val)
+                                except ValueError:
+                                    pass
+                results.append(row_dict)
+            return results
         except Exception as e:
             self.logger.error(f"Failed to query history for patient {patient_id}: {e}")
             raise e
