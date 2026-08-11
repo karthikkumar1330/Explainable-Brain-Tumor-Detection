@@ -1,6 +1,9 @@
 import os
 from typing import Optional
 from cryptography.fernet import Fernet
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class EncryptionKeyMissingError(Exception):
     """Raised when the PII encryption key is not configured."""
