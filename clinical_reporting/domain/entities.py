@@ -574,22 +574,22 @@ class LongitudinalPatientTimeline:
                         c_val = float(latest.tumor_area)
                         if p_val == 0.0:
                             if c_val > 0.0:
-                                status = "PROGRESSION"
-                                summary = f"Tumor emerged. Latest area: {c_val} mm2."
+                                status = "AREA_INCREASED"
+                                summary = f"New segmented lesion area detected. Latest area: {c_val} mm²."
                             else:
                                 status = "STABLE"
                                 summary = "No tumor detected."
                         else:
                             pct = ((c_val - p_val) / p_val) * 100.0
                             if pct >= 10.0:
-                                status = "PROGRESSION"
-                                summary = f"Tumor area increased by {pct:.1f}%."
+                                status = "AREA_INCREASED"
+                                summary = f"AI-assisted quantitative comparison: segmented area increased by {pct:.1f}%."
                             elif pct <= -10.0:
-                                status = "REGRESSION"
-                                summary = f"Tumor area decreased by {abs(pct):.1f}%."
+                                status = "AREA_DECREASED"
+                                summary = f"AI-assisted quantitative comparison: segmented area decreased by {abs(pct):.1f}%."
                             else:
                                 status = "STABLE"
-                                summary = f"Tumor area remains stable (change: {pct:+.1f}%)."
+                                summary = f"AI-assisted quantitative comparison: segmented area remains stable (change: {pct:+.1f}%)."
                     else:
                         status = "STABLE"
                         summary = "Comparison unavailable due to missing/invalid tumor area."
@@ -599,7 +599,7 @@ class LongitudinalPatientTimeline:
                         summary = f"Classification changed from {first.classification} to {latest.classification}."
                     else:
                         status = "STABLE"
-                        summary = "Patient condition stable."
+                        summary = "Segmented measurements remain stable."
 
             object.__setattr__(self, 'timeline_status', status)
             object.__setattr__(self, 'trend_summary', summary)

@@ -9,10 +9,10 @@ import numpy as np
 import torch
 import albumentations as A
 import logging
-from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Query
+from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Query, Form
 from fastapi.responses import FileResponse, JSONResponse
 from contextlib import asynccontextmanager
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 
 from classification.config import ClassificationConfig
 from classification.infrastructure.models import EfficientNetB0Model, PyTorchModelAdapter
@@ -422,6 +422,36 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
                 }
             )
 
+        return _run_single_report_pipeline(
+            filepath=filepath,
+            intake=intake,
+            current_user=current_user,
+            scorecard=scorecard,
+            file_bytes=file_bytes,
+            validator=validator,
+            t_start=t_start,
+            t_endpoint_start=t_endpoint_start,
+            timeline=timeline
+        )
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"End-to-end report generation pipeline failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {e}")
+
+
+def _run_single_report_pipeline(
+    filepath: str,
+    intake: PatientIntake,
+    current_user: User,
+    scorecard: Any,
+    file_bytes: bytes,
+    validator: Any,
+    t_start: float,
+    t_endpoint_start: float,
+    timeline: Dict[str, float]
+):
+    try:
         img_bgr = cv2.imread(filepath, cv2.IMREAD_COLOR)
         if img_bgr is None:
             raise HTTPException(status_code=400, detail="Failed to read uploaded image.")
@@ -999,6 +1029,253 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
         raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {e}")
 
 
+@router.post("/report/batch")
+async def generate_clinical_report_batch(
+    files: List[UploadFile] = File(...),
+    patient_id: str = Form(...),
+    name: str = Form(...),
+    age: int = Form(...),
+    gender: str = Form("Female"),
+    ref_physician: str = Form("Dr. Unknown"),
+    pixel_spacing_mm: float = Form(1.0),
+    xai_method: Optional[str] = Form("gradcam"),
+    ensemble_mode: Optional[str] = Form("false"),
+    current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))
+):
+    """API Endpoint: Runs the complete diagnostics pipeline on multiple MRI files in one batch."""
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided in batch.")
+
+    import uuid
+    import hashlib
+    batch_id = str(uuid.uuid4())
+    t_batch_start = time.time()
+
+    # Parse ensemble mode string
+    ensemble_val = ensemble_mode.lower() == "true"
+
+    intake = PatientIntake(
+        patient_id=patient_id,
+        name=name,
+        age=age,
+        gender=gender,
+        ref_physician=ref_physician,
+        pixel_spacing_mm=pixel_spacing_mm,
+        xai_method=xai_method,
+        ensemble_mode=ensemble_val
+    )
+
+    stats = {
+        "total_files": len(files),
+        "valid_files": 0,
+        "invalid_files": 0,
+        "duplicates": 0,
+        "successful": 0,
+        "failed": 0,
+        "total_duration_sec": 0.0,
+        "batch_id": batch_id
+    }
+
+    results = []
+    seen_hashes = set()
+
+    from input_validation.infrastructure.validators import OpenCVMriValidator
+    from input_validation.application.use_cases import ValidateMriUploadUseCase
+    db_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)
+
+    validator = OpenCVMriValidator()
+    use_case = ValidateMriUploadUseCase(validator=validator, db_path=DEFAULT_DB_PATH)
+
+    for upload_file in files:
+        t_file_start = time.time()
+        file_bytes = await upload_file.read()
+        filename = upload_file.filename or "unknown_file"
+
+        # Check empty file
+        if not file_bytes:
+            stats["invalid_files"] += 1
+            stats["failed"] += 1
+            results.append({
+                "filename": filename,
+                "status": "FAILED",
+                "error_code": "VALIDATION_ERROR",
+                "error_message": "Empty file uploaded.",
+                "prediction": None,
+                "confidence": None,
+                "segmentation_status": None,
+                "tumor_area": None,
+                "tumor_percentage": None,
+                "severity": None,
+                "processing_time": 0.0,
+                "scan_identifier": None
+            })
+            continue
+
+        # Check content hash duplicate within batch
+        content_hash = hashlib.sha256(file_bytes).hexdigest()
+        if content_hash in seen_hashes:
+            stats["duplicates"] += 1
+            stats["failed"] += 1
+            results.append({
+                "filename": filename,
+                "status": "FAILED",
+                "error_code": "DUPLICATE_FILE",
+                "error_message": "Duplicate scan detected. This file is identical to another scan in the same batch.",
+                "prediction": None,
+                "confidence": None,
+                "segmentation_status": None,
+                "tumor_area": None,
+                "tumor_percentage": None,
+                "severity": None,
+                "processing_time": 0.0,
+                "scan_identifier": None
+            })
+            continue
+
+        seen_hashes.add(content_hash)
+
+        # Save to temp file
+        os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
+        temp_filename = f"batch_{batch_id}_{int(time.time())}_{filename}"
+        temp_filepath = os.path.join(TEMP_UPLOAD_DIR, temp_filename)
+        with open(temp_filepath, "wb") as f:
+            f.write(file_bytes)
+
+        try:
+            # 1. Run Validation
+            scorecard = use_case.execute(filepath=temp_filepath, file_bytes=file_bytes, filename=filename)
+
+            if not scorecard.is_valid:
+                stats["invalid_files"] += 1
+                stats["failed"] += 1
+                # Classify error type
+                err_code = "VALIDATION_ERROR"
+                err_msg = ", ".join(scorecard.errors)
+                if any("duplicate" in err.lower() for err in scorecard.errors):
+                    err_code = "DUPLICATE_FILE"
+                    stats["duplicates"] += 1
+                    stats["invalid_files"] -= 1  # adjust since duplicates are counted separately
+                elif any(ext in filename.lower() for ext in [".dcm", ".dicom"]):
+                    err_code = "UNSUPPORTED_FORMAT"
+                elif any("format" in err.lower() or "extension" in err.lower() for err in scorecard.errors):
+                    err_code = "UNSUPPORTED_FORMAT"
+                elif any("corrupt" in err.lower() or "read" in err.lower() or "integrity" in err.lower() for err in scorecard.errors):
+                    err_code = "CORRUPTED_IMAGE"
+
+                results.append({
+                    "filename": filename,
+                    "status": "FAILED",
+                    "error_code": err_code,
+                    "error_message": err_msg,
+                    "prediction": None,
+                    "confidence": None,
+                    "segmentation_status": None,
+                    "tumor_area": None,
+                    "tumor_percentage": None,
+                    "severity": None,
+                    "processing_time": time.time() - t_file_start,
+                    "scan_identifier": None
+                })
+                # Clean up temp file
+                if os.path.exists(temp_filepath):
+                    try:
+                        os.remove(temp_filepath)
+                    except Exception:
+                        pass
+                continue
+
+            stats["valid_files"] += 1
+
+            # 2. Run existing prediction pipeline
+            timeline = {
+                "Upload": 0.0,
+                "Validation": time.time() - t_file_start
+            }
+            res_report = _run_single_report_pipeline(
+                filepath=temp_filepath,
+                intake=intake,
+                current_user=current_user,
+                scorecard=scorecard,
+                file_bytes=file_bytes,
+                validator=validator,
+                t_start=t_file_start,
+                t_endpoint_start=t_file_start,
+                timeline=timeline
+            )
+
+            # Retrieve tumor_percentage_brain from SQLite DB
+            tumor_pct = 0.0
+            try:
+                conn = db_repo._get_connection()
+                row = conn.execute("""
+                    SELECT p.tumor_percentage_brain
+                    FROM predictions p
+                    JOIN clinical_reports cr ON cr.prediction_id = p.id
+                    WHERE cr.id = ?
+                """, (res_report["report_id"],)).fetchone()
+                if row:
+                    tumor_pct = float(row["tumor_percentage_brain"])
+                conn.close()
+            except Exception as db_pct_err:
+                logger.error(f"Failed to query tumor percentage from DB: {db_pct_err}")
+
+            stats["successful"] += 1
+            results.append({
+                "filename": filename,
+                "status": "SUCCESS",
+                "error_code": None,
+                "error_message": None,
+                "prediction": res_report["diagnosis"],
+                "confidence": res_report["confidence"],
+                "segmentation_status": "SUCCESS" if res_report["tumor_area_mm2"] >= 0 else "FAILED",
+                "tumor_area": res_report["tumor_area_mm2"],
+                "tumor_percentage": tumor_pct,
+                "severity": res_report["severity"],
+                "processing_time": time.time() - t_file_start,
+                "scan_identifier": res_report["report_id"]
+            })
+
+        except Exception as e:
+            logger.error(f"Batch item execution failed for {filename}: {e}")
+            stats["failed"] += 1
+            # Classify execution error
+            err_code = "INFERENCE_ERROR"
+            err_msg = str(e)
+            if "database" in err_msg.lower() or "sqlite" in err_msg.lower():
+                err_code = "DATABASE_ERROR"
+            elif "segmentation" in err_msg.lower():
+                err_code = "SEGMENTATION_ERROR"
+            elif "gradcam" in err_msg.lower() or "explain" in err_msg.lower():
+                err_code = "EXPLAINABILITY_ERROR"
+
+            results.append({
+                "filename": filename,
+                "status": "FAILED",
+                "error_code": err_code,
+                "error_message": f"Inference execution failed: {err_msg}",
+                "prediction": None,
+                "confidence": None,
+                "segmentation_status": None,
+                "tumor_area": None,
+                "tumor_percentage": None,
+                "severity": None,
+                "processing_time": time.time() - t_file_start,
+                "scan_identifier": None
+            })
+            # Clean up temp file on failure
+            if os.path.exists(temp_filepath):
+                try:
+                    os.remove(temp_filepath)
+                except Exception:
+                    pass
+
+    stats["total_duration_sec"] = time.time() - t_batch_start
+    return {
+        "stats": stats,
+        "results": results
+    }
+
+
 @router.get("/report/{report_id}/pdf")
 def serve_report_pdf(report_id: int, version: Optional[str] = Query(None), current_user: User = Depends(get_current_user)):
     """Streams the compiled PDF document directly to clients with ownership validation."""
@@ -1462,6 +1739,35 @@ def compare_followup_reports_api(
         logger.error(f"Error in follow-up comparison API: {e}")
         raise HTTPException(status_code=500, detail="Internal follow-up comparison engine error")
 
+
+@router.get("/patients/{patient_id}/longitudinal-timeline")
+def get_patient_timeline_api(
+    patient_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """API Endpoint: Retrieves chronological patient timeline, enforcing RBAC."""
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        from clinical_reporting.application.services import ReportServiceException
+
+        timeline = service.get_patient_longitudinal_timeline(
+            patient_id=patient_id,
+            actor=current_user
+        )
+        return timeline.to_dict()
+    except ReportServiceException as rse:
+        err_msg = str(rse)
+        if "Access denied" in err_msg or "denied" in err_msg.lower():
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=422, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in timeline API: {e}")
+        raise HTTPException(status_code=500, detail="Internal timeline engine error")
 
 
 @router.get("/reports/{report_id}/versions")

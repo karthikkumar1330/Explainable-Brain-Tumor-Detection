@@ -97,18 +97,18 @@ class OpenCVLongitudinalAnalyzer(ILongitudinalAnalyzer):
 
         # 5. Generate progression assessment status and summary text
         if curr_class == "No Tumor" and prev_class == "No Tumor":
-            progression_status = "No Tumor Detected"
-            summary_text = "No tumor mass detected in either the current slice or the previous scan history. Patient is clear."
+            progression_status = "No Segmented Tumor Detected"
+            summary_text = "AI-assisted quantitative comparison: no segmented tumor detected in either the current slice or the previous scan history."
         elif prev_class == "No Tumor" and curr_class != "No Tumor":
-            progression_status = "Progressive Disease"
+            progression_status = "Significant Segmented Area Increase"
             summary_text = (
-                f"New active lesion detected. The classification has progressed from 'No Tumor' to "
-                f"'{curr_class}' (Confidence: {curr_conf:.2%}, Area: {curr_area:.1f} mm²). Immediate clinical evaluation recommended."
+                f"New active segmented lesion detected. The classification has shifted from 'No Tumor' to "
+                f"'{curr_class}' (Confidence: {curr_conf:.2%}, Area: {curr_area:.1f} mm²)."
             )
         elif prev_class != "No Tumor" and curr_class == "No Tumor":
-            progression_status = "Complete Response"
+            progression_status = "No Segmented Tumor Detected (Previous Segmented Lesion Unresolved)"
             summary_text = (
-                f"Outstanding therapeutic regression. The tumor classification has regressed from "
+                f"AI-assisted quantitative comparison: segmented area decreased from "
                 f"'{prev_class}' ({prev_area:.1f} mm²) to 'No Tumor' in the current scan, representing a 100.0% reduction."
             )
         else:
@@ -118,21 +118,21 @@ class OpenCVLongitudinalAnalyzer(ILongitudinalAnalyzer):
                 summary_prefix = f"Tumor class shift observed from '{prev_class}' to '{curr_class}'. "
             
             if area_percentage_change > 15.0:
-                progression_status = "Progressive Disease"
+                progression_status = "Significant Segmented Area Increase"
                 summary_text = (
-                    f"{summary_prefix}Significant tumor enlargement of {area_percentage_change:+.1f}% "
-                    f"(from {prev_area:.1f} mm² to {curr_area:.1f} mm²), indicating disease progression."
+                    f"{summary_prefix}Significant segmented area enlargement of {area_percentage_change:+.1f}% "
+                    f"(from {prev_area:.1f} mm² to {curr_area:.1f} mm²)."
                 )
             elif area_percentage_change < -15.0:
-                progression_status = "Partial Response"
+                progression_status = "Significant Segmented Area Decrease"
                 summary_text = (
-                    f"{summary_prefix}Significant tumor shrinkage of {area_percentage_change:.1f}% "
-                    f"(from {prev_area:.1f} mm² to {curr_area:.1f} mm²), indicating partial response/regression."
+                    f"{summary_prefix}Significant segmented area shrinkage of {area_percentage_change:.1f}% "
+                    f"(from {prev_area:.1f} mm² to {curr_area:.1f} mm²)."
                 )
             else:
-                progression_status = "Stable Disease"
+                progression_status = "Segmented Area Stable"
                 summary_text = (
-                    f"{summary_prefix}Stable disease. Minimal area variation of {area_percentage_change:+.1f}% "
+                    f"{summary_prefix}Segmented area stable. Minimal area variation of {area_percentage_change:+.1f}% "
                     f"(from {prev_area:.1f} mm² to {curr_area:.1f} mm²)."
                 )
 

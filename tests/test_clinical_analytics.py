@@ -144,7 +144,7 @@ class TestClinicalAnalyticsAPI(unittest.TestCase):
                 (101, 1, pred_1_id, "FINAL", "Baseline", "outputs/r1.pdf", "outputs/r1.json", "checksum1", "2026-08-02T10:05:00")
             )
 
-            # Insert Scan 2 for patient A (Progression)
+            # Insert Scan 2 for patient A (Area Increase)
             cursor.execute(
                 "INSERT INTO mri_scans (patient_id, image_path, pixel_spacing_mm, ref_physician, scan_date, created_at) VALUES (?, ?, ?, ?, ?, ?);",
                 ("pat-uuid-aaa", "outputs/scans/2.png", 1.0, "Dr. House", "2026-08-08", "2026-08-08T10:00:00")
@@ -227,7 +227,7 @@ class TestClinicalAnalyticsAPI(unittest.TestCase):
 
         self.assertIn("Glioma", data["classification_distribution"])
         self.assertIn("High", data["severity_distribution"])
-        self.assertIn("PROGRESSION", data["progression_distribution"])
+        self.assertIn("AREA_INCREASED", data["progression_distribution"])
         self.assertTrue(len(data["activity_over_time"]) >= 2)
 
     def test_patient_specific_analytics_isolation(self):
@@ -440,7 +440,7 @@ class TestClinicalAnalyticsAPI(unittest.TestCase):
             conn = sqlite3.connect(temp_db_path)
             cursor = conn.cursor()
 
-            # Patient with multiple reports (Progression: area increase > 10%)
+            # Patient with multiple reports (Area Increase: area increase > 10%)
             cursor.execute("INSERT INTO patients (patient_id, name, age, gender, created_at) VALUES (?, ?, ?, ?, ?);",
                            ("pat-prog", "Prog Patient", 60, "Male", "2026-08-01"))
 
@@ -534,7 +534,7 @@ class TestClinicalAnalyticsAPI(unittest.TestCase):
             # Verify progression distributions
             self.assertEqual(analytics.progression_distribution.get("EMPTY"), 1)  # pat-no-reports
             self.assertEqual(analytics.progression_distribution.get("STABLE"), 1) # pat-one-report
-            self.assertEqual(analytics.progression_distribution.get("PROGRESSION"), 1) # pat-prog (20% increase)
+            self.assertEqual(analytics.progression_distribution.get("AREA_INCREASED"), 1) # pat-prog (20% increase)
             self.assertEqual(analytics.progression_distribution.get("CHANGED"), 1) # pat-nan-zero (classification changed No Tumor -> Glioma due to Infinity area)
 
             # Verify that averages are computed correctly from the SQLite database

@@ -2511,6 +2511,99 @@ def create_app(db_path: str) -> Flask:
         except Exception as e:
             return jsonify({"error": f"An unexpected pipeline error occurred: {str(e)}"}), 500
 
+    @app.route("/api/doctor/batch-predict", methods=["POST"])
+    @roles_accepted(Role.ADMIN, Role.DOCTOR)
+    def doctor_batch_predict(current_user: User):
+        import requests
+
+        if "mri_files" not in request.files:
+            return jsonify({"error": "No MRI files uploaded in batch."}), 400
+
+        mri_files = request.files.getlist("mri_files")
+        if not mri_files or len(mri_files) == 0:
+            return jsonify({"error": "Empty MRI files batch."}), 400
+
+        patient_id = request.form.get("patient_id", "").strip()
+        patient_name = request.form.get("patient_name", "").strip()
+        patient_age_str = request.form.get("patient_age", "45").strip()
+        patient_gender = request.form.get("patient_gender", "Female").strip()
+        ref_physician = request.form.get("ref_physician", "").strip()
+        pixel_spacing_str = request.form.get("pixel_spacing_mm", "1.0").strip()
+        xai_method = request.form.get("xai_method", "gradcam").strip()
+        ensemble_mode_str = request.form.get("ensemble_mode", "false").strip()
+
+        # Validate inputs basic
+        if not patient_id or not patient_name:
+            return jsonify({"error": "Patient ID and Name are required."}), 400
+        try:
+            patient_age = int(patient_age_str)
+        except ValueError:
+            return jsonify({"error": "Patient Age must be an integer."}), 400
+        try:
+            pixel_spacing_mm = float(pixel_spacing_str)
+        except ValueError:
+            return jsonify({"error": "Pixel spacing must be a float."}), 400
+
+        # Forward token
+        token = request.cookies.get("access_token")
+        auth_header = request.headers.get("Authorization")
+        if auth_header:
+            parts = auth_header.split()
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                token = parts[1]
+            else:
+                token = auth_header
+
+        headers = {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        api_url = os.environ.get("FASTAPI_URL", "http://127.0.0.1:8000")
+        try:
+            # Build files payload for requests library
+            files_payload = []
+            for f in mri_files:
+                if f.filename != "":
+                    files_payload.append(
+                        ("files", (f.filename, f.read(), f.content_type or "image/png"))
+                    )
+
+            if not files_payload:
+                return jsonify({"error": "No valid files in batch request."}), 400
+
+            data_payload = {
+                "patient_id": patient_id,
+                "name": patient_name,
+                "age": str(patient_age),
+                "gender": patient_gender,
+                "ref_physician": ref_physician,
+                "pixel_spacing_mm": str(pixel_spacing_mm),
+                "xai_method": xai_method,
+                "ensemble_mode": ensemble_mode_str
+            }
+
+            resp = requests.post(
+                f"{api_url}/api/report/batch",
+                files=files_payload,
+                data=data_payload,
+                headers=headers,
+                timeout=300 # longer timeout for batch
+            )
+
+            if not resp.ok:
+                try:
+                    err_detail = resp.json().get("detail", "Failed executing batch prediction.")
+                except Exception:
+                    err_detail = resp.text
+                return jsonify({"error": f"Batch Prediction Failed: {err_detail}"}), resp.status_code
+
+            return jsonify(resp.json())
+
+        except requests.exceptions.ConnectionError:
+            return jsonify({"error": "Failed to connect to AI Inference REST API. Ensure FastAPI server is running on http://127.0.0.1:8000"}), 503
+        except Exception as e:
+            return jsonify({"error": f"An unexpected batch error occurred: {str(e)}"}), 500
+
     @app.route("/verify/<token>")
     def verify_report_page(token: str):
         """Web page for public verification of a report version by secure token."""

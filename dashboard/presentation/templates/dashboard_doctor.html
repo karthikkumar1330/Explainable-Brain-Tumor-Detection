@@ -826,7 +826,7 @@
                     <div class="glass-panel p-5 rounded-2xl h-[300px] flex flex-col justify-between">
                         <div class="flex justify-between items-center">
                             <h4 class="font-extrabold text-xs text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                                <i class="fa-solid fa-chart-pie text-cyan-400"></i> Progression / Trend Distribution
+                                <i class="fa-solid fa-chart-pie text-cyan-400"></i> Quantitative Trend Distribution
                             </h4>
                         </div>
                         <div class="relative flex-1 w-full max-h-[220px] flex items-center justify-center">
@@ -1434,10 +1434,9 @@
                             <input id="gen-ensemble" type="checkbox" class="h-4 w-4 bg-slate-950 border border-slate-800 rounded text-emerald-500 focus:ring-0">
                             <label for="gen-ensemble" class="text-xs text-slate-300 font-bold select-none cursor-pointer">Run Multi-Model Ensemble Mode (Improves Classification Robustness)</label>
                         </div>
-
                         <!-- Image File Upload -->
                         <div class="border-2 border-dashed border-slate-800 hover:border-sky-500/50 rounded-2xl p-6 text-center cursor-pointer transition relative bg-slate-950/40">
-                            <input id="gen-file" type="file" required accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer" onchange="updateFileLabel(this)">
+                            <input id="gen-file" type="file" required multiple accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer" onchange="updateFileLabel(this)">
                             <div class="space-y-2">
                                 <i class="fa-solid fa-cloud-arrow-up text-3xl text-slate-500"></i>
                                 <p id="file-upload-label" class="text-xs font-bold text-slate-300">Drag and drop Patient Brain MRI image, or click to browse</p>
@@ -1445,10 +1444,69 @@
                             </div>
                         </div>
 
-                        <button type="submit" class="w-full btn-primary h-12 flex items-center justify-center gap-2">
+                        <!-- Selected files list -->
+                        <div id="selected-files-list" class="hidden space-y-2 text-left mt-2">
+                            <span class="text-xs font-bold text-slate-400">Selected Scan Slices:</span>
+                            <div id="files-container" class="space-y-1.5 max-h-40 overflow-y-auto pr-1"></div>
+                        </div>
+
+                        <button id="submit-btn" type="submit" class="w-full btn-primary h-12 flex items-center justify-center gap-2">
                             <i class="fa-solid fa-circle-play text-white"></i> Start Integrated Diagnostic Pipeline
                         </button>
                     </form>
+
+                    <!-- Batch Results Panel -->
+                    <div id="batch-results-panel" class="hidden glass-panel p-6 rounded-3xl border border-slate-800 space-y-6 mt-6">
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+                            <div>
+                                <h3 class="font-extrabold text-lg text-slate-100">Batch Diagnostics Results</h3>
+                                <p class="text-xs text-slate-400">Batch ID: <span id="batch-results-id" class="font-mono text-sky-400"></span></p>
+                            </div>
+                            <button onclick="exportBatchCSV()" class="btn-secondary px-4 py-2 text-xs flex items-center gap-2">
+                                <i class="fa-solid fa-download"></i> Export Results (CSV)
+                            </button>
+                        </div>
+
+                        <!-- Summary Cards -->
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                            <div class="bg-slate-900/60 p-4 rounded-2xl border border-slate-800 text-center">
+                                <div class="text-xs text-slate-400 font-bold">Total Files</div>
+                                <div id="batch-total-files" class="text-2xl font-black text-slate-200 mt-1">0</div>
+                            </div>
+                            <div class="bg-slate-900/60 p-4 rounded-2xl border border-slate-800 text-center">
+                                <div class="text-xs text-emerald-400 font-bold">Successful</div>
+                                <div id="batch-successful" class="text-2xl font-black text-emerald-400 mt-1">0</div>
+                            </div>
+                            <div class="bg-slate-900/60 p-4 rounded-2xl border border-slate-800 text-center">
+                                <div class="text-xs text-rose-400 font-bold">Failed</div>
+                                <div id="batch-failed" class="text-2xl font-black text-rose-400 mt-1">0</div>
+                            </div>
+                            <div class="bg-slate-900/60 p-4 rounded-2xl border border-slate-800 text-center">
+                                <div class="text-xs text-amber-400 font-bold">Duplicates</div>
+                                <div id="batch-duplicates" class="text-2xl font-black text-amber-400 mt-1">0</div>
+                            </div>
+                        </div>
+
+                        <!-- Results Table -->
+                        <div class="overflow-x-auto border border-slate-800 rounded-2xl">
+                            <table class="w-full text-left border-collapse text-xs">
+                                <thead>
+                                    <tr class="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-bold">
+                                        <th class="p-3">File Name</th>
+                                        <th class="p-3">Prediction</th>
+                                        <th class="p-3">Confidence</th>
+                                        <th class="p-3">Tumor Area</th>
+                                        <th class="p-3">Severity</th>
+                                        <th class="p-3">Status</th>
+                                        <th class="p-3 text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="batch-results-tbody" class="divide-y divide-slate-800/50 text-slate-300">
+                                    <!-- Dynamic rows -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -2161,6 +2219,8 @@
         let patientConfidenceChart = null;
         let currentUser = null;
         let authToken = localStorage.getItem("auth_token") || null;
+        let selectedBatchFiles = [];
+        let lastBatchResults = null;
 
         // Cache flags to prevent redundant API polling and page flickering
         let dashboardDataLoaded = false;
@@ -3005,12 +3065,71 @@
         function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
         function updateFileLabel(input) {
-            const label = document.getElementById('file-upload-label');
-            if (input.files && input.files[0]) {
-                label.innerText = `Selected Scan: ${input.files[0].name}`;
-            } else {
-                label.innerText = "Drag and drop Patient Brain MRI image, or click to browse";
+            if (input.files && input.files.length > 0) {
+                for (let i = 0; i < input.files.length; i++) {
+                    const f = input.files[i];
+                    if (!selectedBatchFiles.some(existing => existing.name === f.name && existing.size === f.size)) {
+                        selectedBatchFiles.push(f);
+                    }
+                }
+                input.value = "";
             }
+            renderSelectedFiles();
+        }
+
+        function renderSelectedFiles() {
+            const container = document.getElementById("selected-files-list");
+            const filesContainer = document.getElementById("files-container");
+            const label = document.getElementById("file-upload-label");
+            const submitBtn = document.getElementById("submit-btn");
+
+            if (selectedBatchFiles.length === 0) {
+                container.classList.add("hidden");
+                label.innerText = "Drag and drop Patient Brain MRI image, or click to browse";
+                submitBtn.innerHTML = `<i class="fa-solid fa-circle-play text-white"></i> Start Integrated Diagnostic Pipeline`;
+                document.getElementById("gen-file").required = true;
+                return;
+            }
+
+            document.getElementById("gen-file").required = false;
+            container.classList.remove("hidden");
+            filesContainer.innerHTML = "";
+
+            if (selectedBatchFiles.length > 1) {
+                label.innerText = `${selectedBatchFiles.length} files selected for Batch Analysis`;
+                submitBtn.innerHTML = `<i class="fa-solid fa-layer-group text-white"></i> Start Batch Diagnostics`;
+            } else {
+                label.innerText = `Selected Scan: ${selectedBatchFiles[0].name}`;
+                submitBtn.innerHTML = `<i class="fa-solid fa-circle-play text-white"></i> Start Integrated Diagnostic Pipeline`;
+            }
+
+            selectedBatchFiles.forEach((file, idx) => {
+                const ext = file.name.split('.').pop().toLowerCase();
+                const isValidFormat = ["png", "jpg", "jpeg", "tif", "tiff"].includes(ext);
+
+                const fileRow = document.createElement("div");
+                fileRow.className = "flex items-center justify-between bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800 text-xs";
+
+                const badgeColor = isValidFormat ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20";
+                const badgeText = isValidFormat ? "Valid Format" : "Invalid Format";
+
+                fileRow.innerHTML = `
+                    <div class="flex items-center gap-2 truncate">
+                        <i class="fa-solid ${isValidFormat ? 'fa-file-image text-sky-400' : 'fa-triangle-exclamation text-amber-500'}"></i>
+                        <span class="text-slate-300 font-medium truncate max-w-[200px]">${file.name}</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded border font-semibold ${badgeColor}">${badgeText}</span>
+                    </div>
+                    <button type="button" onclick="removeSelectedFile(${idx})" class="text-slate-500 hover:text-rose-400 p-1 transition">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                `;
+                filesContainer.appendChild(fileRow);
+            });
+        }
+
+        function removeSelectedFile(idx) {
+            selectedBatchFiles.splice(idx, 1);
+            renderSelectedFiles();
         }
 
         function getCookie(name) {
@@ -4178,9 +4297,8 @@
         async function handleGenerateReport(e) {
             e.preventDefault();
 
-            const fileInput = document.getElementById("gen-file");
-            if (!fileInput.files || fileInput.files.length === 0) {
-                alert("Please select a brain MRI scan image.");
+            if (selectedBatchFiles.length === 0) {
+                alert("Please select one or more brain MRI scan images.");
                 return;
             }
 
@@ -4195,7 +4313,6 @@
 
             // Build FormData
             const formData = new FormData();
-            formData.append("mri_file", fileInput.files[0]);
             formData.append("patient_id", pId);
             formData.append("patient_name", pName);
             formData.append("patient_age", pAge);
@@ -4205,69 +4322,257 @@
             formData.append("xai_method", xaiMeth);
             formData.append("ensemble_mode", ensemble ? "true" : "false");
 
-            // Open Loader Modal
-            openModal("loader-modal");
-            resetLoaderSteps();
+            // Check single vs batch mode
+            if (selectedBatchFiles.length === 1) {
+                formData.append("mri_file", selectedBatchFiles[0]);
 
-            // Simulate progress checkpoints while the API runs
-            let step = 0;
-            const progressInterval = setInterval(() => {
-                step++;
-                if (step === 1) {
-                    setStepState("step-upload", "done", "100%");
-                    setStepState("step-qa", "active", "Processing");
-                } else if (step === 2) {
-                    setStepState("step-qa", "done", "Passed");
-                    setStepState("step-cls", "active", "Inference");
-                } else if (step === 3) {
-                    setStepState("step-cls", "done", "Classified");
-                    setStepState("step-seg", "active", "Segmenting");
-                } else if (step === 4) {
-                    setStepState("step-seg", "done", "Completed");
-                    setStepState("step-pdf", "active", "Compiling");
-                }
-            }, 600);
+                // Open Loader Modal
+                openModal("loader-modal");
+                resetLoaderSteps();
 
-            try {
-                const res = await fetchWithAuth("/api/doctor/generate-report", {
-                    method: "POST",
-                    body: formData
-                });
-                const data = await res.json();
-
-                clearInterval(progressInterval);
-
-                if (data.error) {
-                    closeModal("loader-modal");
-                    alert(`Report Generation Failed: ${data.error}`);
-                    return;
-                }
-
-                // Finish loader steps and display success
-                setStepState("step-qa", "done", "Passed");
-                setStepState("step-cls", "done", "Classified");
-                setStepState("step-seg", "done", "Completed");
-                setStepState("step-pdf", "done", "Generated");
-
-                setTimeout(() => {
-                    closeModal("loader-modal");
-                    // Reset form
-                    document.getElementById("gen-file").value = "";
-                    document.getElementById("file-upload-label").innerText = "Drag and drop Patient Brain MRI image, or click to browse";
-
-                    // Switch back to analytics and reload
-                    dashboardDataLoaded = false;
-                    switchTab("analytics");
-                    // View the details of the newly created report immediately
-                    if (data.report_id) {
-                        viewDetails(data.report_id);
+                // Simulate progress checkpoints while the API runs
+                let step = 0;
+                const progressInterval = setInterval(() => {
+                    step++;
+                    if (step === 1) {
+                        setStepState("step-upload", "done", "100%");
+                        setStepState("step-qa", "active", "Processing");
+                    } else if (step === 2) {
+                        setStepState("step-qa", "done", "Passed");
+                        setStepState("step-cls", "active", "Inference");
+                    } else if (step === 3) {
+                        setStepState("step-cls", "done", "Classified");
+                        setStepState("step-seg", "active", "Segmenting");
+                    } else if (step === 4) {
+                        setStepState("step-seg", "done", "Completed");
+                        setStepState("step-pdf", "active", "Compiling");
                     }
-                }, 1000);
+                }, 600);
 
+                try {
+                    const res = await fetchWithAuth("/api/doctor/generate-report", {
+                        method: "POST",
+                        body: formData
+                    });
+                    const data = await res.json();
+
+                    clearInterval(progressInterval);
+
+                    if (data.error) {
+                        closeModal("loader-modal");
+                        alert(`Report Generation Failed: ${data.error}`);
+                        return;
+                    }
+
+                    // Finish loader steps and display success
+                    setStepState("step-qa", "done", "Passed");
+                    setStepState("step-cls", "done", "Classified");
+                    setStepState("step-seg", "done", "Completed");
+                    setStepState("step-pdf", "done", "Generated");
+
+                    setTimeout(() => {
+                        closeModal("loader-modal");
+                        // Reset form
+                        selectedBatchFiles = [];
+                        renderSelectedFiles();
+
+                        // Switch back to analytics and reload
+                        dashboardDataLoaded = false;
+                        switchTab("analytics");
+                        // View the details of the newly created report immediately
+                        if (data.report_id) {
+                            viewDetails(data.report_id);
+                        }
+                    }, 1000);
+
+                } catch (err) {
+                    clearInterval(progressInterval);
+                    closeModal("loader-modal");
+                    alert(`Network error during report generation: ${err}`);
+                }
+            } else {
+                // Batch Prediction Mode
+                for (let i = 0; i < selectedBatchFiles.length; i++) {
+                    formData.append("mri_files", selectedBatchFiles[i]);
+                }
+
+                // Hide batch results panel when starting new analysis
+                document.getElementById("batch-results-panel").classList.add("hidden");
+
+                openModal("loader-modal");
+                resetLoaderSteps();
+                setStepState("step-upload", "active", "Batch Ingestion...");
+
+                // Simulate progress checkpoints for batch
+                let step = 0;
+                const progressInterval = setInterval(() => {
+                    step++;
+                    if (step === 1) {
+                        setStepState("step-upload", "done", `${selectedBatchFiles.length} files`);
+                        setStepState("step-qa", "active", "Batch Inference...");
+                    } else if (step === 2) {
+                        setStepState("step-qa", "active", "Running Classifiers...");
+                    } else if (step === 3) {
+                        setStepState("step-qa", "active", "Running Segmentations...");
+                    } else if (step === 4) {
+                        setStepState("step-qa", "active", "Saving reports...");
+                    }
+                }, 1500);
+
+                try {
+                    const res = await fetchWithAuth("/api/doctor/batch-predict", {
+                        method: "POST",
+                        body: formData
+                    });
+                    const data = await res.json();
+
+                    clearInterval(progressInterval);
+
+                    if (data.error) {
+                        closeModal("loader-modal");
+                        alert(`Batch Prediction Failed: ${data.error}`);
+                        return;
+                    }
+
+                    // Complete stages
+                    setStepState("step-upload", "done", "Complete");
+                    setStepState("step-qa", "done", "Inference Done");
+                    setStepState("step-cls", "done", `${data.stats.successful} Success`);
+                    setStepState("step-seg", "done", `${data.stats.failed} Failed`);
+                    setStepState("step-pdf", "done", "Generated");
+
+                    setTimeout(() => {
+                        closeModal("loader-modal");
+                        // Reset selection
+                        selectedBatchFiles = [];
+                        renderSelectedFiles();
+
+                        // Render batch results
+                        renderBatchResults(data);
+                    }, 1000);
+
+                } catch (err) {
+                    clearInterval(progressInterval);
+                    closeModal("loader-modal");
+                    alert(`Network error during batch prediction: ${err}`);
+                }
+            }
+        }
+
+        function renderBatchResults(data) {
+            lastBatchResults = data;
+            const panel = document.getElementById("batch-results-panel");
+            const batchId = document.getElementById("batch-results-id");
+            const totalFiles = document.getElementById("batch-total-files");
+            const successful = document.getElementById("batch-successful");
+            const failed = document.getElementById("batch-failed");
+            const duplicates = document.getElementById("batch-duplicates");
+            const tbody = document.getElementById("batch-results-tbody");
+
+            batchId.innerText = data.stats.batch_id.substring(0, 8) + "...";
+            totalFiles.innerText = data.stats.total_files;
+            successful.innerText = data.stats.successful;
+            failed.innerText = data.stats.failed;
+            duplicates.innerText = data.stats.duplicates;
+
+            tbody.innerHTML = "";
+            data.results.forEach(item => {
+                const row = document.createElement("tr");
+                row.className = "hover:bg-slate-900/40 transition border-b border-slate-800/50";
+
+                let predictionBadge = `<span class="text-slate-500">N/A</span>`;
+                let areaText = `<span class="text-slate-500">N/A</span>`;
+                let severityBadge = `<span class="text-slate-500">N/A</span>`;
+                let statusBadge = "";
+                let actionBtn = "";
+
+                if (item.status === "SUCCESS") {
+                    predictionBadge = `<span class="text-sky-400 font-bold">${item.prediction}</span>`;
+                    areaText = `<span class="font-semibold">${item.tumor_area.toFixed(2)} mm²</span>`;
+
+                    const severityColors = {
+                        "LOW": "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+                        "MEDIUM": "text-amber-400 bg-amber-500/10 border-amber-500/20",
+                        "HIGH": "text-rose-400 bg-rose-500/10 border-rose-500/20",
+                        "CRITICAL": "text-rose-600 bg-rose-700/10 border-rose-700/20"
+                    };
+                    const sevColor = severityColors[item.severity] || "text-slate-400";
+                    severityBadge = `<span class="px-2 py-0.5 rounded border text-[10px] font-bold ${sevColor}">${item.severity}</span>`;
+
+                    statusBadge = `<span class="text-emerald-400 font-extrabold flex items-center gap-1"><i class="fa-solid fa-circle-check"></i> Processed</span>`;
+
+                    actionBtn = `
+                        <button onclick="viewDetails(${item.scan_identifier})" class="btn-primary px-3 py-1 text-[10px] rounded-xl flex items-center gap-1 cursor-pointer">
+                            <i class="fa-solid fa-eye"></i> View Report
+                        </button>
+                    `;
+                } else {
+                    const errColors = {
+                        "DUPLICATE_FILE": "text-amber-400 bg-amber-500/10 border-amber-500/20",
+                        "VALIDATION_ERROR": "text-rose-400 bg-rose-500/10 border-rose-500/20",
+                        "UNSUPPORTED_FORMAT": "text-slate-400 bg-slate-500/10 border-slate-500/20",
+                        "CORRUPTED_IMAGE": "text-rose-500 bg-rose-600/10 border-rose-600/20",
+                        "INFERENCE_ERROR": "text-rose-400 bg-rose-500/10 border-rose-500/20"
+                    };
+                    const errColor = errColors[item.error_code] || "text-rose-400";
+                    statusBadge = `
+                        <div class="flex flex-col gap-0.5">
+                            <span class="px-2 py-0.5 rounded border text-[10px] font-bold ${errColor} w-max">${item.error_code}</span>
+                            <span class="text-[9px] text-slate-500 truncate max-w-[150px]" title="${item.error_message}">${item.error_message}</span>
+                        </div>
+                    `;
+                    actionBtn = `<span class="text-slate-600">-</span>`;
+                }
+
+                row.innerHTML = `
+                    <td class="p-3 font-medium truncate max-w-[120px]" title="${item.filename}">${item.filename}</td>
+                    <td class="p-3">${predictionBadge}</td>
+                    <td class="p-3">${item.confidence ? (item.confidence * 100).toFixed(1) + "%" : "-"}</td>
+                    <td class="p-3">${areaText}</td>
+                    <td class="p-3">${severityBadge}</td>
+                    <td class="p-3">${statusBadge}</td>
+                    <td class="p-3 text-center">${actionBtn}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            panel.classList.remove("hidden");
+
+            // Reload scan history tab data in background
+            dashboardDataLoaded = false;
+        }
+
+        function exportBatchCSV() {
+            if (!lastBatchResults || !lastBatchResults.results) return;
+            try {
+                let csvContent = "data:text/csv;charset=utf-8,";
+                csvContent += "Filename,Status,Error Code,Error Message,Prediction,Confidence,Tumor Area (mm2),Severity,Processing Time (s),Report Database ID\r\n";
+
+                lastBatchResults.results.forEach(item => {
+                    const row = [
+                        item.filename,
+                        item.status,
+                        item.error_code || "",
+                        item.error_message || "",
+                        item.prediction || "",
+                        item.confidence || "",
+                        item.tumor_area || "",
+                        item.severity || "",
+                        item.processing_time.toFixed(2),
+                        item.scan_identifier || ""
+                    ];
+                    csvContent += row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",") + "\r\n";
+                });
+
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `AuraScan_Batch_Results_${lastBatchResults.stats.batch_id.substring(0, 8)}_${new Date().toISOString().split('T')[0]}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
             } catch (err) {
-                clearInterval(progressInterval);
-                closeModal("loader-modal");
-                alert(`Network error during report generation: ${err}`);
+                alert("Failed to export batch CSV: " + err);
             }
         }
 
@@ -4345,10 +4650,21 @@
         function drawProgressionChart(data) {
             const ctx = document.getElementById("chart-progression").getContext("2d");
             if (progressionChart) progressionChart.destroy();
-            const labels = Object.keys(data);
+
+            const labelMapping = {
+                "PROGRESSION": "Area Increased",
+                "AREA_INCREASED": "Area Increased",
+                "REGRESSION": "Area Decreased",
+                "AREA_DECREASED": "Area Decreased",
+                "STABLE": "Area Stable",
+                "CHANGED": "Classification Changed",
+                "UNCHANGED": "Area Stable",
+                "EMPTY": "No Scan History"
+            };
+            const labels = Object.keys(data).map(k => labelMapping[k] || k);
             const values = Object.values(data);
             if (labels.length === 0) {
-                labels.push("PROGRESSION", "REGRESSION", "STABLE", "CHANGED", "UNCHANGED");
+                labels.push("Area Increased", "Area Decreased", "Area Stable", "Classification Changed", "No Scan History");
                 values.push(2, 1, 4, 1, 2);
             }
             progressionChart = new Chart(ctx, {
@@ -4905,12 +5221,22 @@
 
                 const statusEl = document.getElementById("timeline-status");
                 const status = formatTimelineValue(data.timeline_status);
-                statusEl.innerText = status;
+                const statusTranslations = {
+                    "PROGRESSION": "Area Increased",
+                    "AREA_INCREASED": "Area Increased",
+                    "REGRESSION": "Area Decreased",
+                    "AREA_DECREASED": "Area Decreased",
+                    "STABLE": "Area Stable",
+                    "CHANGED": "Classification Changed",
+                    "EMPTY": "Empty Timeline",
+                    "UNKNOWN": "Unknown"
+                };
+                statusEl.innerText = statusTranslations[status] || status;
 
                 let statusColor = "text-slate-400 border-slate-700 bg-slate-900/30";
-                if (status === "PROGRESSION") {
+                if (status === "PROGRESSION" || status === "AREA_INCREASED") {
                     statusColor = "text-red-400 border-red-500/35 bg-red-500/10";
-                } else if (status === "REGRESSION") {
+                } else if (status === "REGRESSION" || status === "AREA_DECREASED") {
                     statusColor = "text-blue-450 border-blue-500/35 bg-blue-500/10";
                 } else if (status === "STABLE") {
                     statusColor = "text-emerald-450 border-emerald-500/35 bg-emerald-500/10";

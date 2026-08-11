@@ -97,8 +97,8 @@ class TestLongitudinalTimelineDomain(unittest.TestCase):
         self.assertEqual(timeline.first_event, e1)
         self.assertEqual(timeline.latest_event, e3)
         self.assertEqual(timeline.intermediate_events, [e2])
-        self.assertEqual(timeline.timeline_status, "PROGRESSION")
-        self.assertIn("Tumor area increased", timeline.trend_summary)
+        self.assertEqual(timeline.timeline_status, "AREA_INCREASED")
+        self.assertIn("segmented area increased", timeline.trend_summary)
 
     def test_chronological_event_ordering(self):
         e1 = LongitudinalTimelineEvent(
@@ -616,8 +616,8 @@ class TestLongitudinalTimelineService(unittest.TestCase):
         timeline = self.service.get_patient_longitudinal_timeline("bob-jones-uuid", self.doctor)
         self.assertEqual(timeline.first_event.report_id, 1)
         self.assertEqual(timeline.latest_event.report_id, 2)
-        self.assertEqual(timeline.timeline_status, "PROGRESSION")
-        self.assertIn("Tumor area increased by 10.0%", timeline.trend_summary)
+        self.assertEqual(timeline.timeline_status, "AREA_INCREASED")
+        self.assertIn("segmented area increased by 10.0%", timeline.trend_summary)
 
 
 class TestLongitudinalTimelineAPI(unittest.TestCase):

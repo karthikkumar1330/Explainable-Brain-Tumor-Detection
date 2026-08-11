@@ -2183,12 +2183,22 @@
 
                 const statusEl = document.getElementById("timeline-status");
                 const status = formatTimelineValue(data.timeline_status);
-                statusEl.innerText = status;
+                const statusTranslations = {
+                    "PROGRESSION": "Area Increased",
+                    "AREA_INCREASED": "Area Increased",
+                    "REGRESSION": "Area Decreased",
+                    "AREA_DECREASED": "Area Decreased",
+                    "STABLE": "Area Stable",
+                    "CHANGED": "Classification Changed",
+                    "EMPTY": "Empty Timeline",
+                    "UNKNOWN": "Unknown"
+                };
+                statusEl.innerText = statusTranslations[status] || status;
 
                 let statusColor = "text-slate-400 border-slate-700 bg-slate-900/30";
-                if (status === "PROGRESSION") {
+                if (status === "PROGRESSION" || status === "AREA_INCREASED") {
                     statusColor = "text-red-400 border-red-500/35 bg-red-500/10";
-                } else if (status === "REGRESSION") {
+                } else if (status === "REGRESSION" || status === "AREA_DECREASED") {
                     statusColor = "text-blue-450 border-blue-500/35 bg-blue-500/10";
                 } else if (status === "STABLE") {
                     statusColor = "text-emerald-450 border-emerald-500/35 bg-emerald-500/10";
