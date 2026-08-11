@@ -879,66 +879,23 @@ class ReportService:
         try:
             row = conn.execute("SELECT patient_id FROM reports WHERE report_id = ?;", (report_id,)).fetchone()
             if not row:
-                return "NOT_FOUND"
+                row_cr = conn.execute("""
+                    SELECT s.patient_id
+                    FROM clinical_reports cr
+                    JOIN predictions p ON cr.prediction_id = p.id
+                    JOIN mri_scans s ON p.scan_id = s.id
+                    WHERE cr.id = ?;
+                """, (report_id,)).fetchone()
+                if not row_cr:
+                    return "NOT_FOUND"
 
             if user is None:
                 return "UNAUTHORIZED"
 
-            from security.domain.entities import Role
-            role_val = user.role.value if hasattr(user.role, 'value') else str(user.role).lower()
-
-            if role_val in ["admin", "doctor"]:
+            from security.application.authorization_service import AuthorizationService
+            auth_svc = AuthorizationService(db_path=self.db_path)
+            if auth_svc.can_access_report(user, report_id):
                 return "AUTHORIZED"
-
-            if role_val == "patient":
-                # Check patient boundaries using name and patient_id
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    SELECT p.patient_id, p.name as patient_name
-                    FROM clinical_reports cr
-                    JOIN predictions pr ON cr.prediction_id = pr.id
-                    JOIN mri_scans s ON pr.scan_id = s.id
-                    JOIN patients p ON s.patient_id = p.patient_id
-                    WHERE cr.id = ?;
-                    """,
-                    (report_id,)
-                )
-                row_pat = cursor.fetchone()
-                if not row_pat:
-                    r_pat_id = row["patient_id"]
-                    cursor.execute("SELECT patient_id, name as patient_name FROM patients WHERE patient_id = ?;", (r_pat_id,))
-                    row_pat = cursor.fetchone()
-
-                if not row_pat:
-                    return "FORBIDDEN"
-
-                try:
-                    from security.infrastructure.encryption_service import PIIEncryptionService
-                    encryption_service = PIIEncryptionService()
-                except Exception:
-                    encryption_service = None
-
-                pat_name_raw = row_pat["patient_name"]
-                if pat_name_raw is not None:
-                    if str(pat_name_raw).startswith("enc:v1:"):
-                        if encryption_service is None:
-                            raise ValueError("Patient name is encrypted but PII_ENCRYPTION_KEY is missing.")
-                        pat_name = encryption_service.decrypt(pat_name_raw).lower()
-                    else:
-                        pat_name = pat_name_raw.lower()
-                else:
-                    pat_name = ""
-
-                pat_id = row_pat["patient_id"].lower()
-                user_name = user.full_name.lower() if user.full_name else ""
-                user_uuid = user.uuid.lower() if user.uuid else ""
-
-                if pat_name == user_name or pat_id == user_uuid:
-                    return "AUTHORIZED"
-
-                return "FORBIDDEN"
-
             return "FORBIDDEN"
         finally:
             conn.close()
@@ -2185,47 +2142,11 @@ class ReportService:
             raise ReportServiceException("Authentication required.")
 
         role_val = actor.role.value if hasattr(actor.role, 'value') else str(actor.role).lower()
-        if role_val not in ["admin", "doctor", "patient"]:
-            safe_log_audit("PATIENT_TIMELINE_ACCESSED", actor, "FAILED", f"Access denied to patient timeline for ID: {stripped_id}. Unauthorized role: {role_val}.")
-            raise ReportServiceException("Access denied.")
-
-        if role_val == "patient":
-            authorized = False
-            user_uuid = actor.uuid.lower() if actor.uuid else ""
-            user_name = actor.full_name.lower() if actor.full_name else ""
-
-            if stripped_id.lower() == user_uuid:
-                authorized = True
-            else:
-                conn = self._get_connection()
-                try:
-                    row_pat = conn.execute("SELECT name FROM patients WHERE patient_id = ?;", (stripped_id,)).fetchone()
-                    if row_pat:
-                        try:
-                            from security.infrastructure.encryption_service import PIIEncryptionService
-                            encryption_service = PIIEncryptionService()
-                        except Exception:
-                            encryption_service = None
-
-                        pat_name_raw = row_pat["name"]
-                        if pat_name_raw is not None:
-                            if str(pat_name_raw).startswith("enc:v1:"):
-                                if encryption_service is None:
-                                    raise ValueError("Patient name is encrypted but PII_ENCRYPTION_KEY is missing.")
-                                pat_name = encryption_service.decrypt(pat_name_raw).lower()
-                            else:
-                                pat_name = pat_name_raw.lower()
-                        else:
-                            pat_name = ""
-
-                        if pat_name == user_name:
-                            authorized = True
-                finally:
-                    conn.close()
-
-            if not authorized:
-                safe_log_audit("PATIENT_TIMELINE_ACCESSED", actor, "FAILED", f"Access denied to patient timeline for ID: {stripped_id}. Patient user mismatch (User uuid: {user_uuid}).")
-                raise ReportServiceException("Access denied to patient timeline.")
+        from security.application.authorization_service import AuthorizationService
+        auth_svc = AuthorizationService(db_path=self.db_path)
+        if not auth_svc.can_access_patient(actor, stripped_id):
+            safe_log_audit("PATIENT_TIMELINE_ACCESSED", actor, "FAILED", f"Access denied to patient timeline for ID: {stripped_id}. User not authorized.")
+            raise ReportServiceException("Access denied to patient timeline.")
 
         # 3. Fetch patient name and verify existence
         conn = self._get_connection()

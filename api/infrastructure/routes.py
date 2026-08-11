@@ -390,6 +390,11 @@ def get_pipeline_health(current_user: User = Depends(require_roles([Role.ADMIN, 
 @router.post("/report")
 def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))):
     """API Endpoint: Runs the complete end-to-end MRI diagnostics report pipeline with validation."""
+    from security.application.authorization_service import AuthorizationService
+    auth_svc = AuthorizationService(DEFAULT_DB_PATH)
+    if not auth_svc.can_access_patient(current_user, intake.patient_id):
+        raise HTTPException(status_code=403, detail="Access denied to patient records.")
+
     if not os.path.exists(filepath):
         raise HTTPException(status_code=400, detail="Target upload MRI file path not found.")
 
@@ -1043,6 +1048,11 @@ async def generate_clinical_report_batch(
     current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))
 ):
     """API Endpoint: Runs the complete diagnostics pipeline on multiple MRI files in one batch."""
+    from security.application.authorization_service import AuthorizationService
+    auth_svc = AuthorizationService(DEFAULT_DB_PATH)
+    if not auth_svc.can_access_patient(current_user, patient_id):
+        raise HTTPException(status_code=403, detail="Access denied to patient records.")
+
     if not files:
         raise HTTPException(status_code=400, detail="No files provided in batch.")
 
@@ -1455,6 +1465,14 @@ def serve_report_visual(report_id: int, visual_type: str, current_user: User = D
     """Streams diagnostic visual maps (heatmap, overlay, mask, or raw). Only allowed for Admins and Doctors."""
     from clinical_reporting.application.services import ReportService
     service = ReportService(db_path=DEFAULT_DB_PATH)
+    access_status = service.check_report_access(report_id, current_user)
+    if access_status == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Report not found.")
+    elif access_status == "UNAUTHORIZED":
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    elif access_status == "FORBIDDEN":
+        raise HTTPException(status_code=403, detail="Access denied to patient report visual.")
+
     conn = sqlite3.connect(DEFAULT_DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
@@ -1565,9 +1583,16 @@ def serve_report_visual(report_id: int, visual_type: str, current_user: User = D
 @router.get("/database/history")
 def get_prediction_history(patient_id: Optional[str] = Query(None), current_user: User = Depends(get_current_user)):
     """API Endpoint: Retrieves scan prediction logs matching patient ID search filters with tenant isolation."""
+    from security.application.authorization_service import AuthorizationService
+    auth_svc = AuthorizationService(DEFAULT_DB_PATH)
+
     # Enforce patient boundaries
     if current_user.role == Role.PATIENT:
         patient_id = current_user.uuid
+
+    if patient_id:
+        if not auth_svc.can_access_patient(current_user, patient_id):
+            raise HTTPException(status_code=403, detail="Access denied to patient records.")
 
     history_repo = SQLitePredictionHistoryRepository(db_path=DEFAULT_DB_PATH)
     criteria = HistorySearchCriteria(patient_id=patient_id if patient_id else None)
@@ -1577,9 +1602,8 @@ def get_prediction_history(patient_id: Optional[str] = Query(None), current_user
         results = []
         for s in summaries:
             # Multi-tenant safeguard: skip records that don't belong to this patient
-            if current_user.role == Role.PATIENT:
-                if s.patient_id.lower() != current_user.uuid.lower() and s.patient_name.lower() != current_user.full_name.lower():
-                    continue
+            if not auth_svc.can_access_patient(current_user, s.patient_id):
+                continue
 
             results.append({
                 "report_id": s.report_id,
@@ -1803,6 +1827,15 @@ def create_report_version_api(
     """Creates a new version of the report, restricted to Doctors and Admins."""
     from clinical_reporting.domain.entities import ReportStatus
     service = ReportService(db_path=DEFAULT_DB_PATH)
+
+    access_status = service.check_report_access(report_id, current_user)
+    if access_status == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Report not found.")
+    elif access_status == "UNAUTHORIZED":
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    elif access_status == "FORBIDDEN":
+        raise HTTPException(status_code=403, detail="Access denied to patient report.")
+
     try:
         try:
             status_enum = ReportStatus(req.status.upper())
@@ -1905,6 +1938,15 @@ def patch_report_status_api(
     """Transition report status state machine, restricted to Doctors and Admins."""
     from clinical_reporting.domain.entities import ReportStatus
     service = ReportService(db_path=DEFAULT_DB_PATH)
+
+    access_status = service.check_report_access(report_id, current_user)
+    if access_status == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Report not found.")
+    elif access_status == "UNAUTHORIZED":
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    elif access_status == "FORBIDDEN":
+        raise HTTPException(status_code=403, detail="Access denied to patient report.")
+
     try:
         try:
             target_status = ReportStatus(req.status.upper())

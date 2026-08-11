@@ -283,6 +283,21 @@ class SQLiteUserRepository(IUserRepository):
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_quality_flags_user_id ON prediction_quality_flags(flagged_by_user_id);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_quality_flags_created ON prediction_quality_flags(created_at);")
 
+            # Doctor-patient assignment table for Phase H3.2-S hardening
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS doctor_patient_assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                doctor_id INTEGER NOT NULL,
+                patient_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (doctor_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE,
+                UNIQUE(doctor_id, patient_id)
+            );
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_doctor_patient_assignments_doc ON doctor_patient_assignments(doctor_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_doctor_patient_assignments_pat ON doctor_patient_assignments(patient_id);")
+
             conn.commit()
             self.logger.info("Security database tables initialized successfully.")
         except Exception as e:

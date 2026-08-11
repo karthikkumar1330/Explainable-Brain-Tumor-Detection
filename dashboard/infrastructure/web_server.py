@@ -2108,6 +2108,15 @@ def create_app(db_path: str) -> Flask:
         if current_user.role not in [Role.ADMIN, Role.DOCTOR]:
             return jsonify({"error": "Access denied. Action restricted to Doctors and Admins."}), 403
 
+        service = ReportService(db_path=app.config["DB_PATH"])
+        access_status = service.check_report_access(report_id, current_user)
+        if access_status == "NOT_FOUND":
+            return jsonify({"error": "Report not found"}), 404
+        elif access_status == "UNAUTHORIZED":
+            return jsonify({"error": "Authentication required"}), 401
+        elif access_status == "FORBIDDEN":
+            return jsonify({"error": "Access denied to patient report"}), 403
+
         data = request.get_json() or {}
         reason = data.get("reason")
         if not reason:
@@ -2117,8 +2126,6 @@ def create_app(db_path: str) -> Flask:
         json_path = data.get("json_path")
         prediction_id = data.get("prediction_id")
         status_str = data.get("status", "DRAFT")
-
-        service = ReportService(db_path=app.config["DB_PATH"])
         try:
             status_enum = ReportStatus(status_str.upper())
             new_version = service.create_new_version(
@@ -2335,6 +2342,14 @@ def create_app(db_path: str) -> Flask:
     def get_visual_scan(current_user: User, report_id: int, image_type: str):
         from clinical_reporting.application.services import ReportService
         service = ReportService(db_path=app.config["DB_PATH"])
+        access_status = service.check_report_access(report_id, current_user)
+        if access_status == "NOT_FOUND":
+            return jsonify({"error": "Report not found"}), 404
+        elif access_status == "UNAUTHORIZED":
+            return jsonify({"error": "Authentication required"}), 401
+        elif access_status == "FORBIDDEN":
+            return jsonify({"error": "Access denied to patient report"}), 403
+
         conn = sqlite3.connect(app.config["DB_PATH"])
         conn.row_factory = sqlite3.Row
         try:

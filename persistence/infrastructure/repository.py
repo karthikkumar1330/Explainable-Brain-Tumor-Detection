@@ -268,6 +268,18 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         );
         """
 
+        create_doctor_patient_assignments_sql = """
+        CREATE TABLE IF NOT EXISTS doctor_patient_assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doctor_id INTEGER NOT NULL,
+            patient_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (doctor_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE,
+            UNIQUE(doctor_id, patient_id)
+        );
+        """
+
         # Analytics and Delivery Indices
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_patients_age_gender ON patients(age, gender);",
@@ -295,7 +307,9 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             "CREATE INDEX IF NOT EXISTS idx_quality_flags_rep_id ON prediction_quality_flags(report_id);",
             "CREATE INDEX IF NOT EXISTS idx_quality_flags_pat_id ON prediction_quality_flags(patient_id);",
             "CREATE INDEX IF NOT EXISTS idx_quality_flags_user_id ON prediction_quality_flags(flagged_by_user_id);",
-            "CREATE INDEX IF NOT EXISTS idx_quality_flags_created ON prediction_quality_flags(created_at);"
+            "CREATE INDEX IF NOT EXISTS idx_quality_flags_created ON prediction_quality_flags(created_at);",
+            "CREATE INDEX IF NOT EXISTS idx_doctor_patient_assignments_doc ON doctor_patient_assignments(doctor_id);",
+            "CREATE INDEX IF NOT EXISTS idx_doctor_patient_assignments_pat ON doctor_patient_assignments(patient_id);"
         ]
 
         conn = self._get_connection()
@@ -314,6 +328,7 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 conn.execute(create_email_deliveries_table_sql)
                 conn.execute(create_feedback_table_sql)
                 conn.execute(create_quality_flags_table_sql)
+                conn.execute(create_doctor_patient_assignments_sql)
                 for idx_sql in indices:
                     conn.execute(idx_sql)
 
