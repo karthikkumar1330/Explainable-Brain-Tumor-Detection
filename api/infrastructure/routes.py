@@ -2239,3 +2239,130 @@ def archive_clinician_note_api(
     except Exception as e:
         logger.error(f"Error in archive note API: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+class MriAnnotationPayload(BaseModel):
+    x: float
+    y: float
+    label: Optional[str] = None
+    comment: Optional[str] = None
+
+@router.post("/doctor/scans/{scan_id}/point-annotations")
+def create_mri_annotation_api(
+    scan_id: int,
+    payload: MriAnnotationPayload,
+    current_user: User = Depends(require_roles([Role.DOCTOR, Role.ADMIN]))
+):
+    """API Endpoint: Create a point annotation for a given MRI scan."""
+    from clinical_reporting.application.mri_annotation_service import MriAnnotationService, MriAnnotationServiceException
+    service = MriAnnotationService(db_path=DEFAULT_DB_PATH)
+    try:
+        note = service.create_annotation(
+            actor=current_user,
+            scan_id=scan_id,
+            x=payload.x,
+            y=payload.y,
+            label=payload.label,
+            comment=payload.comment
+        )
+        return note
+    except MriAnnotationServiceException as e:
+        err_msg = str(e)
+        if "Access denied" in err_msg:
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg:
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=400, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in create annotation API: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/doctor/scans/{scan_id}/point-annotations")
+def get_mri_annotations_api(
+    scan_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """API Endpoint: Get active point annotations for a given MRI scan."""
+    role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role).lower()
+    if role_val != "doctor" and role_val != "admin":
+        raise HTTPException(status_code=403, detail="Access denied. Doctor role required.")
+
+    from clinical_reporting.application.mri_annotation_service import MriAnnotationService, MriAnnotationServiceException
+    service = MriAnnotationService(db_path=DEFAULT_DB_PATH)
+    try:
+        notes = service.get_annotations_for_scan(actor=current_user, scan_id=scan_id)
+        return notes
+    except MriAnnotationServiceException as e:
+        err_msg = str(e)
+        if "Access denied" in err_msg:
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg:
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=400, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in get annotations API: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.put("/doctor/point-annotations/{annotation_id}")
+def update_mri_annotation_api(
+    annotation_id: int,
+    payload: MriAnnotationPayload,
+    current_user: User = Depends(require_roles([Role.DOCTOR, Role.ADMIN]))
+):
+    """API Endpoint: Update an existing point annotation."""
+    from clinical_reporting.application.mri_annotation_service import MriAnnotationService, MriAnnotationServiceException
+    service = MriAnnotationService(db_path=DEFAULT_DB_PATH)
+    try:
+        note = service.update_annotation(
+            actor=current_user,
+            annotation_id=annotation_id,
+            x=payload.x,
+            y=payload.y,
+            label=payload.label,
+            comment=payload.comment
+        )
+        return note
+    except MriAnnotationServiceException as e:
+        err_msg = str(e)
+        if "Access denied" in err_msg:
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg:
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=400, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in update annotation API: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.delete("/doctor/point-annotations/{annotation_id}")
+def archive_mri_annotation_api(
+    annotation_id: int,
+    current_user: User = Depends(require_roles([Role.DOCTOR, Role.ADMIN]))
+):
+    """API Endpoint: Soft-archive an existing point annotation."""
+    from clinical_reporting.application.mri_annotation_service import MriAnnotationService, MriAnnotationServiceException
+    service = MriAnnotationService(db_path=DEFAULT_DB_PATH)
+    try:
+        result = service.archive_annotation(actor=current_user, annotation_id=annotation_id)
+        return result
+    except MriAnnotationServiceException as e:
+        err_msg = str(e)
+        if "Access denied" in err_msg:
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg:
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=400, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in archive annotation API: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")

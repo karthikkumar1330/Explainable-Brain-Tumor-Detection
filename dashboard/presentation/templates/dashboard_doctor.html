@@ -1941,15 +1941,52 @@
                 <!-- Grad-CAM Blended View -->
                 <div class="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 flex flex-col justify-between">
                     <div class="flex justify-between items-center mb-3">
-                        <h5 class="text-xs font-bold text-slate-350 uppercase tracking-wider flex items-center gap-1.5">
+                        <h5 class="text-xs font-bold text-slate-355 uppercase tracking-wider flex items-center gap-1.5">
                             <i class="fa-solid fa-fire text-amber-400"></i> Grad-CAM XAI Heatmap Blending
                         </h5>
-                        <span id="label-overlay-opacity" class="text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-850">Opacity: 70%</span>
+                        <div class="flex items-center gap-2">
+                            <button id="toggle-annotation-btn" onclick="toggleAnnotationMode()" class="bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1">
+                                <i class="fa-solid fa-location-dot"></i> Add Point
+                            </button>
+                            <span id="label-overlay-opacity" class="text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-850">Opacity: 70%</span>
+                        </div>
                     </div>
-                    <div class="relative w-full h-72 bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-center overflow-hidden mb-3">
-                        <img id="modal-heatmap-raw" class="absolute max-w-full max-h-full object-contain" src="" alt="Raw MRI Scan">
+                    <div class="relative w-full h-72 bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-center mb-3">
+                        <img id="modal-heatmap-raw" class="absolute max-w-full max-h-full object-contain" src="" alt="Raw MRI Scan" onload="alignSvgOverlay()">
                         <img id="modal-overlay-img" class="absolute max-w-full max-h-full object-contain pointer-events-none" src="" alt="Grad-CAM Overlay" style="opacity: 0.70;">
-                    </div>
+
+                        <!-- Point Annotations SVG Overlay -->
+                        <svg id="annotation-svg-overlay" class="absolute pointer-events-auto select-none" style="display:none;" onclick="handleSvgOverlayClick(event)">
+                            <!-- Circles are rendered here -->
+                        </svg>
+
+                        <!-- Annotation Editor Tooltip/Popover -->
+                        <div id="annotation-popover" class="hidden absolute bg-slate-955 border border-slate-800 p-3 rounded-xl shadow-2xl z-50 w-60 space-y-3 text-xs text-slate-300">
+                            <div class="flex justify-between items-center border-b border-slate-900 pb-1.5">
+                                <span id="popover-title" class="font-bold text-slate-200">New Point Annotation</span>
+                                <button onclick="closeAnnotationPopover()" class="text-slate-500 hover:text-slate-300 cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                            <div class="space-y-2">
+                                <div>
+                                    <label class="text-[10px] text-slate-400 block font-bold uppercase mb-1">Label (max 100 chars)</label>
+                                    <input id="annotation-label-input" type="text" placeholder="e.g. ROI 1" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition">
+                                </div>
+                                <div>
+                                    <label class="text-[10px] text-slate-400 block font-bold uppercase mb-1">Comment (max 2000 chars)</label>
+                                    <textarea id="annotation-comment-input" rows="2" placeholder="Clinician observation..." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
+                                </div>
+                            </div>
+                            <div class="flex justify-between gap-1.5 pt-1">
+                                <button id="delete-annotation-btn" onclick="deleteSelectedAnnotation()" class="hidden bg-rose-650/20 hover:bg-rose-650/30 text-rose-400 font-bold px-2.5 py-1 rounded-lg text-[10px] transition cursor-pointer">
+                                    <i class="fa-solid fa-trash"></i> Delete
+                                </button>
+                                <div class="flex gap-1.5 ml-auto">
+                                    <button onclick="closeAnnotationPopover()" class="bg-slate-900 hover:bg-slate-850 text-slate-300 font-bold px-3 py-1.5 rounded-lg text-[10px] transition cursor-pointer">Cancel</button>
+                                    <button id="save-annotation-btn" onclick="saveMriAnnotation()" class="bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-[10px] transition cursor-pointer">Save</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>>
                     <div>
                         <input type="range" min="0" max="100" value="70" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-400" oninput="adjustOpacity('overlay', this.value)">
                     </div>
@@ -2260,6 +2297,12 @@
         let currentSelectedReportId = null;
         let currentSelectedScanId = null;
         let editingNoteId = null;
+
+        // Point Annotation Globals (Phase H3.2-B)
+        let activeAnnotations = [];
+        let annotationModeActive = false;
+        let selectedAnnotation = null;
+        let placementCoordinates = null;
         let currentPdfDoc = null;
         let currentPreviewPageNum = 1;
         let currentPreviewZoom = 1.0;
@@ -3094,7 +3137,15 @@
 
 
         function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
-        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+            if (id === 'details-modal') {
+                closeAnnotationPopover();
+                if (annotationModeActive) {
+                    toggleAnnotationMode();
+                }
+            }
+        }
 
         function updateFileLabel(input) {
             if (input.files && input.files.length > 0) {
@@ -3392,6 +3443,7 @@
                 currentSelectedReportId = data.report_id;
                 currentSelectedScanId = data.scan_id;
                 loadClinicianNotes(data.scan_id);
+                loadMriAnnotations(data.scan_id);
 
                 document.getElementById("modal-title").innerText = `Diagnostic Report Details: #${data.report_id}`;
                 document.getElementById("modal-patient-meta").innerText = `Patient ID: ${data.patient_id} | Name: ${data.patient_name}`;
@@ -5835,6 +5887,331 @@
             } catch (err) {
                 console.error("Archive note error:", err);
                 alert("Network error archiving clinician note.");
+            }
+        }
+
+        // --- Point Annotation Functions (Phase H3.2-B) ---
+        async function loadMriAnnotations(scanId) {
+            activeAnnotations = [];
+            closeAnnotationPopover();
+            if (annotationModeActive) {
+                toggleAnnotationMode();
+            }
+
+            const svg = document.getElementById("annotation-svg-overlay");
+            if (!svg) return;
+            svg.innerHTML = "";
+
+            if (!scanId) return;
+
+            try {
+                const response = await fetchWithAuth(`/api/doctor/scans/${scanId}/point-annotations`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                const data = await response.json();
+                activeAnnotations = data;
+                alignSvgOverlay();
+            } catch (err) {
+                console.error("Failed to load point annotations:", err);
+            }
+        }
+
+        function alignSvgOverlay() {
+            const img = document.getElementById("modal-heatmap-raw");
+            const svg = document.getElementById("annotation-svg-overlay");
+            if (!img || !svg) return;
+
+            const rect = img.getBoundingClientRect();
+            const parentRect = img.parentElement.getBoundingClientRect();
+
+            svg.style.left = `${rect.left - parentRect.left}px`;
+            svg.style.top = `${rect.top - parentRect.top}px`;
+            svg.style.width = `${rect.width}px`;
+            svg.style.height = `${rect.height}px`;
+            svg.style.display = "block";
+
+            drawMarkers();
+        }
+
+        window.addEventListener("resize", () => {
+            const modal = document.getElementById("details-modal");
+            if (modal && !modal.classList.contains("hidden")) {
+                alignSvgOverlay();
+            }
+        });
+
+        function drawMarkers() {
+            const svg = document.getElementById("annotation-svg-overlay");
+            if (!svg) return;
+
+            const previewCircle = svg.querySelector(".preview-marker");
+            svg.innerHTML = "";
+            if (previewCircle) {
+                svg.appendChild(previewCircle);
+            }
+
+            const svgWidth = svg.clientWidth || svg.getBoundingClientRect().width;
+            const svgHeight = svg.clientHeight || svg.getBoundingClientRect().height;
+
+            if (!svgWidth || !svgHeight) return;
+
+            activeAnnotations.forEach(ann => {
+                const cx = ann.x * svgWidth;
+                const cy = ann.y * svgHeight;
+
+                const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                g.setAttribute("class", "annotation-marker cursor-pointer group/marker");
+                g.setAttribute("data-id", ann.annotation_id);
+
+                g.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    openAnnotationEdit(ann, cx, cy);
+                });
+
+                const ring = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                ring.setAttribute("cx", cx);
+                ring.setAttribute("cy", cy);
+                ring.setAttribute("r", 9);
+                ring.setAttribute("fill", "none");
+                ring.setAttribute("stroke", "#38bdf8");
+                ring.setAttribute("stroke-width", 2);
+                ring.setAttribute("opacity", 0);
+                ring.setAttribute("class", "transition duration-200 group-hover/marker:opacity-80");
+
+                const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                circle.setAttribute("cx", cx);
+                circle.setAttribute("cy", cy);
+                circle.setAttribute("r", 5);
+                circle.setAttribute("fill", "#0284c7");
+                circle.setAttribute("stroke", "#f8fafc");
+                circle.setAttribute("stroke-width", 1.5);
+
+                const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+                title.textContent = `${ann.label || 'Point'} - Observed by ${ann.doctor_name || ann.doctor_email}`;
+                g.appendChild(title);
+
+                g.appendChild(ring);
+                g.appendChild(circle);
+                svg.appendChild(g);
+            });
+        }
+
+        function handleSvgOverlayClick(event) {
+            if (!annotationModeActive) return;
+
+            const svg = document.getElementById("annotation-svg-overlay");
+            if (!svg) return;
+
+            const rect = svg.getBoundingClientRect();
+            const clickX = event.clientX - rect.left;
+            const clickY = event.clientY - rect.top;
+
+            const xNorm = clickX / rect.width;
+            const yNorm = clickY / rect.height;
+
+            placementCoordinates = { x: xNorm, y: yNorm };
+
+            const oldPreview = svg.querySelector(".preview-marker");
+            if (oldPreview) oldPreview.remove();
+
+            const previewG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            previewG.setAttribute("class", "preview-marker");
+
+            const previewCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            previewCircle.setAttribute("cx", clickX);
+            previewCircle.setAttribute("cy", clickY);
+            previewCircle.setAttribute("r", 5);
+            previewCircle.setAttribute("fill", "#e11d48");
+            previewCircle.setAttribute("stroke", "#f8fafc");
+            previewCircle.setAttribute("stroke-width", 1.5);
+
+            previewG.appendChild(previewCircle);
+            svg.appendChild(previewG);
+
+            openAnnotationCreate(clickX, clickY);
+        }
+
+        function openAnnotationCreate(cx, cy) {
+            selectedAnnotation = null;
+
+            document.getElementById("popover-title").innerText = "New Point Annotation";
+            document.getElementById("annotation-label-input").value = "";
+            document.getElementById("annotation-comment-input").value = "";
+            document.getElementById("delete-annotation-btn").classList.add("hidden");
+
+            const popover = document.getElementById("annotation-popover");
+            popover.classList.remove("hidden");
+
+            positionPopover(cx, cy);
+        }
+
+        function openAnnotationEdit(ann, cx, cy) {
+            if (annotationModeActive) {
+                toggleAnnotationMode();
+            }
+
+            selectedAnnotation = ann;
+
+            document.getElementById("popover-title").innerText = "Edit Point Annotation";
+            document.getElementById("annotation-label-input").value = ann.label || "";
+            document.getElementById("annotation-comment-input").value = ann.comment || "";
+
+            const deleteBtn = document.getElementById("delete-annotation-btn");
+            const isAuthor = currentUser && (ann.doctor_id === currentUser.id || currentUser.role === 'admin');
+            if (isAuthor) {
+                deleteBtn.classList.remove("hidden");
+            } else {
+                deleteBtn.classList.add("hidden");
+            }
+
+            const popover = document.getElementById("annotation-popover");
+            popover.classList.remove("hidden");
+
+            positionPopover(cx, cy);
+        }
+
+        function positionPopover(cx, cy) {
+            const popover = document.getElementById("annotation-popover");
+            const container = popover.parentElement;
+            const containerRect = container.getBoundingClientRect();
+            const popoverWidth = 240;
+
+            let left = cx + 15;
+            let top = cy - 40;
+
+            if (left + popoverWidth > containerRect.width) {
+                left = cx - popoverWidth - 15;
+            }
+            if (top < 0) {
+                top = 10;
+            }
+
+            popover.style.left = `${left}px`;
+            popover.style.top = `${top}px`;
+        }
+
+        function toggleAnnotationMode() {
+            annotationModeActive = !annotationModeActive;
+            const btn = document.getElementById("toggle-annotation-btn");
+            const svg = document.getElementById("annotation-svg-overlay");
+
+            if (annotationModeActive) {
+                btn.innerHTML = '<i class="fa-solid fa-ban text-rose-450"></i> Cancel Point';
+                btn.className = "bg-rose-950/40 text-rose-300 border border-rose-800 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1";
+                svg.classList.add("cursor-crosshair");
+                closeAnnotationPopover();
+            } else {
+                btn.innerHTML = '<i class="fa-solid fa-location-dot text-sky-400"></i> Add Point';
+                btn.className = "bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1";
+                svg.classList.remove("cursor-crosshair");
+
+                const preview = svg.querySelector(".preview-marker");
+                if (preview) preview.remove();
+            }
+        }
+
+        async function saveMriAnnotation() {
+            const labelInput = document.getElementById("annotation-label-input");
+            const commentInput = document.getElementById("annotation-comment-input");
+            if (!labelInput) return;
+
+            const label = labelInput.value.trim();
+            const comment = commentInput.value.trim();
+
+            if (label.length > 100) {
+                alert("Label exceeds maximum length of 100 characters.");
+                return;
+            }
+            if (comment.length > 2000) {
+                alert("Comment exceeds maximum length of 2000 characters.");
+                return;
+            }
+
+            const saveBtn = document.getElementById("save-annotation-btn");
+            const origText = saveBtn.innerText;
+            saveBtn.disabled = true;
+            saveBtn.innerText = "Saving...";
+
+            try {
+                let url, method, body;
+                if (selectedAnnotation) {
+                    url = `/api/doctor/point-annotations/${selectedAnnotation.annotation_id}`;
+                    method = "PUT";
+                    body = {
+                        x: selectedAnnotation.x,
+                        y: selectedAnnotation.y,
+                        label: label,
+                        comment: comment
+                    };
+                } else {
+                    if (!placementCoordinates) return;
+                    url = `/api/doctor/scans/${currentSelectedScanId}/point-annotations`;
+                    method = "POST";
+                    body = {
+                        x: placementCoordinates.x,
+                        y: placementCoordinates.y,
+                        label: label,
+                        comment: comment
+                    };
+                }
+
+                const response = await fetchWithAuth(url, {
+                    method: method,
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body)
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    alert("Point annotation saved successfully.");
+                    closeAnnotationPopover();
+                    if (annotationModeActive) {
+                        toggleAnnotationMode();
+                    }
+                    loadMriAnnotations(currentSelectedScanId);
+                } else {
+                    alert(data.detail || data.error || "Failed to save annotation.");
+                }
+            } catch (err) {
+                console.error("Save annotation error:", err);
+                alert("Network error saving point annotation.");
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerText = origText;
+            }
+        }
+
+        async function deleteSelectedAnnotation() {
+            if (!selectedAnnotation) return;
+            if (!confirm("Are you sure you want to delete/archive this point annotation?")) return;
+
+            try {
+                const response = await fetchWithAuth(`/api/doctor/point-annotations/${selectedAnnotation.annotation_id}`, {
+                    method: "DELETE"
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    alert("Point annotation deleted.");
+                    closeAnnotationPopover();
+                    loadMriAnnotations(currentSelectedScanId);
+                } else {
+                    alert(data.detail || data.error || "Failed to delete annotation.");
+                }
+            } catch (err) {
+                console.error("Delete annotation error:", err);
+                alert("Network error deleting point annotation.");
+            }
+        }
+
+        function closeAnnotationPopover() {
+            const popover = document.getElementById("annotation-popover");
+            if (popover) popover.classList.add("hidden");
+            selectedAnnotation = null;
+
+            const svg = document.getElementById("annotation-svg-overlay");
+            if (svg) {
+                const preview = svg.querySelector(".preview-marker");
+                if (preview) preview.remove();
             }
         }
     </script>

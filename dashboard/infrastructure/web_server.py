@@ -1954,6 +1954,116 @@ def create_app(db_path: str) -> Flask:
             except Exception as e:
                 return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/doctor/scans/<int:scan_id>/point-annotations", methods=["POST", "GET"])
+    @login_required
+    def clinician_point_annotations_scan_flask(current_user: User, scan_id: int):
+        from clinical_reporting.application.mri_annotation_service import MriAnnotationService, MriAnnotationServiceException
+        service = MriAnnotationService(db_path=app.config["DB_PATH"])
+
+        role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role).lower()
+        if role_val != "doctor" and role_val != "admin":
+            return jsonify({"error": "Access denied. Doctor role required."}), 403
+
+        if request.method == "POST":
+            data = request.get_json() or {}
+            x = data.get("x")
+            y = data.get("y")
+            label = data.get("label")
+            comment = data.get("comment")
+            try:
+                note = service.create_annotation(
+                    actor=current_user,
+                    scan_id=scan_id,
+                    x=x,
+                    y=y,
+                    label=label,
+                    comment=comment
+                )
+                return jsonify(note), 200
+            except MriAnnotationServiceException as e:
+                err_msg = str(e)
+                if "Access denied" in err_msg:
+                    return jsonify({"error": err_msg}), 403
+                elif "Authentication required" in err_msg:
+                    return jsonify({"error": err_msg}), 401
+                elif "not found" in err_msg.lower():
+                    return jsonify({"error": err_msg}), 404
+                else:
+                    return jsonify({"error": err_msg}), 400
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+        else: # GET
+            try:
+                notes = service.get_annotations_for_scan(actor=current_user, scan_id=scan_id)
+                return jsonify(notes), 200
+            except MriAnnotationServiceException as e:
+                err_msg = str(e)
+                if "Access denied" in err_msg:
+                    return jsonify({"error": err_msg}), 403
+                elif "Authentication required" in err_msg:
+                    return jsonify({"error": err_msg}), 401
+                elif "not found" in err_msg.lower():
+                    return jsonify({"error": err_msg}), 404
+                else:
+                    return jsonify({"error": err_msg}), 400
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/doctor/point-annotations/<int:annotation_id>", methods=["PUT", "DELETE"])
+    @login_required
+    def clinician_point_annotation_operations_flask(current_user: User, annotation_id: int):
+        from clinical_reporting.application.mri_annotation_service import MriAnnotationService, MriAnnotationServiceException
+        service = MriAnnotationService(db_path=app.config["DB_PATH"])
+
+        role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role).lower()
+        if role_val != "doctor" and role_val != "admin":
+            return jsonify({"error": "Access denied. Doctor role required."}), 403
+
+        if request.method == "PUT":
+            data = request.get_json() or {}
+            x = data.get("x")
+            y = data.get("y")
+            label = data.get("label")
+            comment = data.get("comment")
+            try:
+                note = service.update_annotation(
+                    actor=current_user,
+                    annotation_id=annotation_id,
+                    x=x,
+                    y=y,
+                    label=label,
+                    comment=comment
+                )
+                return jsonify(note), 200
+            except MriAnnotationServiceException as e:
+                err_msg = str(e)
+                if "Access denied" in err_msg:
+                    return jsonify({"error": err_msg}), 403
+                elif "Authentication required" in err_msg:
+                    return jsonify({"error": err_msg}), 401
+                elif "not found" in err_msg.lower():
+                    return jsonify({"error": err_msg}), 404
+                else:
+                    return jsonify({"error": err_msg}), 400
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+        else: # DELETE
+            try:
+                result = service.archive_annotation(actor=current_user, annotation_id=annotation_id)
+                return jsonify(result), 200
+            except MriAnnotationServiceException as e:
+                err_msg = str(e)
+                if "Access denied" in err_msg:
+                    return jsonify({"error": err_msg}), 403
+                elif "Authentication required" in err_msg:
+                    return jsonify({"error": err_msg}), 401
+                elif "not found" in err_msg.lower():
+                    return jsonify({"error": err_msg}), 404
+                else:
+                    return jsonify({"error": err_msg}), 400
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+
     @app.route("/api/report/<int:report_id>/compare/<int:other_report_id>")
     @login_required
     def compare_reports_flask(current_user: User, report_id: int, other_report_id: int):

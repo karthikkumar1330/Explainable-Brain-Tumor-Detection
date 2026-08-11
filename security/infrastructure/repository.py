@@ -319,6 +319,30 @@ class SQLiteUserRepository(IUserRepository):
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_clinician_notes_doctor ON clinician_notes(doctor_id);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_clinician_notes_created ON clinician_notes(created_at);")
 
+            # Point annotations table for Phase H3.2-B
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS mri_point_annotations (
+                annotation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scan_id INTEGER NOT NULL,
+                patient_id TEXT NOT NULL,
+                doctor_id INTEGER NOT NULL,
+                x_normalized REAL NOT NULL,
+                y_normalized REAL NOT NULL,
+                label TEXT,
+                encrypted_comment TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (scan_id) REFERENCES mri_scans(id) ON DELETE CASCADE,
+                FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE,
+                FOREIGN KEY (doctor_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_scan ON mri_point_annotations(scan_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_patient ON mri_point_annotations(patient_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_doctor ON mri_point_annotations(doctor_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_created ON mri_point_annotations(created_at);")
+
             import sys
             import os
             if any(m in sys.modules for m in ["pytest", "unittest"]) and os.environ.get("DISABLE_TEST_AUTO_ASSIGN") != "1":
