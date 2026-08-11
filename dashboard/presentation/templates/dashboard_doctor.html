@@ -2070,6 +2070,36 @@
                 </div>
             </div>
 
+            <!-- Clinician Notes Section (Phase H3.2-A) -->
+            <div class="bg-slate-950 p-5 rounded-2xl border border-slate-800 text-xs text-slate-300 mb-6 space-y-4">
+                <div class="border-b border-slate-800 pb-3 flex justify-between items-center">
+                    <span class="font-extrabold text-slate-200 uppercase tracking-wider text-[11px] flex items-center gap-2">
+                        <i class="fa-solid fa-comment-medical text-sky-400 text-sm"></i> Clinician Notes
+                    </span>
+                    <span class="text-[10px] text-slate-400 font-medium">Human-in-the-loop Observation</span>
+                </div>
+
+                <!-- Existing Note List -->
+                <div id="clinician-notes-list" class="space-y-3 max-h-48 overflow-y-auto pr-1">
+                    <!-- populated dynamically -->
+                </div>
+
+                <!-- Write observation form -->
+                <div class="space-y-2 pt-2 border-t border-slate-900">
+                    <span class="font-bold text-slate-350 block mb-1 text-[10px] uppercase">Write a clinical observation...</span>
+                    <textarea id="note-content-input" rows="3" placeholder="Enter clinical observation... Note content is stored with field-level encryption." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
+
+                    <div class="flex justify-end gap-2">
+                        <button id="cancel-note-edit-btn" onclick="cancelNoteEdit()" class="hidden bg-slate-850 hover:bg-slate-800 text-slate-300 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer">
+                            Cancel Edit
+                        </button>
+                        <button id="save-note-btn" onclick="saveClinicianNote()" class="bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold px-4 py-1.5 rounded-xl text-xs transition cursor-pointer flex items-center gap-1.5">
+                            <i class="fa-solid fa-save"></i> Save Note
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Dynamic Actions Container (F2.1) -->
             <div class="flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-slate-800 pt-4">
                 <div id="modal-actions-container" class="flex flex-wrap items-center gap-2">
@@ -2228,6 +2258,8 @@
 
         // Report In-App Preview Globals (F2.1 - F2.12)
         let currentSelectedReportId = null;
+        let currentSelectedScanId = null;
+        let editingNoteId = null;
         let currentPdfDoc = null;
         let currentPreviewPageNum = 1;
         let currentPreviewZoom = 1.0;
@@ -3358,6 +3390,8 @@
                 if (data.error) { alert("Report details could not be loaded: " + data.error); return; }
 
                 currentSelectedReportId = data.report_id;
+                currentSelectedScanId = data.scan_id;
+                loadClinicianNotes(data.scan_id);
 
                 document.getElementById("modal-title").innerText = `Diagnostic Report Details: #${data.report_id}`;
                 document.getElementById("modal-patient-meta").innerText = `Patient ID: ${data.patient_id} | Name: ${data.patient_name}`;
@@ -5611,6 +5645,197 @@
                 `;
                 list.appendChild(item);
             });
+        }
+
+        // --- Clinician Notes Functions (Phase H3.2-A) ---
+        let clinicianNotesList = [];
+
+        async function loadClinicianNotes(scanId) {
+            const listContainer = document.getElementById("clinician-notes-list");
+            if (!listContainer) return;
+
+            listContainer.innerHTML = '<p class="text-slate-500 italic text-center py-2"><i class="fa-solid fa-circle-notch fa-spin text-sky-400 mr-1.5"></i>Loading clinician notes...</p>';
+            cancelNoteEdit();
+
+            if (!scanId) {
+                listContainer.innerHTML = '<p class="text-slate-500 italic text-center py-2">No scan associated with this report.</p>';
+                return;
+            }
+
+            try {
+                const response = await fetchWithAuth(`/api/doctor/scans/${scanId}/clinical-notes`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                const notes = await response.json();
+                clinicianNotesList = notes;
+                renderClinicianNotes(notes);
+            } catch (err) {
+                console.error("Failed to load clinician notes:", err);
+                listContainer.innerHTML = '<p class="text-rose-450 font-bold text-center py-2">Failed to load clinician notes.</p>';
+            }
+        }
+
+        function renderClinicianNotes(notes) {
+            const listContainer = document.getElementById("clinician-notes-list");
+            if (!listContainer) return;
+            listContainer.innerHTML = "";
+
+            if (!notes || notes.length === 0) {
+                listContainer.innerHTML = '<p class="text-slate-500 italic text-center py-4">No clinician observations recorded for this scan.</p>';
+                return;
+            }
+
+            notes.forEach(n => {
+                const noteCard = document.createElement("div");
+                noteCard.className = "bg-slate-900/40 border border-slate-800 p-3 rounded-xl space-y-1.5 hover:border-slate-750 transition relative group";
+
+                const isAuthor = currentUser && (n.doctor_id === currentUser.id || currentUser.role === 'admin');
+                let actionsHtml = "";
+                if (isAuthor) {
+                    actionsHtml = `
+                        <div class="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition duration-200">
+                            <button onclick="editNote(${n.note_id})" class="text-sky-400 hover:text-sky-350 p-1 text-[10px] bg-slate-950/80 rounded border border-slate-800 hover:border-sky-500/30 cursor-pointer" title="Edit Note">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </button>
+                            <button onclick="archiveNote(${n.note_id})" class="text-rose-400 hover:text-rose-350 p-1 text-[10px] bg-slate-950/80 rounded border border-slate-800 hover:border-rose-500/30 cursor-pointer" title="Archive Note">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    `;
+                }
+
+                noteCard.innerHTML = `
+                    <div class="flex justify-between items-center border-b border-slate-950 pb-1">
+                        <span class="font-extrabold text-[10px] text-slate-200">${n.doctor_name || n.doctor_email}</span>
+                        <span class="text-[9px] text-slate-500">${n.created_at}</span>
+                    </div>
+                    <p class="text-[11px] text-slate-350 whitespace-pre-wrap leading-relaxed">${escapeHtml(n.content)}</p>
+                    ${actionsHtml}
+                `;
+                listContainer.appendChild(noteCard);
+            });
+        }
+
+        function escapeHtml(text) {
+            if (!text) return "";
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function editNote(noteId) {
+            const note = clinicianNotesList.find(n => n.note_id === noteId);
+            if (!note) return;
+
+            editingNoteId = noteId;
+            const input = document.getElementById("note-content-input");
+            if (input) {
+                input.value = note.content;
+                input.focus();
+            }
+
+            const cancelBtn = document.getElementById("cancel-note-edit-btn");
+            if (cancelBtn) cancelBtn.classList.remove("hidden");
+
+            const saveBtn = document.getElementById("save-note-btn");
+            if (saveBtn) {
+                saveBtn.innerHTML = '<i class="fa-solid fa-check"></i> Update Note';
+            }
+        }
+
+        function cancelNoteEdit() {
+            editingNoteId = null;
+            const input = document.getElementById("note-content-input");
+            if (input) input.value = "";
+
+            const cancelBtn = document.getElementById("cancel-note-edit-btn");
+            if (cancelBtn) cancelBtn.classList.add("hidden");
+
+            const saveBtn = document.getElementById("save-note-btn");
+            if (saveBtn) {
+                saveBtn.innerHTML = '<i class="fa-solid fa-save"></i> Save Note';
+            }
+        }
+
+        async function saveClinicianNote() {
+            const input = document.getElementById("note-content-input");
+            if (!input) return;
+
+            const content = input.value.trim();
+            if (!content) {
+                alert("Please enter a clinician observation.");
+                return;
+            }
+
+            if (content.length > 5000) {
+                alert("Clinician note exceeds the maximum length of 5000 characters.");
+                return;
+            }
+
+            const saveBtn = document.getElementById("save-note-btn");
+            const originalContent = saveBtn.innerHTML;
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Saving...';
+
+            try {
+                let url = "";
+                let method = "";
+                if (editingNoteId) {
+                    url = `/api/doctor/clinical-notes/${editingNoteId}`;
+                    method = "PUT";
+                } else {
+                    url = `/api/doctor/scans/${currentSelectedScanId}/clinical-notes`;
+                    method = "POST";
+                }
+
+                const response = await fetchWithAuth(url, {
+                    method: method,
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ content: content })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    alert(editingNoteId ? "Note updated successfully!" : "Note saved successfully!");
+                    cancelNoteEdit();
+                    loadClinicianNotes(currentSelectedScanId);
+                } else {
+                    alert(data.detail || data.error || "Failed to save clinician note.");
+                }
+            } catch (err) {
+                console.error("Save note error:", err);
+                alert("Network error saving clinician note.");
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = originalContent;
+            }
+        }
+
+        async function archiveNote(noteId) {
+            if (!confirm("Are you sure you want to archive this clinician note? This action is reversible only by system administrators.")) return;
+
+            try {
+                const response = await fetchWithAuth(`/api/doctor/clinical-notes/${noteId}`, {
+                    method: "DELETE"
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    alert("Note archived successfully.");
+                    loadClinicianNotes(currentSelectedScanId);
+                } else {
+                    alert(data.detail || data.error || "Failed to archive clinician note.");
+                }
+            } catch (err) {
+                console.error("Archive note error:", err);
+                alert("Network error archiving clinician note.");
+            }
         }
     </script>
 </body>

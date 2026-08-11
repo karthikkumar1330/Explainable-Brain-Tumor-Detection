@@ -280,6 +280,22 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         );
         """
 
+        create_clinician_notes_sql = """
+        CREATE TABLE IF NOT EXISTS clinician_notes (
+            note_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id TEXT NOT NULL,
+            scan_id INTEGER NOT NULL,
+            doctor_id INTEGER NOT NULL,
+            encrypted_content TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE,
+            FOREIGN KEY (scan_id) REFERENCES mri_scans(id) ON DELETE CASCADE,
+            FOREIGN KEY (doctor_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        """
+
         # Analytics and Delivery Indices
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_patients_age_gender ON patients(age, gender);",
@@ -309,7 +325,11 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             "CREATE INDEX IF NOT EXISTS idx_quality_flags_user_id ON prediction_quality_flags(flagged_by_user_id);",
             "CREATE INDEX IF NOT EXISTS idx_quality_flags_created ON prediction_quality_flags(created_at);",
             "CREATE INDEX IF NOT EXISTS idx_doctor_patient_assignments_doc ON doctor_patient_assignments(doctor_id);",
-            "CREATE INDEX IF NOT EXISTS idx_doctor_patient_assignments_pat ON doctor_patient_assignments(patient_id);"
+            "CREATE INDEX IF NOT EXISTS idx_doctor_patient_assignments_pat ON doctor_patient_assignments(patient_id);",
+            "CREATE INDEX IF NOT EXISTS idx_clinician_notes_patient ON clinician_notes(patient_id);",
+            "CREATE INDEX IF NOT EXISTS idx_clinician_notes_scan ON clinician_notes(scan_id);",
+            "CREATE INDEX IF NOT EXISTS idx_clinician_notes_doctor ON clinician_notes(doctor_id);",
+            "CREATE INDEX IF NOT EXISTS idx_clinician_notes_created ON clinician_notes(created_at);"
         ]
 
         conn = self._get_connection()
@@ -329,6 +349,7 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 conn.execute(create_feedback_table_sql)
                 conn.execute(create_quality_flags_table_sql)
                 conn.execute(create_doctor_patient_assignments_sql)
+                conn.execute(create_clinician_notes_sql)
                 for idx_sql in indices:
                     conn.execute(idx_sql)
 

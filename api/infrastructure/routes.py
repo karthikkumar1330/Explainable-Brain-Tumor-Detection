@@ -2129,3 +2129,113 @@ def get_patient_timeseries_api(
     except Exception as e:
         logger.error(f"Error in patient timeseries API: {e}")
         raise HTTPException(status_code=500, detail="Internal timeseries engine error")
+
+
+class ClinicianNotePayload(BaseModel):
+    content: str
+
+@router.post("/doctor/scans/{scan_id}/clinical-notes")
+def create_clinician_note_api(
+    scan_id: int,
+    payload: ClinicianNotePayload,
+    current_user: User = Depends(require_roles([Role.DOCTOR, Role.ADMIN]))
+):
+    """API Endpoint: Create a clinician note for a given MRI scan."""
+    from clinical_reporting.application.clinician_note_service import ClinicianNoteService, ClinicianNoteServiceException
+    service = ClinicianNoteService(db_path=DEFAULT_DB_PATH)
+    try:
+        note = service.create_note(actor=current_user, scan_id=scan_id, content=payload.content)
+        return note
+    except ClinicianNoteServiceException as e:
+        err_msg = str(e)
+        if "Access denied" in err_msg:
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg:
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=400, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in create note API: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/doctor/scans/{scan_id}/clinical-notes")
+def get_clinician_notes_api(
+    scan_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """API Endpoint: Get active clinician notes for a given MRI scan."""
+    role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role).lower()
+    if role_val != "doctor" and role_val != "admin":
+        raise HTTPException(status_code=403, detail="Access denied. Doctor role required.")
+
+    from clinical_reporting.application.clinician_note_service import ClinicianNoteService, ClinicianNoteServiceException
+    service = ClinicianNoteService(db_path=DEFAULT_DB_PATH)
+    try:
+        notes = service.get_notes_for_scan(actor=current_user, scan_id=scan_id)
+        return notes
+    except ClinicianNoteServiceException as e:
+        err_msg = str(e)
+        if "Access denied" in err_msg:
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg:
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=400, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in get notes API: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.put("/doctor/clinical-notes/{note_id}")
+def update_clinician_note_api(
+    note_id: int,
+    payload: ClinicianNotePayload,
+    current_user: User = Depends(require_roles([Role.DOCTOR, Role.ADMIN]))
+):
+    """API Endpoint: Update an existing clinician note."""
+    from clinical_reporting.application.clinician_note_service import ClinicianNoteService, ClinicianNoteServiceException
+    service = ClinicianNoteService(db_path=DEFAULT_DB_PATH)
+    try:
+        note = service.update_note(actor=current_user, note_id=note_id, content=payload.content)
+        return note
+    except ClinicianNoteServiceException as e:
+        err_msg = str(e)
+        if "Access denied" in err_msg:
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg:
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=400, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in update note API: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.delete("/doctor/clinical-notes/{note_id}")
+def archive_clinician_note_api(
+    note_id: int,
+    current_user: User = Depends(require_roles([Role.DOCTOR, Role.ADMIN]))
+):
+    """API Endpoint: Soft-archive an existing clinician note."""
+    from clinical_reporting.application.clinician_note_service import ClinicianNoteService, ClinicianNoteServiceException
+    service = ClinicianNoteService(db_path=DEFAULT_DB_PATH)
+    try:
+        result = service.archive_note(actor=current_user, note_id=note_id)
+        return result
+    except ClinicianNoteServiceException as e:
+        err_msg = str(e)
+        if "Access denied" in err_msg:
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg:
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=400, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in archive note API: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")

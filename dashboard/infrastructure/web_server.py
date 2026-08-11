@@ -1821,7 +1821,7 @@ def create_app(db_path: str) -> Flask:
             try:
                 query = """
                 SELECT
-                    cr.id as report_id, cr.prediction_id, p.patient_id, p.name as patient_name,
+                    cr.id as report_id, cr.prediction_id, s.id as scan_id, p.patient_id, p.name as patient_name,
                     pr.predicted_class, pr.confidence_score, pr.tumor_area_mm2, pr.tumor_percentage_brain,
                     pr.rule_based_severity, pr.severity_rule_description, cr.created_at
                 FROM clinical_reports cr
@@ -1864,6 +1864,95 @@ def create_app(db_path: str) -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/doctor/scans/<int:scan_id>/clinical-notes", methods=["POST", "GET"])
+    @login_required
+    def clinician_notes_scan_flask(current_user: User, scan_id: int):
+        from clinical_reporting.application.clinician_note_service import ClinicianNoteService, ClinicianNoteServiceException
+        service = ClinicianNoteService(db_path=app.config["DB_PATH"])
+
+        role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role).lower()
+        if role_val != "doctor" and role_val != "admin":
+            return jsonify({"error": "Access denied. Doctor role required."}), 403
+
+        if request.method == "POST":
+            data = request.get_json() or {}
+            content = data.get("content")
+            try:
+                note = service.create_note(actor=current_user, scan_id=scan_id, content=content)
+                return jsonify(note), 200
+            except ClinicianNoteServiceException as e:
+                err_msg = str(e)
+                if "Access denied" in err_msg:
+                    return jsonify({"error": err_msg}), 403
+                elif "Authentication required" in err_msg:
+                    return jsonify({"error": err_msg}), 401
+                elif "not found" in err_msg.lower():
+                    return jsonify({"error": err_msg}), 404
+                else:
+                    return jsonify({"error": err_msg}), 400
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+        else: # GET
+            try:
+                notes = service.get_notes_for_scan(actor=current_user, scan_id=scan_id)
+                return jsonify(notes), 200
+            except ClinicianNoteServiceException as e:
+                err_msg = str(e)
+                if "Access denied" in err_msg:
+                    return jsonify({"error": err_msg}), 403
+                elif "Authentication required" in err_msg:
+                    return jsonify({"error": err_msg}), 401
+                elif "not found" in err_msg.lower():
+                    return jsonify({"error": err_msg}), 404
+                else:
+                    return jsonify({"error": err_msg}), 400
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/doctor/clinical-notes/<int:note_id>", methods=["PUT", "DELETE"])
+    @login_required
+    def clinician_note_operations_flask(current_user: User, note_id: int):
+        from clinical_reporting.application.clinician_note_service import ClinicianNoteService, ClinicianNoteServiceException
+        service = ClinicianNoteService(db_path=app.config["DB_PATH"])
+
+        role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role).lower()
+        if role_val != "doctor" and role_val != "admin":
+            return jsonify({"error": "Access denied. Doctor role required."}), 403
+
+        if request.method == "PUT":
+            data = request.get_json() or {}
+            content = data.get("content")
+            try:
+                note = service.update_note(actor=current_user, note_id=note_id, content=content)
+                return jsonify(note), 200
+            except ClinicianNoteServiceException as e:
+                err_msg = str(e)
+                if "Access denied" in err_msg:
+                    return jsonify({"error": err_msg}), 403
+                elif "Authentication required" in err_msg:
+                    return jsonify({"error": err_msg}), 401
+                elif "not found" in err_msg.lower():
+                    return jsonify({"error": err_msg}), 404
+                else:
+                    return jsonify({"error": err_msg}), 400
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+        else: # DELETE
+            try:
+                result = service.archive_note(actor=current_user, note_id=note_id)
+                return jsonify(result), 200
+            except ClinicianNoteServiceException as e:
+                err_msg = str(e)
+                if "Access denied" in err_msg:
+                    return jsonify({"error": err_msg}), 403
+                elif "Authentication required" in err_msg:
+                    return jsonify({"error": err_msg}), 401
+                elif "not found" in err_msg.lower():
+                    return jsonify({"error": err_msg}), 404
+                else:
+                    return jsonify({"error": err_msg}), 400
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
 
     @app.route("/api/report/<int:report_id>/compare/<int:other_report_id>")
     @login_required
