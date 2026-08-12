@@ -756,6 +756,7 @@
 
             const email = document.getElementById('forgot-email').value;
             const msgDiv = document.getElementById('forgot-msg');
+            msgDiv.classList.add('hidden');
             try {
                 const res = await fetch('/api/auth/forgot-password', {
                     method: 'POST',
@@ -763,8 +764,19 @@
                     body: JSON.stringify({ email })
                 });
                 const data = await res.json();
+                if (data.error) {
+                    msgDiv.innerText = `Error: ${data.error}`;
+                    msgDiv.classList.remove('hidden');
+                    msgDiv.style.color = '#f43f5e';
+                    msgDiv.style.backgroundColor = 'rgba(244, 63, 94, 0.1)';
+                    msgDiv.style.borderColor = 'rgba(244, 63, 94, 0.2)';
+                    return;
+                }
                 msgDiv.innerText = `${data.message} Reset OTP: ${data.reset_otp || 'Sent'}`;
                 msgDiv.classList.remove('hidden');
+                msgDiv.style.color = '';
+                msgDiv.style.backgroundColor = '';
+                msgDiv.style.borderColor = '';
             } catch (err) {
                 alert("Failed: " + err);
             } finally {

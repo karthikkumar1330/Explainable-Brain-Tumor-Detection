@@ -438,7 +438,10 @@ def forgot_password(
 ):
     client_ip = request.client.host if request.client else "127.0.0.1"
     enforce_rate_limit(f"forgot_password:{client_ip}", max_requests=5, window_seconds=300)
-    return use_cases.forgot_password(email=data.email, ip_address=client_ip)
+    try:
+        return use_cases.forgot_password(email=data.email, ip_address=client_ip)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @auth_router.post("/reset-password")

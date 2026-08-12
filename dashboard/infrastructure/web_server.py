@@ -461,8 +461,11 @@ def create_app(db_path: str) -> Flask:
         email = data.get("email")
         if not email:
             return jsonify({"error": "Email is required."}), 400
-        res = auth_use_cases.forgot_password(email=email, ip_address=ip_addr)
-        return jsonify(res)
+        try:
+            res = auth_use_cases.forgot_password(email=email, ip_address=ip_addr)
+            return jsonify(res)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
 
     @app.route("/api/auth/reset-password", methods=["POST"])
     def auth_reset_password():
@@ -899,6 +902,8 @@ def create_app(db_path: str) -> Flask:
             return jsonify({"error": "User not found"}), 404
 
         user.password_hash = PasswordHasher.hash_password(new_pass)
+        user.failed_login_attempts = 0
+        user.lockout_until = None
         user_repo.update_user(user)
 
         # Log audit trail

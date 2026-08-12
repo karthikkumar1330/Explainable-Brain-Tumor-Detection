@@ -110,7 +110,7 @@ class TestEmailService(unittest.TestCase):
         # 2. Port 587 uses standard SMTP with STARTTLS
         with patch("smtplib.SMTP") as mock_smtp:
             mock_conn = MagicMock()
-            mock_conn.has_ext.return_value = True
+            mock_conn.has_extn.return_value = True
             mock_smtp.return_value = mock_conn
             service = EmailService(smtp_host="smtp.example.com", smtp_port=587, email_from="sender@example.com")
             service.connect()

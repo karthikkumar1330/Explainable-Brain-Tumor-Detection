@@ -115,10 +115,8 @@ class AuthUseCases:
             if limited:
                 raise ValueError(f"Too many registration attempts. Please try again in {remaining} seconds.")
 
-        # Validate email
-        email_clean = email.lower().strip()
-        if not email_clean or "@" not in email_clean or "." not in email_clean:
-            raise ValueError("Invalid email format.")
+        # Validate and normalize email
+        email_clean = PasswordHasher.normalize_email(email)
 
         # Check duplicate
         existing = self.user_repo.get_by_email(email_clean)
@@ -215,7 +213,7 @@ class AuthUseCases:
 
     def login(self, email: str, password: str, ip_address: str = "127.0.0.1", remember_me: bool = False, user_agent: str = "Unknown") -> Dict[str, Any]:
         """Authenticates user credentials and returns JWT tokens immediately without 2FA OTP flow."""
-        email_clean = email.lower().strip()
+        email_clean = PasswordHasher.normalize_email(email)
         now = datetime.datetime.utcnow().isoformat()
 
         # Brute force rate check
@@ -240,6 +238,11 @@ class AuthUseCases:
                         ip_address=ip_address, status="BLOCKED", details=f"Account locked. Try again in {remaining_seconds}s.", user_agent=user_agent
                     ))
                     raise ValueError(f"Account is temporarily locked due to too many failed login attempts. Please try again in {remaining_seconds} seconds.")
+                else:
+                    # Lockout has expired! Reset failed attempts and clear lockout timestamp
+                    user.failed_login_attempts = 0
+                    user.lockout_until = None
+                    self.user_repo.update_user(user)
             except ValueError:
                 raise
             except Exception:
@@ -707,7 +710,7 @@ class AuthUseCases:
 
     def resend_verification(self, email: str) -> Dict[str, Any]:
         """Resends email verification instructions. Applies anti-enumeration."""
-        email_clean = email.lower().strip()
+        email_clean = PasswordHasher.normalize_email(email)
         user = self.user_repo.get_by_email(email_clean)
 
         generic_msg = {"message": "If the account exists, verification instructions have been sent."}
@@ -747,20 +750,30 @@ class AuthUseCases:
         )
 
         # Async dispatch to prevent timing side-channel
-        import threading
-        thread = threading.Thread(
-            target=send_account_email,
-            args=(
+        if is_testing_env():
+            send_account_email(
                 self.user_repo.db_path,
                 user.email,
                 "Verify Your AuraScan AI Account",
                 text_body,
                 html_body,
                 "ACCOUNT_VERIFICATION"
-            ),
-            daemon=True
-        )
-        thread.start()
+            )
+        else:
+            import threading
+            thread = threading.Thread(
+                target=send_account_email,
+                args=(
+                    self.user_repo.db_path,
+                    user.email,
+                    "Verify Your AuraScan AI Account",
+                    text_body,
+                    html_body,
+                    "ACCOUNT_VERIFICATION"
+                ),
+                daemon=True
+            )
+            thread.start()
 
         res = dict(generic_msg)
         if is_testing_env():
@@ -770,7 +783,18 @@ class AuthUseCases:
 
     def forgot_password(self, email: str, ip_address: str = "127.0.0.1") -> Dict[str, Any]:
         """Initiates the password recovery flow. Applies anti-enumeration."""
-        email_clean = email.lower().strip()
+        # Validate email config first to fail-fast on configuration issues
+        from clinical_reporting.infrastructure.email_config import EmailConfig, EmailConfigException
+        try:
+            config = EmailConfig()
+            config.validate(active=True)
+        except EmailConfigException as e:
+            import logging
+            logging.getLogger("forgot_password").error(f"Forgot password failed because email config is invalid: {e}")
+            if not is_testing_env():
+                raise ValueError("Email delivery service is currently unavailable. Please contact the system administrator.")
+
+        email_clean = PasswordHasher.normalize_email(email)
         user = self.user_repo.get_by_email(email_clean)
 
         generic_msg = {"message": "If the account exists, password reset instructions have been sent."}
@@ -810,20 +834,30 @@ class AuthUseCases:
         )
 
         # Async dispatch to prevent timing side-channel
-        import threading
-        thread = threading.Thread(
-            target=send_account_email,
-            args=(
+        if is_testing_env():
+            send_account_email(
                 self.user_repo.db_path,
                 user.email,
                 "Reset Your AuraScan AI Password",
                 text_body,
                 html_body,
                 "PASSWORD_RESET"
-            ),
-            daemon=True
-        )
-        thread.start()
+            )
+        else:
+            import threading
+            thread = threading.Thread(
+                target=send_account_email,
+                args=(
+                    self.user_repo.db_path,
+                    user.email,
+                    "Reset Your AuraScan AI Password",
+                    text_body,
+                    html_body,
+                    "PASSWORD_RESET"
+                ),
+                daemon=True
+            )
+            thread.start()
 
         res = dict(generic_msg)
         if is_testing_env():
@@ -833,7 +867,7 @@ class AuthUseCases:
 
     def reset_password(self, reset_token_or_otp: str, email: str, new_password: str, ip_address: str = "127.0.0.1") -> Dict[str, Any]:
         """Resets the user's password using reset token or OTP code. Enforces security requirements."""
-        email_clean = email.lower().strip()
+        email_clean = PasswordHasher.normalize_email(email)
         user = self.user_repo.get_by_email(email_clean)
         if not user:
             raise ValueError("Invalid user or token.")

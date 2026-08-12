@@ -159,7 +159,7 @@ class EmailService:
                     timeout=self.email_timeout
                 )
                 self._connection.ehlo()
-                if self._connection.has_ext("STARTTLS"):
+                if self._connection.has_extn("STARTTLS"):
                     ssl_context = ssl.create_default_context()
                     self._connection.starttls(context=ssl_context)
                     self._connection.ehlo()

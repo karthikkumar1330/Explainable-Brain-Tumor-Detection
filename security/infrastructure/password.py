@@ -4,15 +4,32 @@ import hmac
 import os
 import secrets
 
-try:
-    import bcrypt
-    HAS_BCRYPT = True
-except ImportError:
-    HAS_BCRYPT = False
+import bcrypt
 
 
 class PasswordHasher:
     """Enterprise password hashing engine enforcing OWASP security standards."""
+
+    @classmethod
+    def normalize_email(cls, email: str) -> str:
+        """Normalizes and validates an email address. Enforces strict formats and rejects Markdown formatting."""
+        if not isinstance(email, str):
+            raise ValueError("Email must be a string.")
+
+        email_clean = email.strip().lower()
+        if not email_clean:
+            raise ValueError("Email cannot be empty.")
+
+        # Reject markdown links or mailto links explicitly
+        if "[" in email_clean or "]" in email_clean or "(" in email_clean or ")" in email_clean or "mailto:" in email_clean:
+            raise ValueError("Malformed email address containing links is not allowed.")
+
+        # Basic validation: must contain exactly one @ and at least one dot in the domain part
+        parts = email_clean.split("@")
+        if len(parts) != 2 or not parts[0] or not parts[1] or "." not in parts[1]:
+            raise ValueError("Invalid email format.")
+
+        return email_clean
 
     @staticmethod
     def validate_password_strength(password: str) -> tuple[bool, str]:
@@ -37,16 +54,10 @@ class PasswordHasher:
 
     @classmethod
     def hash_password(cls, password: str) -> str:
-        """Hashes password using bcrypt with salt, or PBKDF2-HMAC-SHA256 fallback."""
-        if HAS_BCRYPT:
-            salt = bcrypt.gensalt(rounds=12)
-            hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
-            return hashed.decode("utf-8")
-        else:
-            # Fallback: PBKDF2 with 600,000 iterations (OWASP recommendation)
-            salt = secrets.token_bytes(16)
-            key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 600000)
-            return f"pbkdf2_sha256$600000${salt.hex()}${key.hex()}"
+        """Hashes password using bcrypt with salt."""
+        salt = bcrypt.gensalt(rounds=12)
+        hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
+        return hashed.decode("utf-8")
 
     @classmethod
     def verify_password(cls, password: str, password_hash: str) -> bool:
@@ -56,9 +67,7 @@ class PasswordHasher:
 
         try:
             if password_hash.startswith("$2b$") or password_hash.startswith("$2a$") or password_hash.startswith("$2y$"):
-                if HAS_BCRYPT:
-                    return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
-                return False
+                return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
 
             if password_hash.startswith("pbkdf2_sha256$"):
                 parts = password_hash.split("$")

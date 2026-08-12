@@ -200,6 +200,47 @@ class TestSecuritySystem(unittest.TestCase):
         with self.assertRaises(TokenExpiredError):
             self.jwt_svc.decode_token(expired_token)
 
+    # 10. Email Normalization and Formatting
+    def test_email_normalization(self):
+        # Normalization checks
+        self.assertEqual(PasswordHasher.normalize_email("  User@Example.COM  "), "user@example.com")
+        self.assertEqual(PasswordHasher.normalize_email("doctor@aurascan.ai"), "doctor@aurascan.ai")
+
+        # Invalid email syntax checks
+        with self.assertRaises(ValueError):
+            PasswordHasher.normalize_email("no_at_symbol")
+        with self.assertRaises(ValueError):
+            PasswordHasher.normalize_email("user@no_dot_domain")
+        with self.assertRaises(ValueError):
+            PasswordHasher.normalize_email("")
+        with self.assertRaises(ValueError):
+            PasswordHasher.normalize_email(None)
+
+        # Markdown/mailto formatting rejection checks
+        with self.assertRaises(ValueError):
+            PasswordHasher.normalize_email("[admin@aurascan.ai](mailto:admin@aurascan.ai)")
+        with self.assertRaises(ValueError):
+            PasswordHasher.normalize_email("admin@aurascan.ai(mailto:admin@aurascan.ai)")
+        with self.assertRaises(ValueError):
+            PasswordHasher.normalize_email("mailto:admin@aurascan.ai")
+
+    # 11. Legacy PBKDF2 Password Verification
+    def test_legacy_pbkdf2_verification(self):
+        import hashlib
+        import hmac
+        import secrets
+
+        password = "SecurePassword@123"
+        salt = secrets.token_bytes(16)
+        key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 600000)
+        legacy_hash = f"pbkdf2_sha256$600000${salt.hex()}${key.hex()}"
+
+        # Verify correct legacy password
+        self.assertTrue(PasswordHasher.verify_password(password, legacy_hash))
+
+        # Verify incorrect legacy password
+        self.assertFalse(PasswordHasher.verify_password("IncorrectPass@123", legacy_hash))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -175,6 +175,83 @@ class TestEnterpriseSecurity(unittest.TestCase):
         self.assertEqual(resp_blocked.status_code, 401)
         self.assertEqual(resp_blocked.get_json()["code"], "TOKEN_REVOKED")
 
+    def test_account_lockout_expiry(self):
+        """Once the lockout countdown expires, a user should be allowed fresh attempts and should not be locked out on the first failed attempt."""
+        # 1. Execute 5 incorrect logins to lock the account
+        for i in range(5):
+            resp = self.client.post("/api/auth/login", json={
+                "email": "patient@aurascan.ai",
+                "password": "WrongPassword@123"
+            })
+            self.assertEqual(resp.status_code, 400)
+
+        # 2. Verify account is locked
+        resp_lockout = self.client.post("/api/auth/login", json={
+            "email": "patient@aurascan.ai",
+            "password": "WrongPassword@123"
+        })
+        self.assertIn("temporarily locked", resp_lockout.get_json()["error"])
+
+        # 3. Manually edit database to set lockout_until to 20 minutes in the past
+        import sqlite3
+        import datetime
+        past_time = (datetime.datetime.utcnow() - datetime.timedelta(minutes=20)).isoformat() + "Z"
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute("UPDATE users SET lockout_until = ? WHERE email = ?", (past_time, "patient@aurascan.ai"))
+            conn.commit()
+        finally:
+            conn.close()
+
+        # 4. Attempt login with INCORRECT password. It should not be locked out; instead it should return a fresh attempt message (Attempt 1/5)
+        resp_fail_after_expiry = self.client.post("/api/auth/login", json={
+            "email": "patient@aurascan.ai",
+            "password": "WrongPassword@1234"
+        })
+        self.assertEqual(resp_fail_after_expiry.status_code, 400)
+        self.assertIn("Attempt 1/5", resp_fail_after_expiry.get_json()["error"])
+
+        # 5. Attempt login with CORRECT password. It should succeed!
+        resp_success = self.client.post("/api/auth/login", json={
+            "email": "patient@aurascan.ai",
+            "password": self.patient_pass
+        })
+        self.assertEqual(resp_success.status_code, 200)
+        self.assertIn("access_token", resp_success.get_json())
+
+    def test_legacy_pbkdf2_login(self):
+        """Verifies that a legacy user with PBKDF2 hash can successfully authenticate via API endpoint."""
+        import hashlib
+        import secrets
+
+        # 1. Generate PBKDF2 hash for legacy user
+        pwd = "LegacyPassword@123"
+        salt = secrets.token_bytes(16)
+        key = hashlib.pbkdf2_hmac("sha256", pwd.encode("utf-8"), salt, 600000)
+        legacy_hash = f"pbkdf2_sha256$600000${salt.hex()}${key.hex()}"
+
+        # 2. Insert into repository
+        legacy_user = User(
+            id=None,
+            uuid="legacy-doctor-uuid",
+            email="legacy_doc@aurascan.ai",
+            password_hash=legacy_hash,
+            full_name="Legacy Doctor",
+            role=Role.DOCTOR,
+            is_verified=True,
+            is_active=True
+        )
+        self.repo.create_user(legacy_user)
+
+        # 3. Authenticate via login endpoint
+        resp = self.client.post("/api/auth/login", json={
+            "email": "legacy_doc@aurascan.ai",
+            "password": pwd
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("access_token", resp.get_json())
+        self.assertFalse(resp.get_json()["requires_2fa"])
+
 
 if __name__ == "__main__":
     unittest.main()
