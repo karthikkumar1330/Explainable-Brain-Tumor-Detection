@@ -1092,6 +1092,16 @@ class ReportService:
             # Sanitize NaN/Infinity
             sanitized = self._sanitize_json_floats(payload)
 
+            # Apply patient-facing path sanitization (H4.4)
+            if actor and hasattr(actor, "role"):
+                role_val = actor.role.value if hasattr(actor.role, "value") else str(actor.role)
+                if role_val.lower() == "patient":
+                    if "files" in sanitized:
+                        sanitized.pop("files", None)
+                    if "processing" in sanitized:
+                        sanitized["processing"].pop("classification_model", None)
+                        sanitized["processing"].pop("segmentation_model", None)
+
             # Audit success log
             self._log_security_audit_event(conn, "REPORT_JSON_EXPORTED", actor, report_id, "SUCCESS", f"Exported report JSON version {version_number}")
             conn.commit()
