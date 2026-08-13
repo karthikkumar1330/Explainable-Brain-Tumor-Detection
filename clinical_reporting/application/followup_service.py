@@ -49,6 +49,57 @@ class FollowupScheduleService:
         except Exception as e:
             self.logger.warning(f"Failed to write follow-up security audit log: {e}")
 
+    def _parse_and_normalize_date(self, date_str: str) -> str:
+        """Parses, validates, and normalizes a scheduled date string to a consistent format.
+
+        Supports:
+        - Date-only: YYYY-MM-DD
+        - ISO datetime (naive): YYYY-MM-DDTHH:MM:SS (and variations)
+        - Timezone-aware datetime: YYYY-MM-DDTHH:MM:SSZ or with timezone offset
+        """
+        if not date_str or not isinstance(date_str, str):
+            raise ValueError("Scheduled date must be a non-empty string.")
+
+        cleaned = date_str.strip()
+        if not cleaned:
+            raise ValueError("Scheduled date cannot be blank.")
+
+        # 1. Date-only format: YYYY-MM-DD
+        import re
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", cleaned):
+            try:
+                dt = datetime.datetime.strptime(cleaned, "%Y-%m-%d")
+                return dt.strftime("%Y-%m-%d")
+            except ValueError as e:
+                raise ValueError(f"Invalid date components: {e}")
+
+        # 2. Try parsing datetime formats using fromisoformat
+        try:
+            dt = datetime.datetime.fromisoformat(cleaned)
+        except ValueError:
+            try:
+                # Support space separator instead of T
+                dt = datetime.datetime.fromisoformat(cleaned.replace(" ", "T"))
+            except ValueError:
+                # Fallback to general parsing loop for common formats
+                for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"]:
+                    try:
+                        dt = datetime.datetime.strptime(cleaned, fmt)
+                        break
+                    except ValueError:
+                        continue
+                else:
+                    raise ValueError("Invalid date/time format. Supported formats: YYYY-MM-DD, ISO 8601.")
+
+        # 3. Handle timezone conversions
+        if dt.tzinfo is not None:
+            # Convert to UTC and format with 'Z'
+            utc_dt = dt.astimezone(datetime.timezone.utc)
+            return utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        else:
+            # Naive datetime: format as YYYY-MM-DDTHH:MM:SS
+            return dt.strftime("%Y-%m-%dT%H:%M:%S")
+
     def create_followup(
         self,
         actor: User,
@@ -90,11 +141,10 @@ class FollowupScheduleService:
         # 6. Validate scheduled_date
         if not scheduled_date or not isinstance(scheduled_date, str):
             raise FollowupScheduleServiceException("Scheduled date is required.")
-        sd_clean = scheduled_date.strip()
         try:
-            datetime.datetime.strptime(sd_clean, "%Y-%m-%d")
-        except ValueError:
-            raise FollowupScheduleServiceException("Invalid scheduled date format. Use YYYY-MM-DD.")
+            sd_clean = self._parse_and_normalize_date(scheduled_date)
+        except ValueError as e:
+            raise FollowupScheduleServiceException(f"Invalid scheduled date format. {str(e)}")
 
         # 7. Validate reason / notes length
         reason_clean = reason.strip() if reason else ""
@@ -239,13 +289,10 @@ class FollowupScheduleService:
         # 7. Validate scheduled_date if provided
         sd_clean = None
         if scheduled_date is not None:
-            if not isinstance(scheduled_date, str):
-                raise FollowupScheduleServiceException("Scheduled date must be a string.")
-            sd_clean = scheduled_date.strip()
             try:
-                datetime.datetime.strptime(sd_clean, "%Y-%m-%d")
-            except ValueError:
-                raise FollowupScheduleServiceException("Invalid scheduled date format. Use YYYY-MM-DD.")
+                sd_clean = self._parse_and_normalize_date(scheduled_date)
+            except ValueError as e:
+                raise FollowupScheduleServiceException(f"Invalid scheduled date format. {str(e)}")
 
         # 8. Validate status if provided
         status_clean = None
