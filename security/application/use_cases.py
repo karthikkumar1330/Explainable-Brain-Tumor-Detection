@@ -507,6 +507,27 @@ class AuthUseCases:
         if full_name and full_name.strip():
             user.full_name = full_name.strip()
 
+            # Sync name to patients table if user role is patient
+            if user.role == Role.PATIENT or (isinstance(user.role, str) and user.role.lower() == "patient"):
+                try:
+                    from security.infrastructure.encryption_service import PIIEncryptionService
+                    encryption_service = PIIEncryptionService()
+                    enc_name = encryption_service.encrypt(full_name.strip())
+
+                    import sqlite3
+                    conn = sqlite3.connect(self.user_repo.db_path)
+                    try:
+                        with conn:
+                            conn.execute(
+                                "UPDATE patients SET name = ? WHERE patient_id = ?;",
+                                (enc_name, user.uuid)
+                            )
+                    finally:
+                        conn.close()
+                except Exception as e:
+                    import logging
+                    logging.getLogger("security").error(f"Failed to sync patient name update: {e}")
+
         email_changed = False
         if email and email.strip() and email.lower().strip() != user.email:
             new_email = email.lower().strip()

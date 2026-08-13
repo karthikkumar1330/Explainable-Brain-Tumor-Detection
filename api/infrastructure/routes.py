@@ -2015,36 +2015,6 @@ def verify_report_api(token: str):
         raise HTTPException(status_code=500, detail="Internal verification error")
 
 
-@router.get("/patients/{patient_id}/longitudinal-timeline")
-def get_patient_longitudinal_timeline_api(
-    patient_id: str,
-    current_user: User = Depends(get_current_user)
-):
-    """API Endpoint: Retrieves a patient's longitudinal timeline, enforcing authorization boundaries."""
-    service = ReportService(db_path=DEFAULT_DB_PATH)
-    try:
-        from clinical_reporting.application.services import ReportServiceException
-
-        timeline = service.get_patient_longitudinal_timeline(
-            patient_id=patient_id,
-            actor=current_user
-        )
-        return timeline.to_dict()
-    except ReportServiceException as rse:
-        err_msg = str(rse)
-        if "Access denied" in err_msg or "denied" in err_msg.lower():
-            raise HTTPException(status_code=403, detail="Access denied to patient timeline.")
-        elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
-            raise HTTPException(status_code=401, detail=err_msg)
-        elif "not found" in err_msg.lower():
-            raise HTTPException(status_code=404, detail=err_msg)
-        else:
-            raise HTTPException(status_code=422, detail=err_msg)
-    except Exception as e:
-        logger.error(f"Error in longitudinal timeline API: {e}")
-        raise HTTPException(status_code=500, detail="Internal timeline engine error")
-
-
 @router.get("/patients/{patient_id}/analytics")
 def get_patient_analytics_api(
     patient_id: str,

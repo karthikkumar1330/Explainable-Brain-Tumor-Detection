@@ -353,6 +353,10 @@ class TestLongitudinalTimelineService(unittest.TestCase):
             (patient_id, f"Patient {patient_id}", 45, "Male", datetime.datetime.utcnow().isoformat())
         )
         conn.execute(
+            "INSERT OR IGNORE INTO doctor_patient_assignments (doctor_id, patient_id, created_at) VALUES (?, ?, ?);",
+            (999, patient_id, datetime.datetime.utcnow().isoformat())
+        )
+        conn.execute(
             "INSERT OR IGNORE INTO mri_scans (id, patient_id, image_path, pixel_spacing_mm, ref_physician, scan_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?);",
             (scan_id, patient_id, f"scan_{scan_id}.png", 1.0, "Dr. Smith", scan_date, datetime.datetime.utcnow().isoformat())
         )
@@ -418,6 +422,10 @@ class TestLongitudinalTimelineService(unittest.TestCase):
             conn.execute(
                 "INSERT INTO patients (patient_id, name, age, gender, created_at) VALUES (?, ?, ?, ?, ?);",
                 ("bob-jones-uuid", "Bob Jones", 45, "Male", datetime.datetime.utcnow().isoformat())
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO doctor_patient_assignments (doctor_id, patient_id, created_at) VALUES (?, ?, ?);",
+                (999, "bob-jones-uuid", datetime.datetime.utcnow().isoformat())
             )
             conn.commit()
         finally:
@@ -648,6 +656,10 @@ class TestLongitudinalTimelineAPI(unittest.TestCase):
         conn.execute(
             "INSERT OR IGNORE INTO patients (patient_id, name, age, gender, created_at) VALUES (?, ?, ?, ?, ?);",
             (patient_id, f"Patient {patient_id}", 45, "Male", datetime.datetime.utcnow().isoformat())
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO doctor_patient_assignments (doctor_id, patient_id, created_at) VALUES (?, ?, ?);",
+            (self.doctor_user.id, patient_id, datetime.datetime.utcnow().isoformat())
         )
         conn.execute(
             "INSERT OR IGNORE INTO mri_scans (id, patient_id, image_path, pixel_spacing_mm, ref_physician, scan_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?);",
@@ -946,6 +958,10 @@ class TestLongitudinalTimelineFlaskAPI(unittest.TestCase):
         conn.execute(
             "INSERT OR IGNORE INTO patients (patient_id, name, age, gender, created_at) VALUES (?, ?, ?, ?, ?);",
             (patient_id, f"Patient {patient_id}", 45, "Male", datetime.datetime.utcnow().isoformat())
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO doctor_patient_assignments (doctor_id, patient_id, created_at) VALUES (?, ?, ?);",
+            (self.doctor_user.id, patient_id, datetime.datetime.utcnow().isoformat())
         )
         conn.execute(
             "INSERT OR IGNORE INTO mri_scans (id, patient_id, image_path, pixel_spacing_mm, ref_physician, scan_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?);",
@@ -1521,6 +1537,16 @@ class TestLongitudinalTimelineSecurityAndAuditHardening(unittest.TestCase):
             user_uuid=self.admin.uuid, user_id=self.admin.id, email=self.admin.email, role=Role.ADMIN
         )
 
+        # Drop the auto-assignment triggers to ensure clean isolated testing
+        conn_drop = sqlite3.connect(self.db_path)
+        try:
+            conn_drop.execute("DROP TRIGGER IF EXISTS auto_assign_doctor_on_insert;")
+            conn_drop.execute("DROP TRIGGER IF EXISTS auto_assign_patient_on_insert;")
+            conn_drop.execute("DELETE FROM doctor_patient_assignments;")
+            conn_drop.commit()
+        finally:
+            conn_drop.close()
+
         # Seed Patients into DB
         conn = sqlite3.connect(self.db_path)
         try:
@@ -1531,6 +1557,10 @@ class TestLongitudinalTimelineSecurityAndAuditHardening(unittest.TestCase):
             conn.execute(
                 "INSERT INTO patients (patient_id, name, age, gender, created_at) VALUES (?, ?, 25, 'Female', ?);",
                 (self.patient_b.uuid, self.patient_b.full_name, datetime.datetime.utcnow().isoformat())
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO doctor_patient_assignments (doctor_id, patient_id, created_at) VALUES (?, ?, ?);",
+                (self.doctor.id, self.patient_a.uuid, datetime.datetime.utcnow().isoformat())
             )
             conn.commit()
         finally:
@@ -1589,10 +1619,16 @@ class TestLongitudinalTimelineSecurityAndAuditHardening(unittest.TestCase):
             conn.close()
 
     def test_doctor_access_allowed(self):
-        """5. Doctors must be allowed to access any patient's timeline."""
+        """5. Assigned doctors must be allowed to access the patient's timeline."""
         self.client.set_cookie("access_token", self.token_doc)
         res = self.client.get("/api/patients/patient-a-uuid/longitudinal-timeline")
         self.assertEqual(res.status_code, 200)
+
+    def test_doctor_access_unassigned_forbidden(self):
+        """5b. Unassigned doctors must be forbidden from accessing the patient's timeline."""
+        self.client.set_cookie("access_token", self.token_doc)
+        res = self.client.get("/api/patients/patient-b-uuid/longitudinal-timeline")
+        self.assertEqual(res.status_code, 403)
 
     def test_admin_access_allowed(self):
         """6. Admins must be allowed to access any patient's timeline."""
