@@ -509,7 +509,7 @@ def create_app(db_path: str) -> Flask:
 
         ip_addr = request.remote_addr or "127.0.0.1"
         try:
-            res = auth_use_cases.refresh_token(refresh_token=refresh_token, ip_addr=ip_addr)
+            res = auth_use_cases.refresh_token(refresh_token=refresh_token, ip_address=ip_addr)
             response = jsonify(res)
 
             is_secure = request.is_secure or request.headers.get("X-Forwarded-Proto", "").lower() == "https"
@@ -543,7 +543,16 @@ def create_app(db_path: str) -> Flask:
             )
             return response
         except ValueError as e:
-            response = jsonify({"error": str(e), "code": "REFRESH_TOKEN_INVALID"}), 401
+            app.logger.warning(f"Refresh token validation failed: {e}")
+            from flask import make_response
+            response = make_response(jsonify({"error": "Invalid or expired refresh token.", "code": "REFRESH_TOKEN_INVALID"}), 401)
+            response.set_cookie("access_token", "", expires=0, httponly=True, samesite="Lax", path="/")
+            response.set_cookie("refresh_token", "", expires=0, httponly=True, samesite="Lax", path="/")
+            return response
+        except Exception as e:
+            app.logger.error(f"Unexpected error in refresh token: {e}", exc_info=True)
+            from flask import make_response
+            response = make_response(jsonify({"error": "An unexpected error occurred.", "code": "INTERNAL_SERVER_ERROR"}), 500)
             response.set_cookie("access_token", "", expires=0, httponly=True, samesite="Lax", path="/")
             response.set_cookie("refresh_token", "", expires=0, httponly=True, samesite="Lax", path="/")
             return response
@@ -809,7 +818,8 @@ def create_app(db_path: str) -> Flask:
             response.set_cookie("refresh_token", "", expires=0, httponly=True, samesite="Lax", path="/")
             return response
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error deleting user account: {e}", exc_info=True)
+            return jsonify({"error": "Internal profile deletion error"}), 500
 
     @app.route("/api/auth/profile/sessions", methods=["GET"])
     @login_required
@@ -849,7 +859,8 @@ def create_app(db_path: str) -> Flask:
                 })
             return jsonify({"sessions": sessions})
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error retrieving user sessions: {e}", exc_info=True)
+            return jsonify({"error": "Internal profile sessions retrieval error"}), 500
         finally:
             conn.close()
 
@@ -984,7 +995,8 @@ def create_app(db_path: str) -> Flask:
             summary = persistence_repo.get_analytics_summary()
             return jsonify(summary)
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error compiling analytics widgets: {e}", exc_info=True)
+            return jsonify({"error": "Internal analytics telemetry error"}), 500
 
     @app.route("/api/health-telemetry")
     @roles_accepted(Role.ADMIN, Role.DOCTOR)
@@ -993,7 +1005,8 @@ def create_app(db_path: str) -> Flask:
             telemetry = persistence_repo.get_health_telemetry()
             return jsonify(telemetry)
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error compiling health telemetry: {e}", exc_info=True)
+            return jsonify({"error": "Internal health telemetry compilation error"}), 500
 
     @app.route("/api/history")
     @login_required
@@ -1030,7 +1043,8 @@ def create_app(db_path: str) -> Flask:
                 })
             return jsonify(data)
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error querying prediction history: {e}", exc_info=True)
+            return jsonify({"error": "Internal history query failure"}), 500
 
     @app.route("/api/search")
     @login_required
@@ -1181,7 +1195,8 @@ def create_app(db_path: str) -> Flask:
             else:
                 return jsonify(data)
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error during search query: {e}", exc_info=True)
+            return jsonify({"error": "Internal search failure"}), 500
 
     @app.route("/api/notifications", methods=["GET"])
     @login_required
@@ -1205,7 +1220,8 @@ def create_app(db_path: str) -> Flask:
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error retrieving notifications: {e}", exc_info=True)
+            return jsonify({"error": "Internal notifications fetch error"}), 500
 
     @app.route("/api/notifications/unread-count", methods=["GET"])
     @login_required
@@ -1216,7 +1232,8 @@ def create_app(db_path: str) -> Flask:
             count = service.get_unread_count(user_id=current_user.id)
             return jsonify({"unread_count": count})
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error checking unread notifications count: {e}", exc_info=True)
+            return jsonify({"error": "Internal unread count compilation error"}), 500
 
     @app.route("/api/notifications/<int:notification_id>/read", methods=["PATCH"])
     @login_required
@@ -1229,7 +1246,8 @@ def create_app(db_path: str) -> Flask:
                 return jsonify({"error": "Notification not found or unauthorized access"}), 404
             return jsonify({"success": True})
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error marking notification as read: {e}", exc_info=True)
+            return jsonify({"error": "Internal notification modification error"}), 500
 
     @app.route("/api/notifications/read-all", methods=["PATCH"])
     @login_required
@@ -1240,7 +1258,8 @@ def create_app(db_path: str) -> Flask:
             service.mark_all_notifications_read(user_id=current_user.id)
             return jsonify({"success": True})
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error marking all notifications as read: {e}", exc_info=True)
+            return jsonify({"error": "Internal notification read-all modification error"}), 500
 
     @app.route("/api/notifications/<int:notification_id>", methods=["DELETE"])
     @login_required
@@ -1253,7 +1272,8 @@ def create_app(db_path: str) -> Flask:
                 return jsonify({"error": "Notification not found or unauthorized access"}), 404
             return jsonify({"success": True})
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error deleting notification: {e}", exc_info=True)
+            return jsonify({"error": "Internal notification deletion error"}), 500
 
     @app.route("/api/notifications/preferences", methods=["GET"])
     @login_required
@@ -1264,7 +1284,8 @@ def create_app(db_path: str) -> Flask:
             prefs = service.get_preferences(user_id=current_user.id)
             return jsonify(prefs)
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error fetching notification preferences: {e}", exc_info=True)
+            return jsonify({"error": "Internal notification preferences fetch error"}), 500
 
     @app.route("/api/notifications/preferences", methods=["PUT"])
     @login_required
@@ -1290,7 +1311,8 @@ def create_app(db_path: str) -> Flask:
             )
             return jsonify({"success": True})
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error updating notification preferences: {e}", exc_info=True)
+            return jsonify({"error": "Internal notification preferences update error"}), 500
 
     @app.route("/api/predictions/<int:prediction_id>/feedback", methods=["POST"])
     @login_required
@@ -1882,7 +1904,8 @@ def create_app(db_path: str) -> Flask:
             service.log_report_access_event("REPORT_VIEWED", current_user, report_id, "SUCCESS", "Viewed report details.")
             return jsonify(report_dict)
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error fetching report metadata: {e}", exc_info=True)
+            return jsonify({"error": "Internal report fetch error"}), 500
 
     @app.route("/api/doctor/scans/<int:scan_id>/clinical-notes", methods=["POST", "GET"])
     @login_required
@@ -1911,7 +1934,8 @@ def create_app(db_path: str) -> Flask:
                 else:
                     return jsonify({"error": err_msg}), 400
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                app.logger.error(f"Error creating clinical note: {e}", exc_info=True)
+                return jsonify({"error": "Internal notes operation failure"}), 500
         else: # GET
             try:
                 notes = service.get_notes_for_scan(actor=current_user, scan_id=scan_id)
@@ -1927,7 +1951,8 @@ def create_app(db_path: str) -> Flask:
                 else:
                     return jsonify({"error": err_msg}), 400
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                app.logger.error(f"Error querying clinical notes: {e}", exc_info=True)
+                return jsonify({"error": "Internal notes query failure"}), 500
 
     @app.route("/api/doctor/clinical-notes/<int:note_id>", methods=["PUT", "DELETE"])
     @login_required
@@ -1956,7 +1981,8 @@ def create_app(db_path: str) -> Flask:
                 else:
                     return jsonify({"error": err_msg}), 400
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                app.logger.error(f"Error updating clinical note: {e}", exc_info=True)
+                return jsonify({"error": "Internal note modification failure"}), 500
         else: # DELETE
             try:
                 result = service.archive_note(actor=current_user, note_id=note_id)
@@ -1972,7 +1998,8 @@ def create_app(db_path: str) -> Flask:
                 else:
                     return jsonify({"error": err_msg}), 400
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                app.logger.error(f"Error deleting clinical note: {e}", exc_info=True)
+                return jsonify({"error": "Internal note deletion failure"}), 500
 
     @app.route("/api/doctor/scans/<int:scan_id>/point-annotations", methods=["POST", "GET"])
     @login_required
@@ -2011,7 +2038,8 @@ def create_app(db_path: str) -> Flask:
                 else:
                     return jsonify({"error": err_msg}), 400
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                app.logger.error(f"Error creating point annotation: {e}", exc_info=True)
+                return jsonify({"error": "Internal annotation operation failure"}), 500
         else: # GET
             try:
                 notes = service.get_annotations_for_scan(actor=current_user, scan_id=scan_id)
@@ -2027,7 +2055,8 @@ def create_app(db_path: str) -> Flask:
                 else:
                     return jsonify({"error": err_msg}), 400
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                app.logger.error(f"Error querying point annotations: {e}", exc_info=True)
+                return jsonify({"error": "Internal annotations query failure"}), 500
 
     @app.route("/api/doctor/point-annotations/<int:annotation_id>", methods=["PUT", "DELETE"])
     @login_required
@@ -2066,7 +2095,8 @@ def create_app(db_path: str) -> Flask:
                 else:
                     return jsonify({"error": err_msg}), 400
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                app.logger.error(f"Error updating point annotation: {e}", exc_info=True)
+                return jsonify({"error": "Internal annotation modification failure"}), 500
         else: # DELETE
             try:
                 result = service.archive_annotation(actor=current_user, annotation_id=annotation_id)
@@ -2082,7 +2112,8 @@ def create_app(db_path: str) -> Flask:
                 else:
                     return jsonify({"error": err_msg}), 400
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                app.logger.error(f"Error deleting point annotation: {e}", exc_info=True)
+                return jsonify({"error": "Internal annotation deletion failure"}), 500
 
     @app.route("/api/doctor/scans/<int:scan_id>/rectangle-annotations", methods=["POST", "GET"])
     @login_required
@@ -2125,7 +2156,8 @@ def create_app(db_path: str) -> Flask:
                 else:
                     return jsonify({"error": err_msg}), 400
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                app.logger.error(f"Error creating rectangle annotation: {e}", exc_info=True)
+                return jsonify({"error": "Internal rectangle annotation operation failure"}), 500
         else: # GET
             try:
                 notes = service.get_rectangle_annotations_for_scan(actor=current_user, scan_id=scan_id)
@@ -2141,7 +2173,8 @@ def create_app(db_path: str) -> Flask:
                 else:
                     return jsonify({"error": err_msg}), 400
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                app.logger.error(f"Error querying rectangle annotations: {e}", exc_info=True)
+                return jsonify({"error": "Internal rectangle annotations query failure"}), 500
 
     @app.route("/api/doctor/rectangle-annotations/<int:annotation_id>", methods=["PUT", "DELETE"])
     @login_required
@@ -2184,7 +2217,8 @@ def create_app(db_path: str) -> Flask:
                 else:
                     return jsonify({"error": err_msg}), 400
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                app.logger.error(f"Error updating rectangle annotation: {e}", exc_info=True)
+                return jsonify({"error": "Internal rectangle annotation modification failure"}), 500
         else: # DELETE
             try:
                 result = service.archive_rectangle_annotation(actor=current_user, annotation_id=annotation_id)
@@ -2200,7 +2234,8 @@ def create_app(db_path: str) -> Flask:
                 else:
                     return jsonify({"error": err_msg}), 400
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                app.logger.error(f"Error deleting rectangle annotation: {e}", exc_info=True)
+                return jsonify({"error": "Internal rectangle annotation deletion failure"}), 500
 
     @app.route("/api/report/<int:report_id>/compare/<int:other_report_id>")
     @login_required
@@ -2318,7 +2353,8 @@ def create_app(db_path: str) -> Flask:
             else:
                 return jsonify({"error": err_msg}), 400
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error fetching patient profile: {e}", exc_info=True)
+            return jsonify({"error": "Internal patient profile fetch error"}), 500
 
     @app.route("/api/doctor/patients/<patient_id>/followups", methods=["POST"])
     @roles_accepted(Role.DOCTOR)
@@ -2352,7 +2388,8 @@ def create_app(db_path: str) -> Flask:
             else:
                 return jsonify({"error": err_msg}), 400
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error creating patient follow-up: {e}", exc_info=True)
+            return jsonify({"error": "Internal follow-up schedule creation failure"}), 500
 
     @app.route("/api/doctor/patients/<patient_id>/followups", methods=["GET"])
     @roles_accepted(Role.DOCTOR)
@@ -2373,7 +2410,8 @@ def create_app(db_path: str) -> Flask:
             else:
                 return jsonify({"error": err_msg}), 400
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error fetching patient follow-ups: {e}", exc_info=True)
+            return jsonify({"error": "Internal follow-up schedules query failure"}), 500
 
     @app.route("/api/doctor/followups/<int:followup_id>", methods=["PUT"])
     @roles_accepted(Role.DOCTOR)
@@ -2409,7 +2447,8 @@ def create_app(db_path: str) -> Flask:
             else:
                 return jsonify({"error": err_msg}), 400
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error updating follow-up: {e}", exc_info=True)
+            return jsonify({"error": "Internal follow-up schedule update failure"}), 500
 
     @app.route("/api/patients/<patient_id>/longitudinal-timeline")
     @login_required
@@ -2784,7 +2823,8 @@ def create_app(db_path: str) -> Flask:
             logs = service.get_report_audit_history(current_user)
             return jsonify(logs)
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"Error fetching report audit history: {e}", exc_info=True)
+            return jsonify({"error": "Internal report audit history retrieval error"}), 500
 
     @app.route("/api/report/<int:report_id>/visuals/<image_type>")
     @roles_accepted(Role.ADMIN, Role.DOCTOR)
