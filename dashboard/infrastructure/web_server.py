@@ -1899,7 +1899,17 @@ def create_app(db_path: str) -> Flask:
             report_dict["status"] = report.status.value
             report_dict["current_version"] = report.current_version
             report_dict["updated_at"] = report.updated_at
-            report_dict["versions"] = [v.to_dict() for v in versions]
+
+            versions_list = [v.to_dict() for v in versions]
+            role_str = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role).lower()
+            if role_str == "patient":
+                report_dict.pop("pdf_path", None)
+                report_dict.pop("json_path", None)
+                for v_dict in versions_list:
+                    v_dict.pop("pdf_path", None)
+                    v_dict.pop("json_path", None)
+
+            report_dict["versions"] = versions_list
 
             service.log_report_access_event("REPORT_VIEWED", current_user, report_id, "SUCCESS", "Viewed report details.")
             return jsonify(report_dict)

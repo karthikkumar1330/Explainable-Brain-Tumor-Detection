@@ -1683,6 +1683,16 @@ def get_report_metadata_api(report_id: int, current_user: User = Depends(get_cur
         versions = service.get_report_versions(report_id)
         res = report.to_dict()
         res["versions"] = [v.to_dict() for v in versions]
+
+        # Security Hardening: Remove internal filesystem paths if the user is a Patient (H4.3-S)
+        role_str = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role).lower()
+        if role_str == "patient":
+            res.pop("pdf_path", None)
+            res.pop("json_path", None)
+            for v_dict in res.get("versions", []):
+                v_dict.pop("pdf_path", None)
+                v_dict.pop("json_path", None)
+
         service.log_report_access_event("REPORT_VIEWED", current_user, report_id, "SUCCESS", "Viewed report metadata.")
         return res
     except Exception as e:
@@ -1815,8 +1825,17 @@ def get_report_versions_api(report_id: int, current_user: User = Depends(get_cur
 
     try:
         versions = service.get_report_versions(report_id)
+        res_list = [v.to_dict() for v in versions]
+
+        # Security Hardening: Remove internal filesystem paths if the user is a Patient (H4.3-S)
+        role_str = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role).lower()
+        if role_str == "patient":
+            for v_dict in res_list:
+                v_dict.pop("pdf_path", None)
+                v_dict.pop("json_path", None)
+
         service.log_report_access_event("REPORT_VIEWED", current_user, report_id, "SUCCESS", "Viewed report versions list.")
-        return [v.to_dict() for v in versions]
+        return res_list
     except Exception as e:
         logger.error(f"Error fetching report versions: {e}")
         raise HTTPException(status_code=404, detail=str(e))
