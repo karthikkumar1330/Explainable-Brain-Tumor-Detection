@@ -2299,6 +2299,118 @@ def create_app(db_path: str) -> Flask:
             app.logger.error(f"Error in Flask follow-up comparison API: {e}")
             return jsonify({"error": "Internal follow-up comparison engine error"}), 500
 
+    @app.route("/api/doctor/patients/<patient_id>", methods=["GET"])
+    @roles_accepted(Role.DOCTOR)
+    def get_doctor_patient_profile_flask(current_user: User, patient_id: str):
+        from clinical_reporting.application.services import ReportService, ReportServiceException
+        service = ReportService(db_path=app.config["DB_PATH"])
+        try:
+            profile = service.get_patient_profile(patient_id=patient_id, actor=current_user)
+            return jsonify(profile), 200
+        except ReportServiceException as e:
+            err_msg = str(e)
+            if "Access denied" in err_msg:
+                return jsonify({"error": err_msg}), 403
+            elif "Authentication required" in err_msg:
+                return jsonify({"error": err_msg}), 401
+            elif "not found" in err_msg.lower():
+                return jsonify({"error": err_msg}), 404
+            else:
+                return jsonify({"error": err_msg}), 400
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/doctor/patients/<patient_id>/followups", methods=["POST"])
+    @roles_accepted(Role.DOCTOR)
+    def create_doctor_patient_followup_flask(current_user: User, patient_id: str):
+        from clinical_reporting.application.followup_service import FollowupScheduleService, FollowupScheduleServiceException
+        service = FollowupScheduleService(db_path=app.config["DB_PATH"])
+        try:
+            data = request.get_json() or {}
+        except Exception:
+            return jsonify({"error": "Malformed or empty JSON body."}), 400
+        scheduled_date = data.get("scheduled_date")
+        reason = data.get("reason")
+        notes = data.get("notes")
+        try:
+            followup = service.create_followup(
+                actor=current_user,
+                patient_id=patient_id,
+                scheduled_date=scheduled_date,
+                reason=reason,
+                notes=notes
+            )
+            return jsonify(followup), 200
+        except FollowupScheduleServiceException as e:
+            err_msg = str(e)
+            if "Access denied" in err_msg:
+                return jsonify({"error": err_msg}), 403
+            elif "Authentication required" in err_msg:
+                return jsonify({"error": err_msg}), 401
+            elif "not found" in err_msg.lower():
+                return jsonify({"error": err_msg}), 404
+            else:
+                return jsonify({"error": err_msg}), 400
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/doctor/patients/<patient_id>/followups", methods=["GET"])
+    @roles_accepted(Role.DOCTOR)
+    def get_doctor_patient_followups_flask(current_user: User, patient_id: str):
+        from clinical_reporting.application.followup_service import FollowupScheduleService, FollowupScheduleServiceException
+        service = FollowupScheduleService(db_path=app.config["DB_PATH"])
+        try:
+            followups = service.get_followups_for_patient(actor=current_user, patient_id=patient_id)
+            return jsonify(followups), 200
+        except FollowupScheduleServiceException as e:
+            err_msg = str(e)
+            if "Access denied" in err_msg:
+                return jsonify({"error": err_msg}), 403
+            elif "Authentication required" in err_msg:
+                return jsonify({"error": err_msg}), 401
+            elif "not found" in err_msg.lower():
+                return jsonify({"error": err_msg}), 404
+            else:
+                return jsonify({"error": err_msg}), 400
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/doctor/followups/<int:followup_id>", methods=["PUT"])
+    @roles_accepted(Role.DOCTOR)
+    def update_doctor_followup_flask(current_user: User, followup_id: int):
+        from clinical_reporting.application.followup_service import FollowupScheduleService, FollowupScheduleServiceException
+        service = FollowupScheduleService(db_path=app.config["DB_PATH"])
+        try:
+            data = request.get_json() or {}
+        except Exception:
+            return jsonify({"error": "Malformed or empty JSON body."}), 400
+        scheduled_date = data.get("scheduled_date")
+        status = data.get("status")
+        reason = data.get("reason")
+        notes = data.get("notes")
+        try:
+            followup = service.update_followup(
+                actor=current_user,
+                followup_id=followup_id,
+                scheduled_date=scheduled_date,
+                status=status,
+                reason=reason,
+                notes=notes
+            )
+            return jsonify(followup), 200
+        except FollowupScheduleServiceException as e:
+            err_msg = str(e)
+            if "Access denied" in err_msg:
+                return jsonify({"error": err_msg}), 403
+            elif "Authentication required" in err_msg:
+                return jsonify({"error": err_msg}), 401
+            elif "not found" in err_msg.lower():
+                return jsonify({"error": err_msg}), 404
+            else:
+                return jsonify({"error": err_msg}), 400
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/patients/<patient_id>/longitudinal-timeline")
     @login_required
     def get_patient_longitudinal_timeline_flask(current_user: User, patient_id: str):

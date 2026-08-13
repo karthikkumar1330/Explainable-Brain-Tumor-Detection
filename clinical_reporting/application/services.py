@@ -2293,6 +2293,209 @@ class ReportService:
 
         return timeline
 
+    def get_patient_profile(self, patient_id: str, actor: Any) -> Dict[str, Any]:
+        """Retrieves a patient's demographics, MRI scans, AI prediction history, clinical notes, and annotations."""
+        if not patient_id or not isinstance(patient_id, str):
+            raise ReportServiceException("Invalid patient ID format.")
+
+        stripped_id = patient_id.strip()
+        if not stripped_id:
+            raise ReportServiceException("Invalid patient ID format.")
+
+        if len(stripped_id) > 100:
+            raise ReportServiceException("Patient ID is too long.")
+
+        if "/" in stripped_id or "\\" in stripped_id or ".." in stripped_id:
+            raise ReportServiceException("Malformed patient ID.")
+
+        # Check Authorization
+        from security.application.authorization_service import AuthorizationService
+        auth_svc = AuthorizationService(db_path=self.db_path)
+        if not auth_svc.can_access_patient(actor, stripped_id):
+            # Log failure audit
+            try:
+                conn_audit = self._get_connection()
+                try:
+                    self._log_security_audit_event(conn_audit, "PATIENT_PROFILE_ACCESSED", actor, None, "FAILED", f"Access denied to patient profile for ID: {stripped_id}")
+                    conn_audit.commit()
+                finally:
+                    conn_audit.close()
+            except Exception:
+                pass
+            raise ReportServiceException("Access denied to patient profile.")
+
+        conn = self._get_connection()
+        try:
+            # Check existence and retrieve demographics
+            row_pat = conn.execute("SELECT patient_id, name, age, gender FROM patients WHERE patient_id = ?;", (stripped_id,)).fetchone()
+            if not row_pat:
+                raise ReportServiceException(f"Patient with ID {stripped_id} not found.")
+
+            try:
+                from security.infrastructure.encryption_service import PIIEncryptionService
+                encryption_service = PIIEncryptionService()
+            except Exception:
+                encryption_service = None
+
+            pat_name_raw = row_pat["name"]
+            pat_age_raw = row_pat["age"]
+            pat_gender_raw = row_pat["gender"]
+
+            patient_name = encryption_service.decrypt(pat_name_raw) if encryption_service and pat_name_raw and str(pat_name_raw).startswith("enc:v1:") else pat_name_raw
+            patient_age = encryption_service.decrypt(pat_age_raw) if encryption_service and pat_age_raw and str(pat_age_raw).startswith("enc:v1:") else pat_age_raw
+            patient_gender = encryption_service.decrypt(pat_gender_raw) if encryption_service and pat_gender_raw and str(pat_gender_raw).startswith("enc:v1:") else pat_gender_raw
+
+            try:
+                if patient_age is not None:
+                    patient_age = int(patient_age)
+            except ValueError:
+                pass
+
+            # Fetch MRI Scans
+            scan_rows = conn.execute(
+                """
+                SELECT id, patient_id, image_path, pixel_spacing_mm, ref_physician, scan_date, created_at
+                FROM mri_scans
+                WHERE patient_id = ?
+                ORDER BY scan_date DESC;
+                """,
+                (stripped_id,)
+            ).fetchall()
+
+            latest_mri = dict(scan_rows[0]) if len(scan_rows) >= 1 else None
+            previous_mri = dict(scan_rows[1]) if len(scan_rows) >= 2 else None
+
+            # Fetch latest AI results
+            latest_ai_result = None
+            if latest_mri:
+                pred_row = conn.execute(
+                    """
+                    SELECT id, scan_id, predicted_class, confidence_score, tumor_area_mm2, tumor_percentage_brain, rule_based_severity, created_at
+                    FROM predictions
+                    WHERE scan_id = ?
+                    ORDER BY created_at DESC LIMIT 1;
+                    """,
+                    (latest_mri["id"],)
+                ).fetchone()
+                if pred_row:
+                    latest_ai_result = dict(pred_row)
+
+            # Fetch reports with their latest version details
+            report_rows = conn.execute(
+                """
+                SELECT r.report_id, r.patient_id, r.report_number, r.status, r.created_at,
+                       rv.prediction_id, rv.pdf_path, rv.json_path, rv.checksum, rv.version_number
+                FROM reports r
+                JOIN report_versions rv ON r.report_id = rv.report_id AND r.current_version = rv.version_number
+                WHERE r.patient_id = ?
+                ORDER BY r.created_at DESC;
+                """,
+                (stripped_id,)
+            ).fetchall()
+            reports_list = [dict(r) for r in report_rows]
+
+            # Fetch clinical notes
+            notes_rows = conn.execute(
+                """
+                SELECT note_id, patient_id, scan_id, doctor_id, encrypted_content, created_at, updated_at, status
+                FROM clinician_notes
+                WHERE patient_id = ? AND status = 'active'
+                ORDER BY created_at DESC;
+                """,
+                (stripped_id,)
+            ).fetchall()
+            notes_list = []
+            for n in notes_rows:
+                nd = dict(n)
+                enc_content = nd.get("encrypted_content")
+                dec_content = encryption_service.decrypt(enc_content) if encryption_service and enc_content and str(enc_content).startswith("enc:v1:") else enc_content
+                nd["content"] = dec_content
+                notes_list.append(nd)
+
+            # Fetch point annotations
+            point_ann_rows = conn.execute(
+                """
+                SELECT annotation_id, scan_id, patient_id, doctor_id, x_normalized, y_normalized, label, encrypted_comment, status, created_at, updated_at
+                FROM mri_point_annotations
+                WHERE patient_id = ? AND status = 'active'
+                ORDER BY created_at DESC;
+                """,
+                (stripped_id,)
+            ).fetchall()
+            points_list = []
+            for p in point_ann_rows:
+                pd = dict(p)
+                enc_comment = pd.get("encrypted_comment")
+                dec_comment = encryption_service.decrypt(enc_comment) if encryption_service and enc_comment and str(enc_comment).startswith("enc:v1:") else enc_comment
+                pd["comment"] = dec_comment
+                points_list.append(pd)
+
+            # Fetch rectangle annotations
+            rect_ann_rows = conn.execute(
+                """
+                SELECT annotation_id, scan_id, patient_id, doctor_id, x_normalized, y_normalized, width_normalized, height_normalized, label, encrypted_comment, status, created_at, updated_at
+                FROM mri_rectangle_annotations
+                WHERE patient_id = ? AND status = 'active'
+                ORDER BY created_at DESC;
+                """,
+                (stripped_id,)
+            ).fetchall()
+            rectangles_list = []
+            for r in rect_ann_rows:
+                rd = dict(r)
+                enc_comment = rd.get("encrypted_comment")
+                dec_comment = encryption_service.decrypt(enc_comment) if encryption_service and enc_comment and str(enc_comment).startswith("enc:v1:") else enc_comment
+                rd["comment"] = dec_comment
+                rectangles_list.append(rd)
+
+            # Fetch latest follow-up schedule
+            followup_row = conn.execute(
+                """
+                SELECT followup_id, patient_id, doctor_id, scheduled_date, status, reason, notes, created_at, updated_at, completed_at
+                FROM followup_schedules
+                WHERE patient_id = ?
+                ORDER BY created_at DESC LIMIT 1;
+                """,
+                (stripped_id,)
+            ).fetchone()
+            followup_info = dict(followup_row) if followup_row else None
+
+            # Fetch timeline
+            timeline = self.get_patient_longitudinal_timeline(stripped_id, actor)
+            timeline_dict = timeline.to_dict()
+
+            # Log success audit
+            try:
+                conn_audit = self._get_connection()
+                try:
+                    self._log_security_audit_event(conn_audit, "PATIENT_PROFILE_ACCESSED", actor, None, "SUCCESS", f"Patient profile for ID: {stripped_id} successfully accessed.")
+                    conn_audit.commit()
+                finally:
+                    conn_audit.close()
+            except Exception:
+                pass
+
+            return {
+                "patient_id": stripped_id,
+                "name": patient_name,
+                "age": patient_age,
+                "gender": patient_gender,
+                "latest_mri": latest_mri,
+                "previous_mri": previous_mri,
+                "latest_ai_result": latest_ai_result,
+                "timeline": timeline_dict.get("events", []),
+                "reports": reports_list,
+                "clinical_notes": notes_list,
+                "annotations": {
+                    "points": points_list,
+                    "rectangles": rectangles_list
+                },
+                "followup_status": followup_info["status"] if followup_info else "none",
+                "latest_followup": followup_info
+            }
+        finally:
+            conn.close()
+
     def get_patient_analytics(self, patient_id: str, actor: Any) -> PatientAnalytics:
         """Retrieves and calculates patient-level clinical analytics based on scan history."""
         import math

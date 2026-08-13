@@ -1,0 +1,327 @@
+import os
+import sqlite3
+import datetime
+import logging
+from typing import Optional, List, Dict, Any
+
+from security.application.authorization_service import AuthorizationService
+from security.domain.entities import Role, User, SecurityAuditLog
+from security.infrastructure.repository import SQLiteUserRepository
+
+class FollowupScheduleServiceException(Exception):
+    """Exception raised for errors in the FollowupScheduleService."""
+    pass
+
+class FollowupScheduleService:
+    """Service to manage follow-up schedules for patients."""
+
+    def __init__(self, db_path: str) -> None:
+        self.db_path = db_path
+        self.logger = logging.getLogger("followup_schedule_service")
+        self.auth_svc = AuthorizationService(db_path=self.db_path)
+        self.user_repo = SQLiteUserRepository(db_path=self.db_path)
+
+    def _get_connection(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _log_audit_event(
+        self,
+        event_type: str,
+        actor: User,
+        status: str,
+        details: str
+    ) -> None:
+        try:
+            audit_log = SecurityAuditLog(
+                id=None,
+                timestamp=datetime.datetime.utcnow().isoformat(),
+                event_type=event_type,
+                user_id=actor.id if actor else None,
+                email=actor.email if actor else None,
+                ip_address="127.0.0.1",
+                status=status,
+                details=details,
+                user_agent="System"
+            )
+            self.user_repo.log_security_event(audit_log)
+        except Exception as e:
+            self.logger.warning(f"Failed to write follow-up security audit log: {e}")
+
+    def create_followup(
+        self,
+        actor: User,
+        patient_id: str,
+        scheduled_date: str,
+        reason: Optional[str] = None,
+        notes: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Creates a follow-up schedule for an assigned patient."""
+        # 1. Authenticate Actor
+        if not actor:
+            raise FollowupScheduleServiceException("Authentication required.")
+
+        # 2. Check Role (only doctor/admin can create)
+        role_val = actor.role.value if hasattr(actor.role, 'value') else str(actor.role).lower()
+        if role_val not in ["doctor", "admin"]:
+            self._log_audit_event("FOLLOWUP_CREATED", actor, "FAILED", f"Access denied: User is not authorized to create follow-ups.")
+            raise FollowupScheduleServiceException("Access denied.")
+
+        # 3. Input Validation for patient_id
+        if not patient_id or not isinstance(patient_id, str) or not patient_id.strip():
+            raise FollowupScheduleServiceException("Patient ID is required.")
+        pid_clean = patient_id.strip()
+
+        # 4. Check patient existence
+        conn = self._get_connection()
+        try:
+            pat_row = conn.execute("SELECT 1 FROM patients WHERE patient_id = ?;", (pid_clean,)).fetchone()
+            if not pat_row:
+                raise FollowupScheduleServiceException(f"Patient with ID {pid_clean} not found.")
+        finally:
+            conn.close()
+
+        # 5. Check Authorization
+        if not self.auth_svc.can_access_patient(actor, pid_clean):
+            self._log_audit_event("FOLLOWUP_CREATED", actor, "FAILED", f"Access denied: Doctor not assigned to patient: {pid_clean}")
+            raise FollowupScheduleServiceException("Access denied.")
+
+        # 6. Validate scheduled_date
+        if not scheduled_date or not isinstance(scheduled_date, str):
+            raise FollowupScheduleServiceException("Scheduled date is required.")
+        sd_clean = scheduled_date.strip()
+        try:
+            datetime.datetime.strptime(sd_clean, "%Y-%m-%d")
+        except ValueError:
+            raise FollowupScheduleServiceException("Invalid scheduled date format. Use YYYY-MM-DD.")
+
+        # 7. Validate reason / notes length
+        reason_clean = reason.strip() if reason else ""
+        if len(reason_clean) > 2000:
+            raise FollowupScheduleServiceException("Reason exceeds maximum length of 2000 characters.")
+        notes_clean = notes.strip() if notes else ""
+        if len(notes_clean) > 2000:
+            raise FollowupScheduleServiceException("Notes exceed maximum length of 2000 characters.")
+
+        # 8. Save to DB
+        now_str = datetime.datetime.utcnow().isoformat()
+        conn = self._get_connection()
+        try:
+            with conn:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO followup_schedules (patient_id, doctor_id, scheduled_date, status, reason, notes, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    (pid_clean, actor.id, sd_clean, "scheduled", reason_clean, notes_clean, now_str, now_str)
+                )
+                followup_id = cursor.lastrowid
+
+            self._log_audit_event("FOLLOWUP_CREATED", actor, "SUCCESS", f"Created follow-up {followup_id} for patient {pid_clean}")
+            return {
+                "followup_id": followup_id,
+                "patient_id": pid_clean,
+                "doctor_id": actor.id,
+                "scheduled_date": sd_clean,
+                "status": "scheduled",
+                "reason": reason_clean,
+                "notes": notes_clean,
+                "created_at": now_str,
+                "updated_at": now_str,
+                "completed_at": None
+            }
+        except Exception as e:
+            self.logger.error(f"Error creating follow-up: {e}")
+            raise FollowupScheduleServiceException("Failed to create follow-up due to an internal database error.")
+        finally:
+            conn.close()
+
+    def get_followups_for_patient(
+        self,
+        actor: User,
+        patient_id: str
+    ) -> List[Dict[str, Any]]:
+        """Retrieves all follow-up schedules for a patient."""
+        # 1. Authenticate Actor
+        if not actor:
+            raise FollowupScheduleServiceException("Authentication required.")
+
+        # 2. Input Validation for patient_id
+        if not patient_id or not isinstance(patient_id, str) or not patient_id.strip():
+            raise FollowupScheduleServiceException("Patient ID is required.")
+        pid_clean = patient_id.strip()
+
+        # 3. Check patient existence
+        conn = self._get_connection()
+        try:
+            pat_row = conn.execute("SELECT 1 FROM patients WHERE patient_id = ?;", (pid_clean,)).fetchone()
+            if not pat_row:
+                raise FollowupScheduleServiceException(f"Patient with ID {pid_clean} not found.")
+        finally:
+            conn.close()
+
+        # 4. Check Authorization
+        if not self.auth_svc.can_access_patient(actor, pid_clean):
+            self._log_audit_event("FOLLOWUP_RETRIEVED", actor, "FAILED", f"Access denied: User not authorized to access patient: {pid_clean}")
+            raise FollowupScheduleServiceException("Access denied.")
+
+        # 5. Fetch from DB
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                """
+                SELECT followup_id, patient_id, doctor_id, scheduled_date, status, reason, notes, created_at, updated_at, completed_at
+                FROM followup_schedules
+                WHERE patient_id = ?
+                ORDER BY scheduled_date ASC;
+                """,
+                (pid_clean,)
+            ).fetchall()
+
+            return [dict(row) for row in rows]
+        except Exception as e:
+            self.logger.error(f"Error retrieving follow-ups: {e}")
+            raise FollowupScheduleServiceException("Failed to retrieve follow-ups due to an internal database error.")
+        finally:
+            conn.close()
+
+    def update_followup(
+        self,
+        actor: User,
+        followup_id: int,
+        scheduled_date: Optional[str] = None,
+        status: Optional[str] = None,
+        reason: Optional[str] = None,
+        notes: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Updates an existing follow-up schedule."""
+        # 1. Authenticate Actor
+        if not actor:
+            raise FollowupScheduleServiceException("Authentication required.")
+
+        # 2. Check Role (only doctor/admin can update)
+        role_val = actor.role.value if hasattr(actor.role, 'value') else str(actor.role).lower()
+        if role_val not in ["doctor", "admin"]:
+            self._log_audit_event("FOLLOWUP_MODIFIED", actor, "FAILED", f"Access denied: User is not authorized to update follow-up {followup_id}")
+            raise FollowupScheduleServiceException("Access denied.")
+
+        # 3. Input Validation for followup_id
+        if followup_id is None or not isinstance(followup_id, int) or followup_id <= 0:
+            raise FollowupScheduleServiceException("Invalid follow-up ID.")
+
+        # 4. Fetch existing follow-up to retrieve patient_id and verify existence
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT patient_id, status FROM followup_schedules WHERE followup_id = ?;", (followup_id,)
+            ).fetchone()
+            if not row:
+                raise FollowupScheduleServiceException(f"Follow-up schedule with ID {followup_id} not found.")
+            patient_id = row["patient_id"]
+        finally:
+            conn.close()
+
+        # 5. Check patient existence
+        conn = self._get_connection()
+        try:
+            pat_row = conn.execute("SELECT 1 FROM patients WHERE patient_id = ?;", (patient_id,)).fetchone()
+            if not pat_row:
+                raise FollowupScheduleServiceException(f"Patient with ID {patient_id} not found.")
+        finally:
+            conn.close()
+
+        # 6. Check Authorization
+        if not self.auth_svc.can_access_patient(actor, patient_id):
+            self._log_audit_event("FOLLOWUP_MODIFIED", actor, "FAILED", f"Access denied updating follow-up: Doctor not assigned to patient: {patient_id}")
+            raise FollowupScheduleServiceException("Access denied.")
+
+        # 7. Validate scheduled_date if provided
+        sd_clean = None
+        if scheduled_date is not None:
+            if not isinstance(scheduled_date, str):
+                raise FollowupScheduleServiceException("Scheduled date must be a string.")
+            sd_clean = scheduled_date.strip()
+            try:
+                datetime.datetime.strptime(sd_clean, "%Y-%m-%d")
+            except ValueError:
+                raise FollowupScheduleServiceException("Invalid scheduled date format. Use YYYY-MM-DD.")
+
+        # 8. Validate status if provided
+        status_clean = None
+        if status is not None:
+            if not isinstance(status, str):
+                raise FollowupScheduleServiceException("Status must be a string.")
+            status_clean = status.strip().lower()
+            if status_clean not in ["scheduled", "completed", "cancelled", "overdue"]:
+                raise FollowupScheduleServiceException("Invalid follow-up status.")
+
+        # 9. Update DB
+        now_str = datetime.datetime.utcnow().isoformat()
+        conn = self._get_connection()
+        try:
+            with conn:
+                # Build dynamic query
+                fields = []
+                params = []
+                if sd_clean is not None:
+                    fields.append("scheduled_date = ?")
+                    params.append(sd_clean)
+                if status_clean is not None:
+                    fields.append("status = ?")
+                    params.append(status_clean)
+                    if status_clean in ["completed", "cancelled"]:
+                        fields.append("completed_at = ?")
+                        params.append(now_str)
+                    else:
+                        fields.append("completed_at = NULL")
+                if reason is not None:
+                    reason_clean = reason.strip()
+                    if len(reason_clean) > 2000:
+                        raise FollowupScheduleServiceException("Reason exceeds maximum length of 2000 characters.")
+                    fields.append("reason = ?")
+                    params.append(reason_clean)
+                if notes is not None:
+                    notes_clean = notes.strip()
+                    if len(notes_clean) > 2000:
+                        raise FollowupScheduleServiceException("Notes exceed maximum length of 2000 characters.")
+                    fields.append("notes = ?")
+                    params.append(notes_clean)
+
+                if fields:
+                    fields.append("updated_at = ?")
+                    params.append(now_str)
+                    params.append(followup_id)
+
+                    conn.execute(
+                        f"UPDATE followup_schedules SET {', '.join(fields)} WHERE followup_id = ?;",
+                        tuple(params)
+                    )
+
+            # Fetch updated row
+            updated_row = conn.execute(
+                """
+                SELECT followup_id, patient_id, doctor_id, scheduled_date, status, reason, notes, created_at, updated_at, completed_at
+                FROM followup_schedules
+                WHERE followup_id = ?;
+                """,
+                (followup_id,)
+            ).fetchone()
+
+            self._log_audit_event("FOLLOWUP_MODIFIED", actor, "SUCCESS", f"Updated follow-up {followup_id} status to {status_clean or 'unchanged'}")
+            return dict(updated_row)
+        except Exception as e:
+            if isinstance(e, FollowupScheduleServiceException):
+                raise e
+            self.logger.error(f"Error updating follow-up: {e}")
+            raise FollowupScheduleServiceException("Failed to update follow-up due to an internal database error.")
+        finally:
+            conn.close()
+
+    def complete_followup(self, actor: User, followup_id: int) -> Dict[str, Any]:
+        """Marks a follow-up schedule as completed."""
+        return self.update_followup(actor, followup_id, status="completed")
+
+    def cancel_followup(self, actor: User, followup_id: int) -> Dict[str, Any]:
+        """Marks a follow-up schedule as cancelled."""
+        return self.update_followup(actor, followup_id, status="cancelled")

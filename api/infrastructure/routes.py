@@ -2105,6 +2105,133 @@ def get_patient_timeseries_api(
         raise HTTPException(status_code=500, detail="Internal timeseries engine error")
 
 
+class FollowupCreatePayload(BaseModel):
+    scheduled_date: str
+    reason: Optional[str] = None
+    notes: Optional[str] = None
+
+class FollowupUpdatePayload(BaseModel):
+    scheduled_date: Optional[str] = None
+    status: Optional[str] = None
+    reason: Optional[str] = None
+    notes: Optional[str] = None
+
+@router.get("/doctor/patients/{patient_id}")
+def get_doctor_patient_profile_api(
+    patient_id: str,
+    current_user: User = Depends(require_roles([Role.DOCTOR, Role.ADMIN]))
+):
+    """API Endpoint: Retrieves chronological patient profile, enforcing RBAC."""
+    service = ReportService(db_path=DEFAULT_DB_PATH)
+    try:
+        from clinical_reporting.application.services import ReportServiceException
+        profile = service.get_patient_profile(patient_id=patient_id, actor=current_user)
+        return profile
+    except ReportServiceException as rse:
+        err_msg = str(rse)
+        if "Access denied" in err_msg or "denied" in err_msg.lower():
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=422, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in doctor patient profile API: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.post("/patients/{patient_id}/followups")
+def create_doctor_patient_followup_api(
+    patient_id: str,
+    payload: FollowupCreatePayload,
+    current_user: User = Depends(require_roles([Role.DOCTOR, Role.ADMIN]))
+):
+    """API Endpoint: Creates a follow-up schedule for an assigned patient."""
+    from clinical_reporting.application.followup_service import FollowupScheduleService, FollowupScheduleServiceException
+    service = FollowupScheduleService(db_path=DEFAULT_DB_PATH)
+    try:
+        followup = service.create_followup(
+            actor=current_user,
+            patient_id=patient_id,
+            scheduled_date=payload.scheduled_date,
+            reason=payload.reason,
+            notes=payload.notes
+        )
+        return followup
+    except FollowupScheduleServiceException as e:
+        err_msg = str(e)
+        if "Access denied" in err_msg or "denied" in err_msg.lower():
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=400, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in create follow-up API: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/patients/{patient_id}/followups")
+def get_doctor_patient_followups_api(
+    patient_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """API Endpoint: Retrieves follow-up schedules for a patient."""
+    from clinical_reporting.application.followup_service import FollowupScheduleService, FollowupScheduleServiceException
+    service = FollowupScheduleService(db_path=DEFAULT_DB_PATH)
+    try:
+        followups = service.get_followups_for_patient(actor=current_user, patient_id=patient_id)
+        return followups
+    except FollowupScheduleServiceException as e:
+        err_msg = str(e)
+        if "Access denied" in err_msg or "denied" in err_msg.lower():
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=400, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in get follow-ups API: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.put("/doctor/followups/{followup_id}")
+def update_doctor_followup_api(
+    followup_id: int,
+    payload: FollowupUpdatePayload,
+    current_user: User = Depends(require_roles([Role.DOCTOR, Role.ADMIN]))
+):
+    """API Endpoint: Updates an existing follow-up schedule."""
+    from clinical_reporting.application.followup_service import FollowupScheduleService, FollowupScheduleServiceException
+    service = FollowupScheduleService(db_path=DEFAULT_DB_PATH)
+    try:
+        followup = service.update_followup(
+            actor=current_user,
+            followup_id=followup_id,
+            scheduled_date=payload.scheduled_date,
+            status=payload.status,
+            reason=payload.reason,
+            notes=payload.notes
+        )
+        return followup
+    except FollowupScheduleServiceException as e:
+        err_msg = str(e)
+        if "Access denied" in err_msg or "denied" in err_msg.lower():
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg or "unauthenticated" in err_msg.lower():
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=400, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in update follow-up API: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 class ClinicianNotePayload(BaseModel):
     content: str
 

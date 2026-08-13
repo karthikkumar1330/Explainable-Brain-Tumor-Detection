@@ -336,8 +336,27 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         );
         """
 
+        create_followup_schedules_sql = """
+        CREATE TABLE IF NOT EXISTS followup_schedules (
+            followup_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id TEXT NOT NULL,
+            doctor_id INTEGER NOT NULL,
+            scheduled_date TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'scheduled',
+            reason TEXT,
+            notes TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            completed_at TEXT,
+            FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE,
+            FOREIGN KEY (doctor_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        """
+
         # Analytics and Delivery Indices
         indices = [
+            "CREATE INDEX IF NOT EXISTS idx_followup_schedules_patient ON followup_schedules(patient_id);",
+            "CREATE INDEX IF NOT EXISTS idx_followup_schedules_doctor ON followup_schedules(doctor_id);",
             "CREATE INDEX IF NOT EXISTS idx_patients_age_gender ON patients(age, gender);",
             "CREATE INDEX IF NOT EXISTS idx_mri_scans_date ON mri_scans(scan_date);",
             "CREATE INDEX IF NOT EXISTS idx_predictions_class_severity ON predictions(predicted_class, rule_based_severity);",
@@ -400,6 +419,7 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 conn.execute(create_clinician_notes_sql)
                 conn.execute(create_mri_point_annotations_sql)
                 conn.execute(create_mri_rectangle_annotations_sql)
+                conn.execute(create_followup_schedules_sql)
                 for idx_sql in indices:
                     conn.execute(idx_sql)
 
