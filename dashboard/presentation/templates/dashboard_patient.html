@@ -443,6 +443,10 @@
                     <i class="fa-solid fa-user-circle text-lg w-5 shrink-0"></i>
                     <span>Profile</span>
                 </button>
+                <button onclick="switchTab('followups')" id="nav-followups" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" title="My Follow-ups">
+                    <i class="fa-solid fa-calendar-days text-lg w-5 shrink-0"></i>
+                    <span>My Follow-ups</span>
+                </button>
                 <button onclick="switchTab('audit')" id="nav-audit" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" title="Audit Trail">
                     <i class="fa-solid fa-list-check text-lg w-5 shrink-0"></i>
                     <span>Audit Trail</span>
@@ -1181,6 +1185,70 @@
                             <button id="email-history-prev-btn" onclick="prevEmailHistoryPage()" class="btn-secondary h-8 px-3 text-xs cursor-pointer" disabled>Prev</button>
                             <button id="email-history-next-btn" onclick="nextEmailHistoryPage()" class="btn-secondary h-8 px-3 text-xs cursor-pointer" disabled>Next</button>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 8: MY FOLLOW-UPS VIEW -->
+            <div id="tab-followups" class="hidden space-y-6">
+                <div class="glass-panel rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+                    <div class="p-5 bg-slate-900/80 border-b border-slate-800/80 flex justify-between items-center">
+                        <div>
+                            <h4 class="font-extrabold text-slate-100 text-sm flex items-center gap-2">
+                                <i class="fa-solid fa-calendar-days text-emerald-400"></i>
+                                My Clinical Follow-up Appointments
+                            </h4>
+                            <p class="text-xs text-slate-400">Review scheduled checkups, statuses, and clinical notes from your referring doctor.</p>
+                        </div>
+                        <button onclick="loadFollowupsData()" class="text-xs bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition">
+                            <i class="fa-solid fa-rotate mr-1"></i> Refresh
+                        </button>
+                    </div>
+
+                    <!-- LOADING STATE SKELETON -->
+                    <div id="followups-loading" class="p-6 space-y-4">
+                        <div class="animate-pulse bg-slate-800/40 h-12 rounded-xl border border-slate-750"></div>
+                        <div class="animate-pulse bg-slate-800/40 h-12 rounded-xl border border-slate-750"></div>
+                        <div class="animate-pulse bg-slate-800/40 h-12 rounded-xl border border-slate-750"></div>
+                    </div>
+
+                    <!-- ERROR STATE -->
+                    <div id="followups-error" class="hidden p-8 bg-red-950/20 border border-red-500/30 rounded-2xl text-center space-y-3 m-6">
+                        <i class="fa-solid fa-triangle-exclamation text-red-500 text-3xl"></i>
+                        <h4 class="font-bold text-slate-100">Failed to Retrieve Appointments</h4>
+                        <p id="followups-error-msg" class="text-xs text-slate-400 max-w-md mx-auto">An error occurred while communicating with the health records server.</p>
+                        <button onclick="loadFollowupsData()" class="btn-primary text-xs h-9 px-4 mt-2">
+                            Retry Connection
+                        </button>
+                    </div>
+
+                    <!-- EMPTY STATE -->
+                    <div id="followups-empty" class="hidden p-12 text-center space-y-4">
+                        <div class="h-16 w-16 bg-slate-950 rounded-full flex items-center justify-center mx-auto border border-slate-800">
+                            <i class="fa-solid fa-calendar-xmark text-slate-500 text-2xl"></i>
+                        </div>
+                        <div class="space-y-1">
+                            <h4 class="font-extrabold text-slate-200">No scheduled follow-up appointments.</h4>
+                            <p class="text-xs text-slate-400 max-w-sm mx-auto">You do not have any upcoming appointments or clinical reviews scheduled at this time.</p>
+                        </div>
+                    </div>
+
+                    <!-- FOLLOWUPS DATA TABLE -->
+                    <div id="followups-content" class="hidden overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-950/90 text-slate-400 text-xs uppercase font-bold tracking-wider border-b border-slate-800">
+                                <tr>
+                                    <th class="p-4">Appointment Date/Time</th>
+                                    <th class="p-4">Physician ID</th>
+                                    <th class="p-4">Status</th>
+                                    <th class="p-4">Reason / Info</th>
+                                    <th class="p-4">Clinician Instructions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="followups-table-body" class="divide-y divide-slate-800/60 text-xs">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -2252,6 +2320,69 @@
             if (error) error.classList.remove("hidden");
         }
 
+        async function loadFollowupsData() {
+            const loading = document.getElementById("followups-loading");
+            const content = document.getElementById("followups-content");
+            const empty = document.getElementById("followups-empty");
+            const error = document.getElementById("followups-error");
+            const tbody = document.getElementById("followups-table-body");
+
+            if (loading) loading.classList.remove("hidden");
+            if (content) content.classList.add("hidden");
+            if (empty) empty.classList.add("hidden");
+            if (error) error.classList.add("hidden");
+
+            try {
+                const res = await fetchWithAuth("/api/patient/followups");
+                if (!res.ok) {
+                    throw new Error(`HTTP Error: ${res.status}`);
+                }
+                const data = await res.json();
+                if (loading) loading.classList.add("hidden");
+
+                if (!Array.isArray(data) || data.length === 0) {
+                    if (empty) empty.classList.remove("hidden");
+                    return;
+                }
+
+                if (tbody) {
+                    tbody.innerHTML = "";
+                    data.forEach(item => {
+                        const tr = document.createElement("tr");
+                        tr.className = "table-row-hover hover:bg-slate-800/20";
+
+                        let statusClass = "badge badge-primary";
+                        if (item.status === "completed") {
+                            statusClass = "badge badge-success";
+                        } else if (item.status === "cancelled") {
+                            statusClass = "badge badge-error";
+                        } else if (item.status === "scheduled") {
+                            statusClass = "badge badge-warning";
+                        }
+
+                        const dateStr = item.scheduled_date ? item.scheduled_date.replace("T", " ").substring(0, 16) : "N/A";
+                        const docInfo = item.doctor_id ? `Doctor #${item.doctor_id}` : "Assigned Clinician";
+                        const reason = item.reason || "General review appointment";
+                        const notes = item.notes || "Please bring any current prescription information.";
+
+                        tr.innerHTML = `
+                            <td class="p-4 font-bold text-slate-300 font-mono">${dateStr}</td>
+                            <td class="p-4 font-semibold text-slate-350">${docInfo}</td>
+                            <td class="p-4"><span class="${statusClass}">${item.status}</span></td>
+                            <td class="p-4 text-slate-200 font-medium">${reason}</td>
+                            <td class="p-4 text-slate-400 italic">${notes}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+                if (content) content.classList.remove("hidden");
+            } catch (err) {
+                console.error("Failed to load patient follow-up data:", err);
+                if (loading) loading.classList.add("hidden");
+                if (error) error.classList.remove("hidden");
+            }
+        }
+
         document.addEventListener("DOMContentLoaded", async () => {
             initSidebarState();
             await checkAuthStatus();
@@ -2512,11 +2643,12 @@
             'settings': 'Account Security Settings',
             'profile': 'Patient User Profile',
             'audit': 'Report Access Security Audit Trail',
-            'email-history': 'Email History & Delivery Tracking'
+            'email-history': 'Email History & Delivery Tracking',
+            'followups': 'My Clinical Follow-up Appointments'
         };
 
         function switchTab(tabName) {
-            ['dashboard', 'reports', 'settings', 'profile', 'audit', 'email-history'].forEach(t => {
+            ['dashboard', 'reports', 'settings', 'profile', 'audit', 'email-history', 'followups'].forEach(t => {
                 const el = document.getElementById(`tab-${t}`);
                 const btn = document.getElementById(`nav-${t}`);
                 if (el) el.classList.add('hidden');
@@ -2538,12 +2670,15 @@
                 document.getElementById('breadcrumb-page').innerText = tabName.charAt(0).toUpperCase() + tabName.slice(1);
             }
 
-            if (['dashboard', 'reports', 'email-history'].includes(tabName)) {
+            if (['dashboard', 'reports', 'email-history', 'followups'].includes(tabName)) {
                 if (!dashboardDataLoaded) {
                     loadDashboardData();
                 }
                 if (tabName === 'email-history') {
                     loadEmailHistoryData(1);
+                }
+                if (tabName === 'followups') {
+                    loadFollowupsData();
                 }
             }
             if (['settings', 'profile'].includes(tabName)) {

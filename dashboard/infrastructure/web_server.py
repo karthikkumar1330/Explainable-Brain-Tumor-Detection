@@ -2413,6 +2413,29 @@ def create_app(db_path: str) -> Flask:
             app.logger.error(f"Error fetching patient follow-ups: {e}", exc_info=True)
             return jsonify({"error": "Internal follow-up schedules query failure"}), 500
 
+    @app.route("/api/patient/followups", methods=["GET"])
+    @roles_accepted(Role.PATIENT)
+    def get_patient_followups_flask(current_user: User):
+        from clinical_reporting.application.followup_service import FollowupScheduleService, FollowupScheduleServiceException
+        service = FollowupScheduleService(db_path=app.config["DB_PATH"])
+        try:
+            patient_id = current_user.uuid
+            followups = service.get_followups_for_patient(actor=current_user, patient_id=patient_id)
+            return jsonify(followups), 200
+        except FollowupScheduleServiceException as e:
+            err_msg = str(e)
+            if "Access denied" in err_msg:
+                return jsonify({"error": "Access denied."}), 403
+            elif "Authentication required" in err_msg:
+                return jsonify({"error": "Authentication required."}), 401
+            elif "not found" in err_msg.lower():
+                return jsonify({"error": "Patient record not found."}), 404
+            else:
+                return jsonify({"error": err_msg}), 400
+        except Exception as e:
+            app.logger.error(f"Error fetching patient follow-ups: {e}", exc_info=True)
+            return jsonify({"error": "Internal server error"}), 500
+
     @app.route("/api/doctor/followups/<int:followup_id>", methods=["PUT"])
     @roles_accepted(Role.DOCTOR)
     def update_doctor_followup_flask(current_user: User, followup_id: int):
