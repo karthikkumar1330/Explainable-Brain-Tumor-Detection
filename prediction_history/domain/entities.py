@@ -29,6 +29,7 @@ class HistorySearchCriteria:
     # RBAC boundary restrictions
     restrict_to_patient_uuid: Optional[str] = None
     restrict_to_patient_name: Optional[str] = None
+    restrict_to_doctor_id: Optional[int] = None
 
 
 @dataclass(frozen=True)

@@ -127,6 +127,10 @@ class SQLitePredictionHistoryRepository(IPredictionHistoryRepository):
             conditions.append("LOWER(r.status) = LOWER(?)")
             params.append(criteria.report_status)
 
+        if criteria.restrict_to_doctor_id is not None:
+            conditions.append("p.patient_id IN (SELECT patient_id FROM doctor_patient_assignments WHERE doctor_id = ?)")
+            params.append(criteria.restrict_to_doctor_id)
+
         # Compile final queries
         where_clause = ""
         if conditions:

@@ -1594,8 +1594,12 @@ def get_prediction_history(patient_id: Optional[str] = Query(None), current_user
         if not auth_svc.can_access_patient(current_user, patient_id):
             raise HTTPException(status_code=403, detail="Access denied to patient records.")
 
+    restrict_doctor_id = current_user.id if current_user.role == Role.DOCTOR else None
     history_repo = SQLitePredictionHistoryRepository(db_path=DEFAULT_DB_PATH)
-    criteria = HistorySearchCriteria(patient_id=patient_id if patient_id else None)
+    criteria = HistorySearchCriteria(
+        patient_id=patient_id if patient_id else None,
+        restrict_to_doctor_id=restrict_doctor_id
+    )
 
     try:
         summaries = history_repo.search_history(criteria)

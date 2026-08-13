@@ -999,7 +999,9 @@ def create_app(db_path: str) -> Flask:
     @login_required
     def history(current_user: User):
         try:
-            criteria = HistorySearchCriteria()
+            patient_id = request.args.get("patient_id", "").strip() or None
+            restrict_doctor_id = current_user.id if current_user.role == Role.DOCTOR else None
+            criteria = HistorySearchCriteria(patient_id=patient_id, restrict_to_doctor_id=restrict_doctor_id)
             summaries = history_repo.search_history(criteria)
 
             data = []
@@ -1007,6 +1009,11 @@ def create_app(db_path: str) -> Flask:
                 # If Patient role, only return matching patient records
                 if current_user.role == Role.PATIENT:
                     if s.patient_name.lower() != current_user.full_name.lower() and s.patient_id.lower() != current_user.uuid.lower():
+                        continue
+                if current_user.role == Role.DOCTOR:
+                    from security.application.authorization_service import AuthorizationService
+                    auth_svc = AuthorizationService(db_path=app.config["DB_PATH"])
+                    if not auth_svc.can_access_patient(current_user, s.patient_id):
                         continue
 
                 data.append({
@@ -1107,6 +1114,8 @@ def create_app(db_path: str) -> Flask:
             restrict_uuid = current_user.uuid
             restrict_name = current_user.full_name
 
+        restrict_doctor_id = current_user.id if current_user.role == Role.DOCTOR else None
+
         try:
             criteria = HistorySearchCriteria(
                 patient_id=patient_id,
@@ -1126,7 +1135,8 @@ def create_app(db_path: str) -> Flask:
                 page=page,
                 page_size=page_size,
                 restrict_to_patient_uuid=restrict_uuid,
-                restrict_to_patient_name=restrict_name
+                restrict_to_patient_name=restrict_name,
+                restrict_to_doctor_id=restrict_doctor_id
             )
             summaries = history_repo.search_history(criteria)
 
@@ -1135,6 +1145,11 @@ def create_app(db_path: str) -> Flask:
                 # Defensive check in case database returned unfiltered records (RBAC boundary check)
                 if current_user.role == Role.PATIENT:
                     if s.patient_name.lower() != current_user.full_name.lower() and s.patient_id.lower() != current_user.uuid.lower():
+                        continue
+                if current_user.role == Role.DOCTOR:
+                    from security.application.authorization_service import AuthorizationService
+                    auth_svc = AuthorizationService(db_path=app.config["DB_PATH"])
+                    if not auth_svc.can_access_patient(current_user, s.patient_id):
                         continue
                 data.append({
                     "report_id": s.report_id,
