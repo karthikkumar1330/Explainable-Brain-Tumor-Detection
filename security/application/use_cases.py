@@ -529,14 +529,16 @@ class AuthUseCases:
                     logging.getLogger("security").error(f"Failed to sync patient name update: {e}")
 
         email_changed = False
-        if email and email.strip() and email.lower().strip() != user.email:
-            new_email = email.lower().strip()
-            # Check uniqueness
-            existing = self.user_repo.get_by_email(new_email)
-            if existing and existing.id != user.id:
-                raise ValueError("This email is already in use by another account.")
-            user.email = new_email
-            email_changed = True
+        if email and email.strip():
+            from security.infrastructure.password import PasswordHasher
+            email_clean = PasswordHasher.normalize_email(email)
+            if email_clean != user.email:
+                existing = self.user_repo.get_by_email(email_clean)
+                if existing and existing.id != user.id:
+                    raise ValueError("This email is already in use by another account.")
+                user.email = email_clean
+                user.is_verified = False
+                email_changed = True
 
         recovery_codes = []
         if enable_2fa is not None:

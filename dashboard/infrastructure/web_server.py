@@ -2436,6 +2436,56 @@ def create_app(db_path: str) -> Flask:
             app.logger.error(f"Error fetching patient follow-ups: {e}", exc_info=True)
             return jsonify({"error": "Internal server error"}), 500
 
+    @app.route("/api/patient/profile", methods=["GET"])
+    @roles_accepted(Role.PATIENT)
+    def get_patient_profile_flask(current_user: User):
+        import sqlite3
+        from security.infrastructure.encryption_service import PIIEncryptionService
+        db_path = app.config["DB_PATH"]
+        conn = None
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT name, age, gender FROM patients WHERE patient_id = ?;",
+                (current_user.uuid,)
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "Patient record not found."}), 404
+
+            try:
+                encryption_service = PIIEncryptionService()
+            except Exception:
+                encryption_service = None
+
+            pat_name_raw = row["name"]
+            pat_age_raw = row["age"]
+            pat_gender_raw = row["gender"]
+
+            name = encryption_service.decrypt(pat_name_raw) if encryption_service and pat_name_raw and str(pat_name_raw).startswith("enc:v1:") else pat_name_raw
+            age = encryption_service.decrypt(pat_age_raw) if encryption_service and pat_age_raw and str(pat_age_raw).startswith("enc:v1:") else pat_age_raw
+            gender = encryption_service.decrypt(pat_gender_raw) if encryption_service and pat_gender_raw and str(pat_gender_raw).startswith("enc:v1:") else pat_gender_raw
+
+            try:
+                if age is not None:
+                    age = int(age)
+            except ValueError:
+                pass
+
+            return jsonify({
+                "patient_id": current_user.uuid,
+                "name": name,
+                "email": current_user.email,
+                "age": age,
+                "gender": gender
+            }), 200
+        except Exception as e:
+            app.logger.error(f"Error retrieving patient profile: {e}", exc_info=True)
+            return jsonify({"error": "Internal server error"}), 500
+        finally:
+            if conn:
+                conn.close()
+
     @app.route("/api/doctor/followups/<int:followup_id>", methods=["PUT"])
     @roles_accepted(Role.DOCTOR)
     def update_doctor_followup_flask(current_user: User, followup_id: int):
