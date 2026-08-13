@@ -34,37 +34,6 @@ class AuthorizationService:
             if str(patient_id).lower() == str(user.uuid).lower():
                 return True
             
-            # Fallback checks (e.g. decrypted name comparison for legacy consistency)
-            conn = self._get_connection()
-            try:
-                row = conn.execute("SELECT name FROM patients WHERE patient_id = ?;", (patient_id,)).fetchone()
-                if row:
-                    from security.infrastructure.encryption_service import PIIEncryptionService
-                    try:
-                        encryption_service = PIIEncryptionService()
-                    except Exception:
-                        encryption_service = None
-                    
-                    pat_name_raw = row["name"]
-                    if pat_name_raw:
-                        if str(pat_name_raw).startswith("enc:v1:"):
-                            if encryption_service:
-                                pat_name = encryption_service.decrypt(pat_name_raw).lower()
-                            else:
-                                pat_name = ""
-                        else:
-                            pat_name = pat_name_raw.lower()
-                    else:
-                        pat_name = ""
-                    
-                    user_name = user.full_name.lower() if user.full_name else ""
-                    if pat_name and user_name and pat_name == user_name:
-                        return True
-            except Exception:
-                pass
-            finally:
-                conn.close()
-
             return False
 
         # Doctor policy: doctors can only access assigned patients

@@ -1013,15 +1013,18 @@ def create_app(db_path: str) -> Flask:
     def history(current_user: User):
         try:
             patient_id = request.args.get("patient_id", "").strip() or None
+            if current_user.role == Role.PATIENT:
+                patient_id = current_user.uuid
+
             restrict_doctor_id = current_user.id if current_user.role == Role.DOCTOR else None
             criteria = HistorySearchCriteria(patient_id=patient_id, restrict_to_doctor_id=restrict_doctor_id)
             summaries = history_repo.search_history(criteria)
 
             data = []
             for s in summaries:
-                # If Patient role, only return matching patient records
+                # If Patient role, only return matching patient records (strictly verified by unique ID to prevent name-collision IDOR)
                 if current_user.role == Role.PATIENT:
-                    if s.patient_name.lower() != current_user.full_name.lower() and s.patient_id.lower() != current_user.uuid.lower():
+                    if s.patient_id.lower() != current_user.uuid.lower():
                         continue
                 if current_user.role == Role.DOCTOR:
                     from security.application.authorization_service import AuthorizationService
