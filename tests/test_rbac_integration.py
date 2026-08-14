@@ -277,12 +277,12 @@ class TestRBACIntegration(unittest.TestCase):
         response = self.client.get("/api/health-telemetry")
         self.assertEqual(response.status_code, 403)
 
-        # 4. Doctor role -> 200 OK
+        # 4. Doctor role -> 403 Forbidden
         self.client.set_cookie("access_token", self.doctor_token)
         response = self.client.get("/api/health-telemetry")
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 403)
         data = response.get_json()
-        self.assertNotIn("error", data)
+        self.assertIn("error", data)
 
         # 5. Admin role -> 200 OK
         self.client.set_cookie("access_token", self.admin_token)

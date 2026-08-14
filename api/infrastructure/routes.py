@@ -408,7 +408,13 @@ def ping():
 
 
 @router.get("/health")
-def get_pipeline_health(current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))):
+def get_pipeline_health():
+    """Unauthenticated lightweight liveness/readiness health check endpoint."""
+    return {"status": "healthy"}
+
+
+@router.get("/health-telemetry")
+def get_pipeline_health_telemetry(current_user: User = Depends(require_roles([Role.ADMIN]))):
     """API Endpoint: Runs comprehensive system and model health diagnostics and fetches audit telemetry."""
     try:
         from monitoring.infrastructure.health_monitor import PipelineHealthMonitor
@@ -430,8 +436,9 @@ def get_pipeline_health(current_user: User = Depends(require_roles([Role.ADMIN, 
         report_dict["historical_telemetry"] = telemetry
         return report_dict
     except Exception as e:
-        logger.error(f"Health check execution failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Health diagnostics failed: {e}")
+        logger.error(f"Health telemetry diagnostics failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Health telemetry diagnostics failed: {e}")
+
 
 
 @router.post("/report")

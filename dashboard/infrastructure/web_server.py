@@ -1053,7 +1053,7 @@ def create_app(db_path: str) -> Flask:
             return jsonify({"error": "Internal analytics telemetry error"}), 500
 
     @app.route("/api/health-telemetry")
-    @roles_accepted(Role.ADMIN, Role.DOCTOR)
+    @roles_accepted(Role.ADMIN)
     def health_telemetry(current_user: User):
         try:
             telemetry = persistence_repo.get_health_telemetry()
