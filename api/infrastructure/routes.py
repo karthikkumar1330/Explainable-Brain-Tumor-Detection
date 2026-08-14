@@ -159,6 +159,12 @@ def upload_mri_file(file: UploadFile = File(...), current_user: User = Depends(r
     temp_filename = f"upload_{int(time.time())}_{file.filename}"
     temp_filepath = os.path.join(TEMP_UPLOAD_DIR, temp_filename)
 
+    from security.infrastructure.repository import SQLiteUserRepository
+    from security.domain.entities import SecurityAuditLog
+    import datetime
+    user_repo = SQLiteUserRepository(db_path=DEFAULT_DB_PATH)
+    now = datetime.datetime.utcnow().isoformat()
+
     try:
         file_bytes = file.file.read()
         with open(temp_filepath, "wb") as f:
@@ -175,6 +181,20 @@ def upload_mri_file(file: UploadFile = File(...), current_user: User = Depends(r
         if not scorecard.is_valid:
             if os.path.exists(temp_filepath):
                 os.remove(temp_filepath)
+
+            # Log validation failure
+            user_repo.log_security_event(SecurityAuditLog(
+                id=None,
+                timestamp=now,
+                event_type="MRI_UPLOAD",
+                user_id=current_user.id if current_user else None,
+                email=current_user.email if current_user else None,
+                ip_address="127.0.0.1",
+                status="FAILED",
+                details=f"MRI validation failed for filename: {file.filename}. Reasons: {', '.join(scorecard.errors)}",
+                user_agent="System"
+            ))
+
             raise HTTPException(
                 status_code=400,
                 detail={
@@ -183,6 +203,19 @@ def upload_mri_file(file: UploadFile = File(...), current_user: User = Depends(r
                     "scorecard": scorecard.to_dict()
                 }
             )
+
+        # Log successful upload
+        user_repo.log_security_event(SecurityAuditLog(
+            id=None,
+            timestamp=now,
+            event_type="MRI_UPLOAD",
+            user_id=current_user.id if current_user else None,
+            email=current_user.email if current_user else None,
+            ip_address="127.0.0.1",
+            status="SUCCESS",
+            details=f"MRI file uploaded and validated successfully. Filename: {file.filename}",
+            user_agent="System"
+        ))
 
         return {
             "filename": temp_filename,
@@ -195,6 +228,20 @@ def upload_mri_file(file: UploadFile = File(...), current_user: User = Depends(r
         logger.error(f"Error handling file upload: {e}")
         if os.path.exists(temp_filepath):
             os.remove(temp_filepath)
+
+        # Log unexpected error
+        user_repo.log_security_event(SecurityAuditLog(
+            id=None,
+            timestamp=now,
+            event_type="MRI_UPLOAD",
+            user_id=current_user.id if current_user else None,
+            email=current_user.email if current_user else None,
+            ip_address="127.0.0.1",
+            status="FAILED",
+            details="MRI upload failed due to internal error.",
+            user_agent="System"
+        ))
+
         raise HTTPException(status_code=500, detail=f"File upload processing failed: {e}")
 
 
