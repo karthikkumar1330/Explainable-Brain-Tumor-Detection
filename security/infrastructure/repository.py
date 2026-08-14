@@ -221,6 +221,7 @@ class SQLiteUserRepository(IUserRepository):
                     cursor.execute("UPDATE notifications SET idempotency_key = ? WHERE id = ?;", (f"migrated:{r[0]}", r[0]))
 
             cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_idempotency ON notifications(idempotency_key);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC);")
 
             # G8.2.6 Create Notification Preferences Table
             cursor.execute("""
