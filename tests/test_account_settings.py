@@ -67,7 +67,7 @@ class TestAccountSettings(unittest.TestCase):
         self.assertFalse(data["email_changed"])
 
     def test_update_profile_email_resets_verification(self):
-        """PUT /api/auth/profile should keep is_verified as True even if email address changes."""
+        """PUT /api/auth/profile should reset is_verified to False when email address changes."""
         self._login()
  
         resp = self.client.put("/api/auth/profile", json={
@@ -77,7 +77,7 @@ class TestAccountSettings(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
         self.assertTrue(data["email_changed"])
-        self.assertTrue(data["user"]["is_verified"])
+        self.assertFalse(data["user"]["is_verified"])
 
     def test_upload_avatar_image(self):
         """POST /api/auth/profile/avatar should upload and save custom avatar picture."""

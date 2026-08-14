@@ -18,6 +18,8 @@ class TestEmailDelivery(unittest.TestCase):
     """Phase G4 Clinical Report Email Delivery and authorization tests."""
 
     def setUp(self):
+        if "DISABLE_TEST_AUTO_ASSIGN" in os.environ:
+            del os.environ["DISABLE_TEST_AUTO_ASSIGN"]
         self.db_path = os.environ.get("DB_PATH", "outputs/test_email_delivery.db")
         if os.path.exists(self.db_path):
             try:

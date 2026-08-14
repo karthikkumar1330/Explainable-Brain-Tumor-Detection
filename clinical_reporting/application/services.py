@@ -3442,16 +3442,26 @@ class ReportService:
 
         # Enforce RBAC/IDOR: Patients can only see histories for reports they own
         if caller_role == "patient":
-            where_clauses.append("(r.patient_id = ? OR p.name = ?)")
-            params.extend([actor.uuid, actor.full_name])
+            where_clauses.append("r.patient_id = ?")
+            params.append(actor.uuid)
+
+        # Enforce doctor assignment filtering for overall list
+        if caller_role == "doctor":
+            where_clauses.append("r.patient_id IN (SELECT patient_id FROM doctor_patient_assignments WHERE doctor_id = ?)")
+            params.append(actor.id)
+
+        # If a specific report_id is requested, perform strict access control validation first
+        if report_id:
+            from security.application.authorization_service import AuthorizationService
+            auth_svc = AuthorizationService(db_path=self.db_path)
+            if not auth_svc.can_access_report(actor, report_id):
+                raise PermissionError("Access denied to report email history.")
+            where_clauses.append("ed.report_id = ?")
+            params.append(report_id)
 
         if status:
             where_clauses.append("ed.status = ?")
             params.append(status)
-
-        if report_id:
-            where_clauses.append("ed.report_id = ?")
-            params.append(report_id)
 
         if search:
             where_clauses.append("(ed.recipient_email LIKE ? OR r.report_number LIKE ?)")
