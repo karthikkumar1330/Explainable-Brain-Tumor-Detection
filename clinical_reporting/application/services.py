@@ -1240,57 +1240,88 @@ class ReportService:
             rows = cursor.fetchall()
             logs = [dict(r) for r in rows]
 
+            if not user:
+                return []
+
             role_val = user.role.value if hasattr(user.role, 'value') else str(user.role).lower()
-            if role_val in ["admin", "doctor"]:
+            if role_val == "admin":
                 return logs
 
-            if role_val == "patient":
+            permitted_ids = set()
+
+            if role_val == "doctor":
+                # Find reports for patients assigned to the doctor
                 cursor.execute(
                     """
-                    SELECT cr.id
+                    SELECT cr.id AS report_id
                     FROM clinical_reports cr
                     JOIN predictions pr ON cr.prediction_id = pr.id
                     JOIN mri_scans s ON pr.scan_id = s.id
-                    JOIN patients p ON s.patient_id = p.patient_id
-                    WHERE p.name = ? OR p.patient_id = ?;
+                    WHERE s.patient_id IN (
+                        SELECT patient_id FROM doctor_patient_assignments WHERE doctor_id = ?
+                    )
+                    UNION
+                    SELECT report_id
+                    FROM reports
+                    WHERE patient_id IN (
+                        SELECT patient_id FROM doctor_patient_assignments WHERE doctor_id = ?
+                    );
                     """,
-                    (user.full_name, user.uuid)
+                    (user.id, user.id)
                 )
                 p_rows = cursor.fetchall()
-                permitted_ids = {r["id"] for r in p_rows}
+                permitted_ids = {r["report_id"] for r in p_rows}
 
-                cursor.execute("SELECT report_id FROM reports WHERE patient_id = ?;", (user.uuid,))
-                for r in cursor.fetchall():
-                    permitted_ids.add(r["report_id"])
+            elif role_val == "patient":
+                # Find reports for this patient strictly by patient_id = user.uuid
+                cursor.execute(
+                    """
+                    SELECT cr.id AS report_id
+                    FROM clinical_reports cr
+                    JOIN predictions pr ON cr.prediction_id = pr.id
+                    JOIN mri_scans s ON pr.scan_id = s.id
+                    WHERE s.patient_id = ?
+                    UNION
+                    SELECT report_id
+                    FROM reports
+                    WHERE patient_id = ?;
+                    """,
+                    (user.uuid, user.uuid)
+                )
+                p_rows = cursor.fetchall()
+                permitted_ids = {r["report_id"] for r in p_rows}
 
-                user_email = None
-                user_id_val = None
-                if user:
-                    if isinstance(user, dict):
-                        user_email = user.get("email")
-                        user_id_val = user.get("id")
-                    else:
-                        user_email = getattr(user, "email", None)
-                        user_id_val = getattr(user, "id", None)
+            else:
+                return []
 
-                import re
-                filtered = []
-                for log in logs:
-                    # Let patient see their own actions
-                    if user_email and log.get("email") == user_email:
+            user_email = None
+            user_id_val = None
+            if user:
+                if isinstance(user, dict):
+                    user_email = user.get("email")
+                    user_id_val = user.get("id")
+                else:
+                    user_email = getattr(user, "email", None)
+                    user_id_val = getattr(user, "id", None)
+
+            import re
+            filtered = []
+            for log in logs:
+                # Let user see their own actions
+                if user_email and log.get("email") == user_email:
+                    filtered.append(log)
+                    continue
+                if user_id_val is not None and log.get("user_id") == user_id_val:
+                    filtered.append(log)
+                    continue
+
+                details = log.get("details", "")
+                m = re.search(r"Report ID:\s*(\d+)", details)
+                if m:
+                    rep_id = int(m.group(1))
+                    if rep_id in permitted_ids:
                         filtered.append(log)
-                        continue
-                    if user_id_val is not None and log.get("user_id") == user_id_val:
-                        filtered.append(log)
-                        continue
-
-                    details = log.get("details", "")
-                    m = re.search(r"Report ID:\s*(\d+)", details)
-                    if m:
-                        rep_id = int(m.group(1))
-                        if rep_id in permitted_ids:
-                            filtered.append(log)
-                return filtered
+            return filtered
 
             return []
         finally:

@@ -242,6 +242,14 @@ class TestReportAccessSecurity(unittest.TestCase):
                 "INSERT INTO reports (report_id, report_number, patient_id, current_version, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?);",
                 (20, "REP-20", self.wrong_patient_user.uuid, 1, "FINALIZED", "2026-08-08", "2026-08-08")
             )
+            conn.execute(
+                "INSERT OR IGNORE INTO doctor_patient_assignments (doctor_id, patient_id, created_at) VALUES (?, ?, '2026-08-08');",
+                (self.doctor_user.id, self.patient_user.uuid)
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO doctor_patient_assignments (doctor_id, patient_id, created_at) VALUES (?, ?, '2026-08-08');",
+                (self.doctor_user.id, self.wrong_patient_user.uuid)
+            )
 
             # 1. Access denied log for Bob Jones's report (ID 10)
             service._log_security_audit_event(

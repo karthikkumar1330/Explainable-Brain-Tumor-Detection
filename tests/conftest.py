@@ -10,6 +10,7 @@ def manage_auto_assign_env(request):
     should_disable = (
         "test_h3" in module_name or
         "test_h4" in module_name or
+        "test_h5" in module_name or
         "test_mri_annotations" in module_name or
         "test_clinician_notes" in module_name
     )

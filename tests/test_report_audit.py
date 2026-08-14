@@ -350,6 +350,14 @@ class TestReportAuditTrail(unittest.TestCase):
             conn.execute(
                 "INSERT INTO reports (report_id, report_number, patient_id, current_version, status, created_at, updated_at) VALUES (20, 'REP-20', 'pat-uuid-888', 1, 'FINAL', '2026-08-08', '2026-08-08')"
             )
+            conn.execute(
+                "INSERT OR IGNORE INTO doctor_patient_assignments (doctor_id, patient_id, created_at) VALUES (?, 'pat-uuid-999', '2026-08-08');",
+                (self.doctor_user.id,)
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO doctor_patient_assignments (doctor_id, patient_id, created_at) VALUES (?, 'pat-uuid-888', '2026-08-08');",
+                (self.doctor_user.id,)
+            )
 
             # 1. Bob Jones (patient 999) views his report
             service._log_security_audit_event(
