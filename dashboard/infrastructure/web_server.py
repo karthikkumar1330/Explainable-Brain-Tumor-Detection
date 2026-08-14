@@ -155,7 +155,7 @@ def create_app(db_path: str) -> Flask:
                     email=user.email if user else None,
                     ip_address=request.remote_addr or "127.0.0.1",
                     status="BLOCKED",
-                    details=f"CSRF mismatch. Header: {header_csrf}, Cookie: {cookie_csrf}",
+                    details="CSRF token mismatch",
                     user_agent=request.headers.get("User-Agent", "Unknown")
                 ))
                 return jsonify({"error": "CSRF verification failed. Request blocked."}), 403

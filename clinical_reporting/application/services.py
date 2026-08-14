@@ -1059,7 +1059,8 @@ class ReportService:
             trusted_dir = os.path.abspath("outputs/clinical_reports")
             resolved_json = os.path.abspath(json_path)
             if not resolved_json.startswith(trusted_dir + os.sep) and resolved_json != trusted_dir:
-                self._log_security_audit_event(conn, "REPORT_ACCESS_DENIED", actor, report_id, "FAILED", f"Path traversal attempt: {json_path}")
+                self._log_security_audit_event(conn, "REPORT_ACCESS_DENIED", actor, report_id, "FAILED", "Access denied: path traversal attempt")
+                conn.commit()
                 raise PathTraversalException("Path traversal or directory escape detected.")
 
             # Missing-file check
