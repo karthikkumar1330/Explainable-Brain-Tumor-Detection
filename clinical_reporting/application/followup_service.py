@@ -2,11 +2,13 @@ import os
 import sqlite3
 import datetime
 import logging
+import json
 from typing import Optional, List, Dict, Any
 
 from security.application.authorization_service import AuthorizationService
 from security.domain.entities import Role, User, SecurityAuditLog
 from security.infrastructure.repository import SQLiteUserRepository
+from clinical_reporting.application.notification_service import NotificationService
 
 class FollowupScheduleServiceException(Exception):
     """Exception raised for errors in the FollowupScheduleService."""
@@ -20,6 +22,7 @@ class FollowupScheduleService:
         self.logger = logging.getLogger("followup_schedule_service")
         self.auth_svc = AuthorizationService(db_path=self.db_path)
         self.user_repo = SQLiteUserRepository(db_path=self.db_path)
+        self.notif_svc = NotificationService(db_path=self.db_path)
 
     def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -53,6 +56,66 @@ class FollowupScheduleService:
             self.user_repo.log_security_event(audit_log)
         except Exception as e:
             self.logger.warning(f"Failed to write follow-up security audit log: {e}")
+
+    def _notify_affected_parties(
+        self,
+        event_type: str,
+        followup_id: int,
+        patient_uuid: str,
+        doctor_id: int,
+        actor: User,
+        title: str,
+        message: str
+    ) -> None:
+        try:
+            # Resolve patient user
+            pat_user = self.user_repo.get_by_uuid(patient_uuid)
+            recipients = set()
+
+            # 1. Patient is always a recipient (if different from actor)
+            if pat_user and pat_user.id != actor.id:
+                recipients.add((pat_user.id, "patient"))
+
+            # 2. The doctor associated with the follow-up is a recipient (if different from actor)
+            if doctor_id and doctor_id != actor.id:
+                doc_user = self.user_repo.get_by_id(doctor_id)
+                if doc_user:
+                    recipients.add((doc_user.id, "doctor"))
+
+            # 3. Any other assigned doctors (if different from actor)
+            conn = self._get_connection()
+            try:
+                rows = conn.execute(
+                    "SELECT doctor_id FROM doctor_patient_assignments WHERE patient_id = ?;",
+                    (patient_uuid,)
+                ).fetchall()
+                for r in rows:
+                    did = r["doctor_id"]
+                    if did != actor.id:
+                        recipients.add((did, "doctor"))
+            except Exception as dbe:
+                self.logger.warning(f"Failed to query assigned doctors for notification: {dbe}")
+            finally:
+                conn.close()
+
+            # Send notifications
+            meta_json = json.dumps({
+                "followup_id": followup_id,
+                "patient_id": patient_uuid
+            })
+            for rid, role in recipients:
+                try:
+                    self.notif_svc.create_notification(
+                        user_id=rid,
+                        type_=event_type,
+                        title=title,
+                        message=message,
+                        metadata_json=meta_json
+                    )
+                except Exception as e:
+                    self.logger.error(f"Failed to deliver in-app notification to user {rid}: {e}")
+        except Exception as ex:
+            self.logger.warning(f"Error in notification trigger dispatch: {ex}")
 
     def _parse_and_normalize_date(self, date_str: str) -> str:
         """Parses, validates, and normalizes a scheduled date string to a consistent format.
@@ -174,6 +237,15 @@ class FollowupScheduleService:
                 followup_id = cursor.lastrowid
 
             self._log_audit_event("FOLLOWUP_CREATED", actor, "SUCCESS", f"Created follow-up {followup_id} for patient {pid_clean}")
+            self._notify_affected_parties(
+                event_type="FOLLOWUP_CREATED",
+                followup_id=followup_id,
+                patient_uuid=pid_clean,
+                doctor_id=actor.id,
+                actor=actor,
+                title="New Follow-up Scheduled",
+                message=f"A new follow-up appointment has been scheduled for {sd_clean}."
+            )
             return {
                 "followup_id": followup_id,
                 "patient_id": pid_clean,
@@ -361,6 +433,29 @@ class FollowupScheduleService:
             ).fetchone()
 
             self._log_audit_event("FOLLOWUP_MODIFIED", actor, "SUCCESS", f"Updated follow-up {followup_id} status to {status_clean or 'unchanged'}")
+
+            # Send notifications based on what was updated
+            if status_clean == "cancelled":
+                self._notify_affected_parties(
+                    event_type="FOLLOWUP_CANCELLED",
+                    followup_id=followup_id,
+                    patient_uuid=patient_id,
+                    doctor_id=updated_row["doctor_id"],
+                    actor=actor,
+                    title="Follow-up Cancelled",
+                    message=f"The follow-up appointment scheduled for {updated_row['scheduled_date']} has been cancelled."
+                )
+            elif sd_clean is not None or status_clean is not None or reason is not None or notes is not None:
+                self._notify_affected_parties(
+                    event_type="FOLLOWUP_UPDATED",
+                    followup_id=followup_id,
+                    patient_uuid=patient_id,
+                    doctor_id=updated_row["doctor_id"],
+                    actor=actor,
+                    title="Follow-up Updated",
+                    message=f"The follow-up appointment has been updated. Scheduled date: {updated_row['scheduled_date']}."
+                )
+
             return dict(updated_row)
         except Exception as e:
             if isinstance(e, FollowupScheduleServiceException):

@@ -34,7 +34,10 @@ class NotificationService:
             "ACCOUNT_UPDATE",
             "SYSTEM_ALERT",
             "QUALITY_FLAG_CREATED",
-            "QUALITY_FLAG_RESOLVED"
+            "QUALITY_FLAG_RESOLVED",
+            "FOLLOWUP_CREATED",
+            "FOLLOWUP_UPDATED",
+            "FOLLOWUP_CANCELLED"
         ]
         if type_ not in valid_types:
             raise ValueError(f"Invalid notification type: {type_}")
@@ -81,6 +84,8 @@ class NotificationService:
             return "report"
         elif type_ in ["SECURITY_LOGIN", "SECURITY_WARNING"]:
             return "security"
+        elif type_ in ["FOLLOWUP_CREATED", "FOLLOWUP_UPDATED", "FOLLOWUP_CANCELLED"]:
+            return "account"
         else:
             return "account"
 
