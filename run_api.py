@@ -50,6 +50,32 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Request Telemetry Middleware
+@app.middleware("http")
+async def add_request_telemetry(request: Request, call_next):
+    from security.infrastructure.audit_context import audit_context
+    import os
+
+    trust_proxy = os.environ.get("TRUST_PROXY", "0") == "1"
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    if trust_proxy:
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            client_ip = xff.split(",")[0].strip()
+
+    user_agent = request.headers.get("user-agent", "Unknown")
+
+    token = audit_context.set({
+        "client_ip": client_ip,
+        "user_agent": user_agent
+    })
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        audit_context.reset(token)
+
+
 # OWASP Security Headers Middleware
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):

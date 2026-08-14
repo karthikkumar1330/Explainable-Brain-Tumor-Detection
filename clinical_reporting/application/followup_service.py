@@ -34,16 +34,21 @@ class FollowupScheduleService:
         details: str
     ) -> None:
         try:
+            from security.infrastructure.audit_context import audit_context
+            ctx = audit_context.get()
+            ip_val = ctx.get("client_ip", "127.0.0.1")
+            ua_val = ctx.get("user_agent", "System")
+
             audit_log = SecurityAuditLog(
                 id=None,
                 timestamp=datetime.datetime.utcnow().isoformat(),
                 event_type=event_type,
                 user_id=actor.id if actor else None,
                 email=actor.email if actor else None,
-                ip_address="127.0.0.1",
+                ip_address=ip_val,
                 status=status,
                 details=details,
-                user_agent="System"
+                user_agent=ua_val
             )
             self.user_repo.log_security_event(audit_log)
         except Exception as e:

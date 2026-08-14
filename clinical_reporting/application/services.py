@@ -1368,11 +1368,16 @@ class ReportService:
         if report_id is not None and "Report ID:" not in details:
             details = f"Report ID: {report_id}, {details}"
 
+        from security.infrastructure.audit_context import audit_context
+        ctx = audit_context.get()
+        ip_val = ctx.get("client_ip", "127.0.0.1")
+        ua_val = ctx.get("user_agent", "System")
+
         conn.execute("""
             INSERT INTO security_audit_logs (
                 timestamp, event_type, user_id, email, ip_address, status, details, user_agent
-            ) VALUES (?, ?, ?, ?, '127.0.0.1', ?, ?, 'System');
-        """, (now_str, event_type, user_id, email, status, details))
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+        """, (now_str, event_type, user_id, email, ip_val, status, details, ua_val))
 
     def compare_reports(
         self,

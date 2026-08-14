@@ -595,6 +595,17 @@ class SQLiteUserRepository(IUserRepository):
             conn.close()
 
     def log_security_event(self, event: SecurityAuditLog) -> None:
+        from security.infrastructure.audit_context import audit_context
+        ctx = audit_context.get()
+
+        ip_val = event.ip_address
+        if ip_val in [None, "127.0.0.1", ""] and "client_ip" in ctx:
+            ip_val = ctx["client_ip"]
+
+        ua_val = event.user_agent
+        if ua_val in [None, "System", "Unknown", ""] and "user_agent" in ctx:
+            ua_val = ctx["user_agent"]
+
         conn = self._get_connection()
         try:
             with conn:
@@ -607,10 +618,10 @@ class SQLiteUserRepository(IUserRepository):
                     event.event_type,
                     event.user_id,
                     event.email,
-                    event.ip_address,
+                    ip_val,
                     event.status,
                     event.details,
-                    event.user_agent,
+                    ua_val,
                 ))
         except Exception as e:
             self.logger.error(f"Failed to log security event: {e}")

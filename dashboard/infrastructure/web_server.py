@@ -118,6 +118,34 @@ def create_app(db_path: str) -> Flask:
         return response
 
     @app.before_request
+    def set_audit_context():
+        from security.infrastructure.audit_context import audit_context
+        trust_proxy = os.environ.get("TRUST_PROXY", "0") == "1"
+        client_ip = request.remote_addr or "127.0.0.1"
+        if trust_proxy:
+            xff = request.headers.get("X-Forwarded-For")
+            if xff:
+                client_ip = xff.split(",")[0].strip()
+
+        user_agent = request.headers.get("User-Agent", "Unknown")
+        from flask import g
+        g.audit_context_token = audit_context.set({
+            "client_ip": client_ip,
+            "user_agent": user_agent
+        })
+
+    @app.teardown_request
+    def clear_audit_context(exception=None):
+        from flask import g
+        token = getattr(g, "audit_context_token", None)
+        if token is not None:
+            from security.infrastructure.audit_context import audit_context
+            try:
+                audit_context.reset(token)
+            except Exception:
+                pass
+
+    @app.before_request
     def csrf_protect():
         if app.config.get("DISABLE_CSRF", app.config.get("TESTING", False)):
             return
