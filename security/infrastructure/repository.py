@@ -205,9 +205,22 @@ class SQLiteUserRepository(IUserRepository):
                 created_at TEXT NOT NULL,
                 read_at TEXT,
                 metadata_json TEXT,
+                idempotency_key TEXT,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
             """)
+
+            # Dynamic migration for idempotency_key column
+            cursor.execute("PRAGMA table_info(notifications);")
+            columns = [col[1] for col in cursor.fetchall()]
+            if "idempotency_key" not in columns:
+                cursor.execute("ALTER TABLE notifications ADD COLUMN idempotency_key TEXT;")
+                cursor.execute("SELECT id FROM notifications;")
+                rows = cursor.fetchall()
+                for r in rows:
+                    cursor.execute("UPDATE notifications SET idempotency_key = ? WHERE id = ?;", (f"migrated:{r[0]}", r[0]))
+
+            cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_idempotency ON notifications(idempotency_key);")
 
             # G8.2.6 Create Notification Preferences Table
             cursor.execute("""

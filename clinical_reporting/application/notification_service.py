@@ -21,7 +21,8 @@ class NotificationService:
         type_: str,
         title: str,
         message: str,
-        metadata_json: Optional[str] = None
+        metadata_json: Optional[str] = None,
+        idempotency_key: Optional[str] = None
     ) -> Optional[int]:
         # Validate type_ against controlled types
         valid_types = [
@@ -61,16 +62,55 @@ class NotificationService:
             except Exception:
                 metadata_json = None
 
+        # Generate stable idempotency key server-side from trusted data if not provided
+        if not idempotency_key:
+            # Check if there is a resource ID in metadata to identify logical event
+            resource_id = None
+            if metadata_json:
+                try:
+                    meta = json.loads(metadata_json)
+                    for k in ["report_id", "followup_id", "flag_id", "delivery_id"]:
+                        if k in meta:
+                            resource_id = meta[k]
+                            break
+                except Exception:
+                    pass
+
+            if resource_id is not None:
+                import hashlib
+                raw_data = f"{user_id}:{type_}:{message}:{metadata_json}"
+                h = hashlib.sha256(raw_data.encode("utf-8")).hexdigest()
+                idempotency_key = f"auto:{type_}:{h}"
+
         conn = self._get_connection()
         try:
-            now = datetime.datetime.utcnow().isoformat()
             cursor = conn.cursor()
+            # Sequential check
+            if idempotency_key:
+                cursor.execute("SELECT id FROM notifications WHERE idempotency_key = ?;", (idempotency_key,))
+                existing = cursor.fetchone()
+                if existing:
+                    return existing["id"]
+
+            now = datetime.datetime.utcnow().isoformat()
             cursor.execute("""
-                INSERT INTO notifications (user_id, type, title, message, is_read, created_at, read_at, metadata_json)
-                VALUES (?, ?, ?, ?, 0, ?, NULL, ?);
-            """, (user_id, type_, title, message, now, metadata_json))
+                INSERT INTO notifications (user_id, type, title, message, is_read, created_at, read_at, metadata_json, idempotency_key)
+                VALUES (?, ?, ?, ?, 0, ?, NULL, ?, ?);
+            """, (user_id, type_, title, message, now, metadata_json, idempotency_key))
             conn.commit()
             return cursor.lastrowid
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            try:
+                if idempotency_key:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT id FROM notifications WHERE idempotency_key = ?;", (idempotency_key,))
+                    row = cursor.fetchone()
+                    if row:
+                        return row["id"]
+            except Exception:
+                pass
+            return None
         except Exception as e:
             self.logger.error(f"Failed to create notification: {e}")
             return None
