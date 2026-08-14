@@ -378,6 +378,37 @@ class SQLiteUserRepository(IUserRepository):
                 except Exception as trigger_err:
                     self.logger.warning(f"Could not create auto-assignment triggers: {trigger_err}")
 
+            # Create Audit Log Tamper Protection Triggers
+            try:
+                cursor.execute("DROP TRIGGER IF EXISTS security_audit_logs_no_update;")
+                cursor.execute("DROP TRIGGER IF EXISTS security_audit_logs_no_delete;")
+                cursor.execute("""
+                CREATE TRIGGER security_audit_logs_no_update
+                BEFORE UPDATE ON security_audit_logs
+                FOR EACH ROW
+                BEGIN
+                    SELECT RAISE(FAIL, 'Updates to security_audit_logs are not allowed.')
+                    WHERE NEW.id IS NOT OLD.id
+                       OR NEW.timestamp IS NOT OLD.timestamp
+                       OR NEW.event_type IS NOT OLD.event_type
+                       OR (NEW.user_id IS NOT OLD.user_id AND NEW.user_id IS NOT NULL)
+                       OR NEW.email IS NOT OLD.email
+                       OR NEW.ip_address IS NOT OLD.ip_address
+                       OR NEW.status IS NOT OLD.status
+                       OR NEW.details IS NOT OLD.details
+                       OR NEW.user_agent IS NOT OLD.user_agent;
+                END;
+                """)
+                cursor.execute("""
+                CREATE TRIGGER security_audit_logs_no_delete
+                BEFORE DELETE ON security_audit_logs
+                BEGIN
+                    SELECT RAISE(FAIL, 'Deletions from security_audit_logs are not allowed.');
+                END;
+                """)
+            except Exception as trigger_err:
+                self.logger.warning(f"Could not create audit log triggers: {trigger_err}")
+
             conn.commit()
             self.logger.info("Security database tables initialized successfully.")
         except Exception as e:
@@ -642,33 +673,58 @@ class SQLiteUserRepository(IUserRepository):
             conn.close()
 
     def update_session_logout(self, jti: str, logout_time: str) -> None:
-        """Finds active session login log matching JTI and updates its logout_time."""
+        """Logs a new LOGOUT event instead of updating the LOGIN_SUCCESS row."""
         conn = self._get_connection()
         try:
+            import json
             with conn:
                 cursor = conn.cursor()
+
+                # Check if a logout or revocation for this JTI already exists to prevent duplicate state
                 cursor.execute("""
-                    SELECT id, details FROM security_audit_logs 
+                    SELECT details FROM security_audit_logs
+                    WHERE (event_type = 'LOGOUT' OR event_type = 'SESSION_REVOKED') AND details LIKE ?;
+                """, (f'%{jti}%',))
+                already_ended = False
+                for r in cursor.fetchall():
+                    try:
+                        det = json.loads(r[0] or "{}")
+                        if det.get("jti") == jti:
+                            already_ended = True
+                            break
+                    except Exception:
+                        pass
+
+                if already_ended:
+                    return
+
+                # Find active session login log matching JTI to preserve context
+                cursor.execute("""
+                    SELECT user_id, email, ip_address, user_agent, details FROM security_audit_logs
                     WHERE event_type = 'LOGIN_SUCCESS' AND status = 'SUCCESS' AND details LIKE ?;
                 """, (f'%{jti}%',))
                 rows = cursor.fetchall()
                 for r in rows:
-                    row_id, details_str = r
+                    user_id, email, ip_address, user_agent, details_str = r
                     try:
-                        import json
-                        details = json.loads(details_str)
+                        details = json.loads(details_str or "{}")
                         if details.get("jti") == jti:
-                            details["logout_time"] = logout_time
+                            logout_details = {
+                                "jti": jti,
+                                "logout_time": logout_time,
+                                "description": "Session logged out"
+                            }
                             cursor.execute("""
-                                UPDATE security_audit_logs SET details = ? WHERE id = ?;
-                            """, (json.dumps(details), row_id))
+                                INSERT INTO security_audit_logs (timestamp, event_type, user_id, email, ip_address, status, details, user_agent)
+                                VALUES (?, 'LOGOUT', ?, ?, ?, 'SUCCESS', ?, ?);
+                            """, (logout_time, user_id, email, ip_address, json.dumps(logout_details), user_agent))
                     except Exception:
                         pass
         finally:
             conn.close()
 
     def revoke_other_sessions(self, user_id: int, current_jti: str, logout_time: str) -> None:
-        """Revokes all other active sessions for user, marking them logged out and revoking their JTIs."""
+        """Revokes all other active sessions for user, recording immutable SESSION_REVOKED events and revoking their JTIs."""
         conn = self._get_connection()
         try:
             import json
@@ -676,24 +732,44 @@ class SQLiteUserRepository(IUserRepository):
             with conn:
                 cursor = conn.cursor()
                 
-                # Find all LOGIN_SUCCESS audit logs for this user
+                # 1. Find all JTIs that have already been logged out or revoked
                 cursor.execute("""
-                    SELECT id, details FROM security_audit_logs 
+                    SELECT details FROM security_audit_logs
+                    WHERE user_id = ? AND (event_type = 'LOGOUT' OR event_type = 'SESSION_REVOKED');
+                """, (user_id,))
+                ended_jtis = set()
+                for r in cursor.fetchall():
+                    try:
+                        det = json.loads(r[0] or "{}")
+                        jti = det.get("jti")
+                        if jti:
+                            ended_jtis.add(jti)
+                    except Exception:
+                        pass
+
+                # 2. Find all LOGIN_SUCCESS audit logs for this user to extract context
+                cursor.execute("""
+                    SELECT details, email, ip_address, user_agent FROM security_audit_logs
                     WHERE user_id = ? AND event_type = 'LOGIN_SUCCESS' AND status = 'SUCCESS';
                 """, (user_id,))
                 rows = cursor.fetchall()
                 
                 for r in rows:
-                    row_id, details_str = r
+                    details_str, email, ip_address, user_agent = r
                     try:
-                        details = json.loads(details_str)
+                        details = json.loads(details_str or "{}")
                         jti = details.get("jti")
-                        if jti and jti != current_jti and not details.get("logout_time"):
-                            # Mark session logged out
-                            details["logout_time"] = logout_time
+                        if jti and jti != current_jti and jti not in ended_jtis:
+                            # Insert a SESSION_REVOKED row
+                            revocation_details = {
+                                "jti": jti,
+                                "logout_time": logout_time,
+                                "reason": "Revoked by user from another device/session"
+                            }
                             cursor.execute("""
-                                UPDATE security_audit_logs SET details = ? WHERE id = ?;
-                            """, (json.dumps(details), row_id))
+                                INSERT INTO security_audit_logs (timestamp, event_type, user_id, email, ip_address, status, details, user_agent)
+                                VALUES (?, 'SESSION_REVOKED', ?, ?, ?, 'SUCCESS', ?, ?);
+                            """, (logout_time, user_id, email, ip_address, json.dumps(revocation_details), user_agent))
                             
                             # Add to revoked_tokens table
                             expires_at = time.time() + 86400

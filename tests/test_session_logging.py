@@ -114,15 +114,46 @@ class TestSessionLoggingAndRevocation(unittest.TestCase):
         self.assertTrue(any(s["event_type"] == "LOGIN_SUCCESS" for s in sessions))
         self.assertTrue(any(s["event_type"] == "LOGIN_FAILURE" for s in sessions))
 
-        # 4. Logout updates login session
+        # 4. Logout creates a separate LOGOUT event and does not mutate LOGIN_SUCCESS row
         resp_logout = self.client.post("/api/auth/logout")
         self.assertEqual(resp_logout.status_code, 200)
 
-        # Assert logout_time is updated in login_success record
-        logs = self.repo.get_security_audit_logs(limit=5)
-        updated_success_log = next(log for log in logs if log["event_type"] == "LOGIN_SUCCESS")
-        details_updated = json.loads(updated_success_log["details"])
-        self.assertIsNotNone(details_updated["logout_time"])
+        # Assert LOGIN_SUCCESS details remain unchanged (append-only)
+        logs = self.repo.get_security_audit_logs(limit=10)
+        success_log = next(log for log in logs if log["event_type"] == "LOGIN_SUCCESS")
+        details_success = json.loads(success_log["details"])
+        self.assertIsNone(details_success["logout_time"])
+
+        # Assert a separate LOGOUT event exists
+        def has_jti(details_str):
+            if not details_str:
+                return False
+            try:
+                d = json.loads(details_str)
+                return isinstance(d, dict) and "jti" in d
+            except Exception:
+                return False
+        logout_log = next(log for log in logs if log["event_type"] == "LOGOUT" and has_jti(log["details"]))
+        self.assertIsNotNone(logout_log)
+
+        # 5. Log in again to verify GET sessions endpoint returns dynamically resolved logout_time for the previous session
+        resp_login_again = self.client.post("/api/auth/login", json={
+            "email": "doctor@aurascan.ai",
+            "password": self.password
+        }, headers={"User-Agent": user_agent})
+        self.assertEqual(resp_login_again.status_code, 200)
+
+        resp_sessions = self.client.get("/api/auth/profile/sessions")
+        self.assertEqual(resp_sessions.status_code, 200)
+        sessions = resp_sessions.get_json()["sessions"]
+
+        # There should be two LOGIN_SUCCESS entries now.
+        # The older one should have logout_time populated, and the new one should have logout_time None!
+        login_success_sessions = [s for s in sessions if s["event_type"] == "LOGIN_SUCCESS"]
+        self.assertEqual(len(login_success_sessions), 2)
+
+        self.assertIsNone(login_success_sessions[0]["logout_time"])
+        self.assertIsNotNone(login_success_sessions[1]["logout_time"])
 
     def test_logout_other_devices_revocation(self):
         """Verify that revoking all other sessions updates database logout times and revokes JTIs."""

@@ -858,32 +858,58 @@ def create_app(db_path: str) -> Flask:
         conn.row_factory = sqlite3.Row
         try:
             cursor = conn.cursor()
+            # Fetch last 100 session-related audit logs to build JTI ends mapping
             cursor.execute("""
                 SELECT timestamp, event_type, ip_address, details
                 FROM security_audit_logs
-                WHERE user_id = ? AND (event_type LIKE 'LOGIN%' OR event_type = 'LOGOUT' OR event_type = 'REVOKE_ALL_SESSIONS')
-                ORDER BY id DESC LIMIT 15;
+                WHERE user_id = ? AND (event_type LIKE 'LOGIN%' OR event_type = 'LOGOUT' OR event_type = 'SESSION_REVOKED' OR event_type = 'REVOKE_ALL_SESSIONS')
+                ORDER BY id DESC LIMIT 100;
             """, (current_user.id,))
-            rows = cursor.fetchall()
+            all_rows = [dict(r) for r in cursor.fetchall()]
+
+            # Build JTI ending time mapping
+            jti_ends = {}
+            for r in all_rows:
+                if r["event_type"] in ("LOGOUT", "SESSION_REVOKED"):
+                    try:
+                        details = json.loads(r["details"] or "{}")
+                        jti = details.get("jti")
+                        if jti and jti not in jti_ends:
+                            jti_ends[jti] = r["timestamp"]
+                    except Exception:
+                        pass
+
+            # Slice to first 15 events to return (preserving original limit of 15)
+            rows_to_return = all_rows[:15]
 
             sessions = []
-            for r in rows:
-                d = dict(r)
+            for d in rows_to_return:
                 details_str = d.get("details", "{}")
                 try:
                     details = json.loads(details_str)
                 except Exception:
                     details = {}
 
+                # Dynamically resolve logout_time if it's a LOGIN_SUCCESS event and we found a corresponding logout/revocation JTI
+                logout_time = details.get("logout_time")
+                jti = details.get("jti")
+                if d["event_type"] == "LOGIN_SUCCESS" and jti and jti in jti_ends:
+                    logout_time = jti_ends[jti]
+
+                # Map SESSION_REVOKED to LOGOUT for frontend template compatibility
+                event_type = d.get("event_type")
+                if event_type == "SESSION_REVOKED":
+                    event_type = "LOGOUT"
+
                 sessions.append({
                     "timestamp": convert_utc_to_ist(d.get("timestamp")),
-                    "event_type": d.get("event_type"),
+                    "event_type": event_type,
                     "ip_address": d.get("ip_address"),
                     "browser": details.get("browser", "Unknown Browser"),
                     "device": details.get("device", "Unknown Device"),
                     "location": details.get("location", "Unknown Location"),
                     "login_time": convert_utc_to_ist(details.get("login_time")),
-                    "logout_time": convert_utc_to_ist(details.get("logout_time")),
+                    "logout_time": convert_utc_to_ist(logout_time),
                 })
             return jsonify({"sessions": sessions})
         except Exception as e:
