@@ -1280,6 +1280,18 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 total_http_requests = 0
                 avg_http_latency_ms = 0.0
 
+            # Fetch HTTP request latencies for percentiles
+            http_latencies = []
+            try:
+                cursor.execute("SELECT duration_ms FROM http_request_telemetry WHERE duration_ms IS NOT NULL ORDER BY timestamp DESC LIMIT 10000;")
+                http_latencies = [r[0] for r in cursor.fetchall()]
+            except Exception:
+                pass
+
+            http_p50 = SQLitePersistenceRepository.calculate_percentile(http_latencies, 50.0)
+            http_p95 = SQLitePersistenceRepository.calculate_percentile(http_latencies, 95.0)
+            http_p99 = SQLitePersistenceRepository.calculate_percentile(http_latencies, 99.0)
+
             # 11. Batch Performance Telemetry aggregates
             try:
                 cursor.execute("SELECT COUNT(*) FROM batch_performance_telemetry;")
@@ -1294,6 +1306,18 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 total_batches = 0
                 avg_batch_latency_ms = 0.0
                 total_batch_items = 0
+
+            # Fetch Batch total durations for percentiles
+            batch_durations = []
+            try:
+                cursor.execute("SELECT total_duration_ms FROM batch_performance_telemetry WHERE total_duration_ms IS NOT NULL ORDER BY timestamp DESC LIMIT 10000;")
+                batch_durations = [r[0] for r in cursor.fetchall()]
+            except Exception:
+                pass
+
+            batch_p50 = SQLitePersistenceRepository.calculate_percentile(batch_durations, 50.0)
+            batch_p95 = SQLitePersistenceRepository.calculate_percentile(batch_durations, 95.0)
+            batch_p99 = SQLitePersistenceRepository.calculate_percentile(batch_durations, 99.0)
 
             return {
                 "total_predictions": total_predictions,
@@ -1310,7 +1334,13 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 "avg_http_latency_ms": avg_http_latency_ms,
                 "total_batches": total_batches,
                 "avg_batch_latency_ms": avg_batch_latency_ms,
-                "total_batch_items": total_batch_items
+                "total_batch_items": total_batch_items,
+                "http_p50_latency_ms": http_p50,
+                "http_p95_latency_ms": http_p95,
+                "http_p99_latency_ms": http_p99,
+                "batch_p50_latency_ms": batch_p50,
+                "batch_p95_latency_ms": batch_p95,
+                "batch_p99_latency_ms": batch_p99
             }
         except Exception as e:
             self.logger.error(f"Failed to query health telemetry: {e}")
@@ -1329,7 +1359,13 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 "avg_http_latency_ms": 0.0,
                 "total_batches": 0,
                 "avg_batch_latency_ms": 0.0,
-                "total_batch_items": 0
+                "total_batch_items": 0,
+                "http_p50_latency_ms": None,
+                "http_p95_latency_ms": None,
+                "http_p99_latency_ms": None,
+                "batch_p50_latency_ms": None,
+                "batch_p95_latency_ms": None,
+                "batch_p99_latency_ms": None
             }
         finally:
             conn.close()
@@ -1394,3 +1430,32 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             self.logger.error(f"Failed to save batch performance telemetry: {e}")
         finally:
             conn.close()
+
+    @staticmethod
+    def calculate_percentile(values: list, percentile: float) -> Optional[float]:
+        """Calculates the percentile of a list of numeric values using linear interpolation."""
+        clean_vals = []
+        for val in values:
+            if val is None:
+                continue
+            try:
+                f_val = float(val)
+                import math
+                if not math.isnan(f_val) and not math.isinf(f_val):
+                    clean_vals.append(f_val)
+            except (ValueError, TypeError):
+                continue
+
+        if not clean_vals:
+            return None
+
+        sorted_vals = sorted(clean_vals)
+        n = len(sorted_vals)
+        if n == 1:
+            return float(sorted_vals[0])
+
+        idx_float = (n - 1) * (percentile / 100.0)
+        idx_low = int(idx_float)
+        idx_high = min(idx_low + 1, n - 1)
+        weight = idx_float - idx_low
+        return float(sorted_vals[idx_low] * (1.0 - weight) + sorted_vals[idx_high] * weight)
