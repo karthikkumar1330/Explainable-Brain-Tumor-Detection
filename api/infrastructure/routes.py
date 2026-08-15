@@ -506,6 +506,20 @@ def get_pipeline_health_telemetry(current_user: User = Depends(require_roles([Ro
         raise HTTPException(status_code=500, detail=f"Health telemetry diagnostics failed: {e}")
 
 
+@router.get("/admin/monitoring/trends")
+def get_monitoring_trends(days: int = 30, current_user: User = Depends(require_roles([Role.ADMIN]))):
+    """API Endpoint: Retrieves daily aggregated HTTP and batch performance trends."""
+    try:
+        if days <= 0 or days > 365:
+            days = 30
+        db_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)
+        trends = db_repo.get_monitoring_trends(days=days)
+        return trends
+    except Exception as e:
+        logger.error(f"Failed to compile monitoring trends: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to compile monitoring trends: {e}")
+
+
 
 @router.post("/report")
 def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))):

@@ -8,6 +8,7 @@ class SystemHealthReport:
     overall_status: str  # "HEALTHY", "WARNING", "CRITICAL"
     cpu_cores: int
     cpu_threads: int
+    cpu_usage_percent: float
     ram_total_gb: float
     ram_used_gb: float
     ram_usage_percent: float

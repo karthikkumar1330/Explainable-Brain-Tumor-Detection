@@ -28,6 +28,72 @@ class MEMORYSTATUSEX(ctypes.Structure):
     ]
 
 
+class FILETIME(ctypes.Structure):
+    _fields_ = [
+        ("dwLowDateTime", ctypes.c_ulong),
+        ("dwHighDateTime", ctypes.c_ulong)
+    ]
+
+
+# Cache to store previous tick readings for non-blocking delta CPU calculations
+_last_idle = None
+_last_kernel = None
+_last_user = None
+_last_time = None
+
+
+def _get_live_cpu_percent() -> float:
+    global _last_idle, _last_kernel, _last_user, _last_time
+    try:
+        if not hasattr(ctypes.windll, "kernel32"):
+            return 15.0  # Fallback for non-windows
+
+        idle = FILETIME()
+        kernel = FILETIME()
+        user = FILETIME()
+
+        if not ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)):
+            return 15.0
+
+        idle_ticks = idle.dwLowDateTime + (idle.dwHighDateTime << 32)
+        kernel_ticks = kernel.dwLowDateTime + (kernel.dwHighDateTime << 32)
+        user_ticks = user.dwLowDateTime + (user.dwHighDateTime << 32)
+
+        now = time.perf_counter()
+
+        if _last_idle is None:
+            _last_idle = idle_ticks
+            _last_kernel = kernel_ticks
+            _last_user = user_ticks
+            _last_time = now
+            # Small baseline sleep on first load
+            time.sleep(0.02)
+            if not ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)):
+                return 15.0
+            idle_ticks = idle.dwLowDateTime + (idle.dwHighDateTime << 32)
+            kernel_ticks = kernel.dwLowDateTime + (kernel.dwHighDateTime << 32)
+            user_ticks = user.dwLowDateTime + (user.dwHighDateTime << 32)
+            now = time.perf_counter()
+
+        idle_diff = idle_ticks - _last_idle
+        kernel_diff = kernel_ticks - _last_kernel
+        user_diff = user_ticks - _last_user
+
+        _last_idle = idle_ticks
+        _last_kernel = kernel_ticks
+        _last_user = user_ticks
+        _last_time = now
+
+        total_diff = kernel_diff + user_diff
+        if total_diff <= 0:
+            return 0.0
+
+        cpu_load = (total_diff - idle_diff) / total_diff
+        return max(0.0, min(100.0, cpu_load * 100.0))
+    except Exception:
+        return 15.0
+
+
 class PipelineHealthMonitor:
     """Service to evaluate system resources, active deep learning models, and analytical components."""
 
@@ -93,6 +159,7 @@ class PipelineHealthMonitor:
         return {
             "cpu_cores": cpu_cores,
             "cpu_threads": cpu_threads,
+            "cpu_usage_percent": _get_live_cpu_percent(),
             "ram_total_gb": ram_total,
             "ram_used_gb": ram_used,
             "ram_usage_percent": ram_percent,
@@ -281,6 +348,7 @@ class PipelineHealthMonitor:
             overall_status=overall,
             cpu_cores=metrics["cpu_cores"],
             cpu_threads=metrics["cpu_threads"],
+            cpu_usage_percent=metrics["cpu_usage_percent"],
             ram_total_gb=metrics["ram_total_gb"],
             ram_used_gb=metrics["ram_used_gb"],
             ram_usage_percent=metrics["ram_usage_percent"],

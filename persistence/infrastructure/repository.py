@@ -1316,6 +1316,14 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 total_http_requests = 0
                 avg_http_latency_ms = 0.0
 
+            # HTTP error rate (status_code >= 500 / total_http_requests)
+            try:
+                cursor.execute("SELECT COUNT(*) FROM http_request_telemetry WHERE status_code >= 500;")
+                failed_http = cursor.fetchone()[0]
+                http_error_rate = failed_http / total_http_requests if total_http_requests > 0 else 0.0
+            except Exception:
+                http_error_rate = 0.0
+
             # Fetch HTTP request latencies for percentiles
             http_latencies = []
             try:
@@ -1342,6 +1350,16 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 total_batches = 0
                 avg_batch_latency_ms = 0.0
                 total_batch_items = 0
+
+            # Batch items error rate (failed_items / total_items)
+            try:
+                cursor.execute("SELECT SUM(failed_items), SUM(total_items) FROM batch_performance_telemetry;")
+                row = cursor.fetchone()
+                sum_failed = row[0] if row[0] is not None else 0
+                sum_total = row[1] if row[1] is not None else 0
+                batch_error_rate = sum_failed / sum_total if sum_total > 0 else 0.0
+            except Exception:
+                batch_error_rate = 0.0
 
             # Fetch Batch total durations for percentiles
             batch_durations = []
@@ -1404,9 +1422,11 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 "xai_methods": xai_methods,
                 "total_http_requests": total_http_requests,
                 "avg_http_latency_ms": avg_http_latency_ms,
+                "http_error_rate": http_error_rate,
                 "total_batches": total_batches,
                 "avg_batch_latency_ms": avg_batch_latency_ms,
                 "total_batch_items": total_batch_items,
+                "batch_error_rate": batch_error_rate,
                 "http_p50_latency_ms": http_p50,
                 "http_p95_latency_ms": http_p95,
                 "http_p99_latency_ms": http_p99,
@@ -1431,9 +1451,11 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 "xai_methods": {},
                 "total_http_requests": 0,
                 "avg_http_latency_ms": 0.0,
+                "http_error_rate": 0.0,
                 "total_batches": 0,
                 "avg_batch_latency_ms": 0.0,
                 "total_batch_items": 0,
+                "batch_error_rate": 0.0,
                 "http_p50_latency_ms": None,
                 "http_p95_latency_ms": None,
                 "http_p99_latency_ms": None,
@@ -1445,6 +1467,67 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             }
         finally:
             conn.close()
+
+    def get_monitoring_trends(self, days: int = 30) -> Dict[str, List[Dict[str, Any]]]:
+        """Queries and groups HTTP requests and batches daily via SQLite-side aggregation."""
+        import datetime
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Calculate time threshold
+        cutoff_date = (datetime.datetime.utcnow() - datetime.timedelta(days=days)).isoformat()
+
+        http_trends = []
+        batch_trends = []
+
+        try:
+            # Query 1: HTTP aggregates grouped by date
+            cursor.execute("""
+                SELECT
+                    strftime('%Y-%m-%d', timestamp) as period,
+                    COUNT(*) as request_count,
+                    AVG(duration_ms) as average_latency_ms
+                FROM http_request_telemetry
+                WHERE timestamp >= ?
+                GROUP BY period
+                ORDER BY period ASC
+                LIMIT ?;
+            """, (cutoff_date, days))
+            for row in cursor.fetchall():
+                http_trends.append({
+                    "period": row["period"],
+                    "request_count": row["request_count"],
+                    "average_latency_ms": float(row["average_latency_ms"]) if row["average_latency_ms"] is not None else 0.0
+                })
+
+            # Query 2: Batch aggregates grouped by date
+            cursor.execute("""
+                SELECT
+                    strftime('%Y-%m-%d', timestamp) as period,
+                    COUNT(*) as batch_count,
+                    AVG(total_duration_ms) as average_duration_ms
+                FROM batch_performance_telemetry
+                WHERE timestamp >= ?
+                GROUP BY period
+                ORDER BY period ASC
+                LIMIT ?;
+            """, (cutoff_date, days))
+            for row in cursor.fetchall():
+                batch_trends.append({
+                    "period": row["period"],
+                    "batch_count": row["batch_count"],
+                    "average_duration_ms": float(row["average_duration_ms"]) if row["average_duration_ms"] is not None else 0.0
+                })
+        except Exception as e:
+            self.logger.error(f"Failed to query monitoring trends: {e}")
+        finally:
+            conn.close()
+
+        return {
+            "http": http_trends,
+            "batch": batch_trends
+        }
 
     def save_timeline_trace(self, prediction_id: int, timeline_data: Dict[str, float]) -> None:
         """Persists the latency timeline traces for a prediction run."""

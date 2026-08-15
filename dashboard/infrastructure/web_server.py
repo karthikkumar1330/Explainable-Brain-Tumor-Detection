@@ -1133,11 +1133,37 @@ def create_app(db_path: str) -> Flask:
     @roles_accepted(Role.ADMIN)
     def health_telemetry(current_user: User):
         try:
+            from monitoring.infrastructure.health_monitor import PipelineHealthMonitor
+            monitor = PipelineHealthMonitor(db_path=app.config["DB_PATH"])
+            report = monitor.run_health_checks(model_cls=None, model_seg=None, device="cpu")
+            report_dict = report.to_dict()
+
             telemetry = persistence_repo.get_health_telemetry()
-            return jsonify(telemetry)
+            report_dict["historical_telemetry"] = telemetry
+            # Backward compatibility: merge database aggregates into the top-level JSON structure
+            report_dict.update(telemetry)
+            return jsonify(report_dict)
         except Exception as e:
             app.logger.error(f"Error compiling health telemetry: {e}", exc_info=True)
             return jsonify({"error": "Internal health telemetry compilation error"}), 500
+
+    @app.route("/api/admin/monitoring/trends")
+    @roles_accepted(Role.ADMIN)
+    def monitoring_trends(current_user: User):
+        try:
+            days_str = request.args.get("days", "30").strip()
+            try:
+                days = int(days_str)
+                if days <= 0 or days > 365:
+                    days = 30
+            except ValueError:
+                days = 30
+
+            trends = persistence_repo.get_monitoring_trends(days=days)
+            return jsonify(trends)
+        except Exception as e:
+            app.logger.error(f"Error compiling monitoring trends: {e}", exc_info=True)
+            return jsonify({"error": "Internal monitoring trends compilation error"}), 500
 
     @app.route("/api/history")
     @login_required
