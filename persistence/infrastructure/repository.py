@@ -1544,6 +1544,18 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         loaded_at: str
     ) -> int:
         """Registers a model provenance record in the database idempotently and returns its ID."""
+        if not isinstance(checkpoint_sha256, str):
+            raise ValueError("checkpoint_sha256 must be a string")
+        if not checkpoint_sha256:
+            raise ValueError("checkpoint_sha256 cannot be empty")
+
+        checkpoint_sha256_normalized = checkpoint_sha256.strip().lower()
+        if len(checkpoint_sha256_normalized) != 64:
+            raise ValueError(f"checkpoint_sha256 must be exactly 64 characters long, got {len(checkpoint_sha256_normalized)}")
+        if not all(c in "0123456789abcdef" for c in checkpoint_sha256_normalized):
+            raise ValueError("checkpoint_sha256 must contain only hexadecimal characters")
+
+        checkpoint_sha256 = checkpoint_sha256_normalized
         conn = self._get_connection()
         try:
             # Idempotence check

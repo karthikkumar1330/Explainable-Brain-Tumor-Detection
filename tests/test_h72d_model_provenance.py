@@ -131,10 +131,9 @@ class TestH72DModelProvenance(unittest.TestCase):
                     os.remove(p)
 
     def test_03_missing_checkpoint_fails_safely(self):
-        """3. Hashing helper fails safely returning default empty hash for missing files."""
-        h = _calculate_file_sha256("non_existent_model_checkpoint.pth")
-        # Empty file hash / default hash representation
-        self.assertEqual(h, "da39a3ee5e6b4b0d3255bfef95601890afd80709")
+        """3. Hashing helper fails safely by raising FileNotFoundError for missing files."""
+        with self.assertRaises(FileNotFoundError):
+            _calculate_file_sha256("non_existent_model_checkpoint.pth")
 
     def test_04_absolute_filesystem_paths_are_never_persisted(self):
         """4. Verify absolute paths are normalized/blocked from DB model provenance identifiers."""
@@ -150,7 +149,7 @@ class TestH72DModelProvenance(unittest.TestCase):
             architecture="EfficientNet-B0",
             model_version="1.0",
             checkpoint_identifier=safe_ident,
-            checkpoint_sha256="fake_sha256_12345",
+            checkpoint_sha256="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             device="cpu",
             loaded_at=loaded_at
         )
@@ -175,7 +174,7 @@ class TestH72DModelProvenance(unittest.TestCase):
             architecture="EfficientNet-B0",
             model_version="1.0",
             checkpoint_identifier="classification/efficientnet_b0.pth",
-            checkpoint_sha256="same_sha_abc",
+            checkpoint_sha256="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             device="cpu",
             loaded_at=loaded_at
         )
@@ -187,7 +186,7 @@ class TestH72DModelProvenance(unittest.TestCase):
             architecture="EfficientNet-B0",
             model_version="1.0",
             checkpoint_identifier="classification/efficientnet_b0.pth",
-            checkpoint_sha256="same_sha_abc",
+            checkpoint_sha256="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             device="cpu",
             loaded_at=loaded_at
         )
@@ -204,7 +203,7 @@ class TestH72DModelProvenance(unittest.TestCase):
             architecture="EfficientNet-B0",
             model_version="1.0",
             checkpoint_identifier="classification/efficientnet_b0.pth",
-            checkpoint_sha256="sha_v1",
+            checkpoint_sha256="cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
             device="cpu",
             loaded_at=loaded_at
         )
@@ -215,7 +214,7 @@ class TestH72DModelProvenance(unittest.TestCase):
             architecture="EfficientNet-B0",
             model_version="1.0",
             checkpoint_identifier="classification/efficientnet_b0.pth",
-            checkpoint_sha256="sha_v2",  # modified checksum
+            checkpoint_sha256="dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",  # modified checksum
             device="cpu",
             loaded_at=loaded_at
         )
@@ -233,7 +232,7 @@ class TestH72DModelProvenance(unittest.TestCase):
             architecture="EfficientNet-B0",
             model_version="1.0",
             checkpoint_identifier="classification/model.pth",
-            checkpoint_sha256="cls_test_sha",
+            checkpoint_sha256="eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
             device="cpu",
             loaded_at=loaded_at
         )
@@ -243,7 +242,7 @@ class TestH72DModelProvenance(unittest.TestCase):
             architecture="UNeXt",
             model_version="1.0",
             checkpoint_identifier="unext/model.pth",
-            checkpoint_sha256="seg_test_sha",
+            checkpoint_sha256="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
             device="cpu",
             loaded_at=loaded_at
         )
@@ -361,6 +360,207 @@ class TestH72DModelProvenance(unittest.TestCase):
 
         resp_unauth = self.flask_client.get("/api/health-telemetry")
         self.assertEqual(resp_unauth.status_code, 401)
+
+    def test_h72d_validation_valid_sha256_accepted(self):
+        """A. Verify valid 64-character SHA-256 is accepted by repository."""
+        repo = SQLitePersistenceRepository(db_path=self.db_path)
+        h = "1" * 64
+        prov_id = repo.register_model_provenance(
+            model_type="CLASSIFICATION",
+            model_name="efficientnet_b0",
+            architecture="EfficientNet-B0",
+            model_version="1.0",
+            checkpoint_identifier="classification/efficientnet_b0.pth",
+            checkpoint_sha256=h,
+            device="cpu",
+            loaded_at=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
+        self.assertGreater(prov_id, 0)
+
+    def test_h72d_validation_empty_hash_rejected(self):
+        """B. Verify empty hash is rejected with ValueError."""
+        repo = SQLitePersistenceRepository(db_path=self.db_path)
+        for bad_hash in ["", "   "]:
+            with self.assertRaises(ValueError):
+                repo.register_model_provenance(
+                    model_type="CLASSIFICATION",
+                    model_name="efficientnet_b0",
+                    architecture="EfficientNet-B0",
+                    model_version="1.0",
+                    checkpoint_identifier="classification/efficientnet_b0.pth",
+                    checkpoint_sha256=bad_hash,
+                    device="cpu",
+                    loaded_at="2026-08-15"
+                )
+
+    def test_h72d_validation_sha1_hash_rejected(self):
+        """C. Verify 40-character SHA-1 hash is rejected with ValueError."""
+        repo = SQLitePersistenceRepository(db_path=self.db_path)
+        sha1 = "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+        with self.assertRaises(ValueError):
+            repo.register_model_provenance(
+                model_type="CLASSIFICATION",
+                model_name="efficientnet_b0",
+                architecture="EfficientNet-B0",
+                model_version="1.0",
+                checkpoint_identifier="classification/efficientnet_b0.pth",
+                checkpoint_sha256=sha1,
+                device="cpu",
+                loaded_at="2026-08-15"
+            )
+
+    def test_h72d_validation_malformed_hash_rejected(self):
+        """D. Verify malformed hash (wrong length or non-hex characters) is rejected."""
+        repo = SQLitePersistenceRepository(db_path=self.db_path)
+        bad_hashes = [
+            "2" * 63,            # too short (63 chars)
+            "2" * 65,            # too long (65 chars)
+            "g" * 64,            # non-hex character 'g'
+            "1234abcd" * 8 + "!", # contains special character
+        ]
+        for bh in bad_hashes:
+            with self.assertRaises(ValueError):
+                repo.register_model_provenance(
+                    model_type="CLASSIFICATION",
+                    model_name="efficientnet_b0",
+                    architecture="EfficientNet-B0",
+                    model_version="1.0",
+                    checkpoint_identifier="classification/efficientnet_b0.pth",
+                    checkpoint_sha256=bh,
+                    device="cpu",
+                    loaded_at="2026-08-15"
+                )
+
+    def test_h72d_validation_uppercase_hex_normalized(self):
+        """E. Verify uppercase hex SHA-256 is accepted and normalized to lowercase."""
+        repo = SQLitePersistenceRepository(db_path=self.db_path)
+        upper_hash = "A" * 64
+        prov_id = repo.register_model_provenance(
+            model_type="CLASSIFICATION",
+            model_name="efficientnet_b0",
+            architecture="EfficientNet-B0",
+            model_version="1.0",
+            checkpoint_identifier="classification/efficientnet_b0.pth",
+            checkpoint_sha256=upper_hash,
+            device="cpu",
+            loaded_at="2026-08-15"
+        )
+        self.assertGreater(prov_id, 0)
+
+        record = repo.get_model_provenance(prov_id)
+        self.assertIsNotNone(record)
+        self.assertEqual(record["checkpoint_sha256"], "a" * 64)
+
+    def test_h72d_missing_checkpoint_raises_exception(self):
+        """F. Verify missing checkpoint raises FileNotFoundError."""
+        with self.assertRaises(FileNotFoundError):
+            _calculate_file_sha256("completely_missing_checkpoint_file.pth")
+
+    def test_h72d_unreadable_checkpoint_raises_exception(self):
+        """G. Verify unreadable checkpoint raises exception (e.g. IsADirectoryError)."""
+        import tempfile
+        import shutil
+        temp_dir = tempfile.mkdtemp()
+        try:
+            with self.assertRaises(Exception):
+                _calculate_file_sha256(temp_dir)
+        finally:
+            shutil.rmtree(temp_dir)
+
+    def test_h72d_hashing_exception_propagates(self):
+        """H. Verify exception propagates when file open/read fails."""
+        with patch("builtins.open", side_effect=PermissionError("Permission denied")):
+            with self.assertRaises(Exception):
+                _calculate_file_sha256("some_file.pth")
+
+    def test_h72d_provenance_failure_blocks_prediction(self):
+        """I & J. Verify that if provenance registration failed (None IDs), inference is blocked with HTTP 500."""
+        import api.infrastructure.routes as api_routes
+        with patch.object(api_routes, "classification_model_provenance_id", None),              patch.object(api_routes, "segmentation_model_provenance_id", None),              patch.object(api_routes, "model_cls", MagicMock()),              patch.object(api_routes, "model_seg", MagicMock()),              patch.object(api_routes, "predict_use_case", MagicMock()):
+
+            from fastapi import HTTPException as FastAPIHTTPException
+            with self.assertRaises(FastAPIHTTPException) as ctx:
+                api_routes._run_single_report_pipeline(
+                    filepath="dummy.png",
+                    intake=MagicMock(),
+                    current_user=self.doctor,
+                    scorecard=None,
+                    file_bytes=b"bytes",
+                    validator=None,
+                    t_start=1.0,
+                    t_endpoint_start=1.0,
+                    timeline={}
+                )
+            self.assertEqual(ctx.exception.status_code, 500)
+            self.assertEqual(ctx.exception.detail, "Internal server error occurred.")
+
+    def test_h72d_valid_provenance_ids_permit_inference(self):
+        """K. Verify that valid provenance IDs permit normal inference pipeline start."""
+        import api.infrastructure.routes as api_routes
+        with patch.object(api_routes, "classification_model_provenance_id", 1),              patch.object(api_routes, "segmentation_model_provenance_id", 2),              patch.object(api_routes, "model_cls", MagicMock()),              patch.object(api_routes, "model_seg", MagicMock()),              patch.object(api_routes, "predict_use_case", MagicMock()),              patch("cv2.imread", return_value=None):
+
+            from fastapi import HTTPException as FastAPIHTTPException
+            with self.assertRaises(FastAPIHTTPException) as ctx:
+                api_routes._run_single_report_pipeline(
+                    filepath="dummy.png",
+                    intake=MagicMock(),
+                    current_user=self.doctor,
+                    scorecard=None,
+                    file_bytes=b"bytes",
+                    validator=None,
+                    t_start=1.0,
+                    t_endpoint_start=1.0,
+                    timeline={}
+                )
+            self.assertEqual(ctx.exception.status_code, 500)
+            self.assertIn("Failed to read uploaded image", ctx.exception.detail)
+
+    def test_h72d_no_fake_checksum_persisted(self):
+        """N. Verify that no fake/fallback checksum (like the SHA-1 default) is ever saved in the DB."""
+        repo = SQLitePersistenceRepository(db_path=self.db_path)
+        sha1_default = "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+
+        with self.assertRaises(ValueError):
+            repo.register_model_provenance(
+                model_type="CLASSIFICATION",
+                model_name="efficientnet_b0",
+                architecture="EfficientNet-B0",
+                model_version="1.0",
+                checkpoint_identifier="classification/efficientnet_b0.pth",
+                checkpoint_sha256=sha1_default,
+                device="cpu",
+                loaded_at="2026-08-15"
+            )
+
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.execute("SELECT COUNT(*) FROM model_provenance WHERE checkpoint_sha256 = ?;", (sha1_default,))
+            count = cursor.fetchone()[0]
+            self.assertEqual(count, 0)
+        finally:
+            conn.close()
+
+    def test_h72d_no_sensitive_exception_details_exposed(self):
+        """O. Verify that prediction gate raises generic HTTP 500 without disclosing any details."""
+        import api.infrastructure.routes as api_routes
+        with patch.object(api_routes, "classification_model_provenance_id", None):
+            from fastapi import HTTPException as FastAPIHTTPException
+            with self.assertRaises(FastAPIHTTPException) as ctx:
+                api_routes._run_single_report_pipeline(
+                    filepath="dummy.png",
+                    intake=MagicMock(),
+                    current_user=self.doctor,
+                    scorecard=None,
+                    file_bytes=b"bytes",
+                    validator=None,
+                    t_start=1.0,
+                    t_endpoint_start=1.0,
+                    timeline={}
+                )
+            self.assertEqual(ctx.exception.detail, "Internal server error occurred.")
+            self.assertNotIn("path", ctx.exception.detail.lower())
+            self.assertNotIn("model", ctx.exception.detail.lower())
+            self.assertNotIn("none", ctx.exception.detail.lower())
 
 if __name__ == "__main__":
     unittest.main()

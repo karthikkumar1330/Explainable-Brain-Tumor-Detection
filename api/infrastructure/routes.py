@@ -65,16 +65,19 @@ logger = logging.getLogger("api_routes")
 
 def _calculate_file_sha256(filepath: str) -> str:
     import hashlib
-    if not filepath or not os.path.exists(filepath):
-        return "da39a3ee5e6b4b0d3255bfef95601890afd80709"
-    sha255 = hashlib.sha256()
-    try:
-        with open(filepath, "rb") as f:
-            for byte_block in iter(lambda: f.read(4096), b""):
-                sha255.update(byte_block)
-        return sha255.hexdigest()
-    except Exception:
-        return "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+    if not filepath:
+        raise ValueError("Filepath is empty or None")
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"Checkpoint file not found: {filepath}")
+    if not os.path.isfile(filepath):
+        raise ValueError(f"Path is not a file: {filepath}")
+
+    sha256_hash = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for byte_block in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(byte_block)
+    return sha256_hash.hexdigest().lower()
+
 
 
 def initialize_api_models():
@@ -95,8 +98,15 @@ def initialize_api_models():
 
     loaded_at_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Load classification pipeline
+    # Reset globals in case of re-initialization/failure
+    classification_model_provenance_id = None
+    segmentation_model_provenance_id = None
+    model_cls = None
+    model_seg = None
+    predict_use_case = None
+
     try:
+        # Load classification pipeline
         model_cls = EfficientNetB0Model(pretrained=False, num_classes=4)
         model_adapter = PyTorchModelAdapter(model=model_cls, device=str(device))
         model_adapter.load(CLS_CHECKPOINT)
@@ -116,11 +126,8 @@ def initialize_api_models():
             loaded_at=loaded_at_str
         )
         logger.info(f"Registered classification model provenance ID: {classification_model_provenance_id}")
-    except Exception as e:
-        logger.error(f"Failed to load classification checkpoint: {e}")
 
-    # Load UNeXt segmentation pipeline
-    try:
+        # Load UNeXt segmentation pipeline
         with open(SEG_CONFIG, "r") as f:
             seg_config = yaml.safe_load(f)
 
@@ -149,7 +156,14 @@ def initialize_api_models():
         )
         logger.info(f"Registered segmentation model provenance ID: {segmentation_model_provenance_id}")
     except Exception as e:
-        logger.error(f"Failed to load segmentation checkpoint: {e}")
+        logger.critical(f"Critical error during API model/provenance initialization: {e}")
+        # Clear out any partially loaded state to avoid inconsistent behavior
+        classification_model_provenance_id = None
+        segmentation_model_provenance_id = None
+        model_cls = None
+        model_seg = None
+        predict_use_case = None
+        raise e
 
 
 def preprocess_segmentation_image(img_bgr: np.ndarray, h: int, w: int) -> torch.Tensor:
@@ -562,6 +576,26 @@ def _run_single_report_pipeline(
     t_endpoint_start: float,
     timeline: Dict[str, float]
 ):
+    if (
+        not isinstance(classification_model_provenance_id, int)
+        or not isinstance(segmentation_model_provenance_id, int)
+        or model_cls is None
+        or model_seg is None
+        or predict_use_case is None
+    ):
+        logger.error(
+            f"Provenance gate blocked report generation: "
+            f"classification_model_provenance_id={classification_model_provenance_id}, "
+            f"segmentation_model_provenance_id={segmentation_model_provenance_id}, "
+            f"model_cls={model_cls is not None}, "
+            f"model_seg={model_seg is not None}, "
+            f"predict_use_case={predict_use_case is not None}"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error occurred."
+        )
+
     try:
         img_bgr = cv2.imread(filepath, cv2.IMREAD_COLOR)
         if img_bgr is None:
