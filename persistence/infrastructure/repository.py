@@ -437,7 +437,11 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             "CREATE INDEX IF NOT EXISTS idx_mri_rectangle_annotations_created ON mri_rectangle_annotations(created_at);",
             "CREATE INDEX IF NOT EXISTS idx_http_request_telemetry_timestamp ON http_request_telemetry(timestamp);",
             "CREATE INDEX IF NOT EXISTS idx_batch_performance_telemetry_timestamp ON batch_performance_telemetry(timestamp);",
-            "CREATE INDEX IF NOT EXISTS idx_model_provenance_sha256 ON model_provenance(checkpoint_sha256);"
+            "CREATE INDEX IF NOT EXISTS idx_model_provenance_sha256 ON model_provenance(checkpoint_sha256);",
+            "CREATE INDEX IF NOT EXISTS idx_mri_scans_patient_id ON mri_scans(patient_id);",
+            "CREATE INDEX IF NOT EXISTS idx_predictions_scan_id ON predictions(scan_id);",
+            "CREATE INDEX IF NOT EXISTS idx_clinical_reports_prediction_id ON clinical_reports(prediction_id);",
+            "CREATE INDEX IF NOT EXISTS idx_doctor_patient_assignments_doc_pat ON doctor_patient_assignments(doctor_id, patient_id);"
         ]
 
         conn = self._get_connection()

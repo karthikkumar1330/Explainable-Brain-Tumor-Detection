@@ -17,7 +17,7 @@ class AuthorizationService:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def can_access_patient(self, user: Optional[Any], patient_id: str) -> bool:
+    def can_access_patient(self, user: Optional[Any], patient_id: str, conn: Optional[sqlite3.Connection] = None) -> bool:
         """Verifies if the authenticated user is authorized to access the patient's records."""
         if not user:
             return False
@@ -42,10 +42,10 @@ class AuthorizationService:
             if doctor_id is None:
                 return False
 
-            conn = self._get_connection()
+            local_conn = conn or self._get_connection()
             try:
                 # Check explicit assignment
-                assignment = conn.execute(
+                assignment = local_conn.execute(
                     "SELECT 1 FROM doctor_patient_assignments WHERE doctor_id = ? AND patient_id = ?;",
                     (doctor_id, patient_id)
                 ).fetchone()
@@ -55,32 +55,67 @@ class AuthorizationService:
             except Exception:
                 pass
             finally:
-                conn.close()
+                if conn is None:
+                    local_conn.close()
 
             return False
 
         return False
 
-    def can_access_scan(self, user: Optional[Any], scan_id: int) -> bool:
+    def get_authorized_patient_ids(self, user: Optional[Any], conn: Optional[sqlite3.Connection] = None) -> Optional[set]:
+        """Returns a set of lowercase patient IDs authorized for the user, or None if authorized for all (Admin)."""
+        if not user:
+            return set()
+
+        role_val = user.role.value if hasattr(user.role, 'value') else str(user.role).lower()
+
+        if role_val == "admin":
+            return None # Admins can access everything
+
+        if role_val == "patient":
+            return {str(user.uuid).lower()}
+
+        if role_val == "doctor":
+            doctor_id = getattr(user, 'id', None)
+            if doctor_id is None:
+                return set()
+
+            local_conn = conn or self._get_connection()
+            try:
+                rows = local_conn.execute(
+                    "SELECT patient_id FROM doctor_patient_assignments WHERE doctor_id = ?;",
+                    (doctor_id,)
+                ).fetchall()
+                return {str(row["patient_id"]).lower() for row in rows}
+            except Exception:
+                return set()
+            finally:
+                if conn is None:
+                    local_conn.close()
+
+        return set()
+
+    def can_access_scan(self, user: Optional[Any], scan_id: int, conn: Optional[sqlite3.Connection] = None) -> bool:
         """Verifies if the authenticated user is authorized to access the given MRI scan."""
-        conn = self._get_connection()
+        local_conn = conn or self._get_connection()
         try:
-            row = conn.execute("SELECT patient_id FROM mri_scans WHERE id = ?;", (scan_id,)).fetchone()
+            row = local_conn.execute("SELECT patient_id FROM mri_scans WHERE id = ?;", (scan_id,)).fetchone()
             if not row:
                 return False
             patient_id = row["patient_id"]
         except Exception:
             return False
         finally:
-            conn.close()
+            if conn is None:
+                local_conn.close()
 
-        return self.can_access_patient(user, patient_id)
+        return self.can_access_patient(user, patient_id, conn=conn)
 
-    def can_access_prediction(self, user: Optional[Any], prediction_id: int) -> bool:
+    def can_access_prediction(self, user: Optional[Any], prediction_id: int, conn: Optional[sqlite3.Connection] = None) -> bool:
         """Verifies authorization for the given prediction by validating the ownership chain."""
-        conn = self._get_connection()
+        local_conn = conn or self._get_connection()
         try:
-            row = conn.execute("""
+            row = local_conn.execute("""
                 SELECT s.patient_id 
                 FROM predictions p
                 JOIN mri_scans s ON p.scan_id = s.id
@@ -92,16 +127,17 @@ class AuthorizationService:
         except Exception:
             return False
         finally:
-            conn.close()
+            if conn is None:
+                local_conn.close()
 
-        return self.can_access_patient(user, patient_id)
+        return self.can_access_patient(user, patient_id, conn=conn)
 
-    def can_access_report(self, user: Optional[Any], report_id: int) -> bool:
+    def can_access_report(self, user: Optional[Any], report_id: int, conn: Optional[sqlite3.Connection] = None) -> bool:
         """Verifies authorization for the given clinical report ID (mapping reports or clinical_reports)."""
-        conn = self._get_connection()
+        local_conn = conn or self._get_connection()
         try:
             # Check clinical_reports first (H0-H2 report table)
-            row = conn.execute("""
+            row = local_conn.execute("""
                 SELECT s.patient_id 
                 FROM clinical_reports cr
                 JOIN predictions p ON cr.prediction_id = p.id
@@ -112,16 +148,17 @@ class AuthorizationService:
                 patient_id = row["patient_id"]
             else:
                 # Fallback check reports table (version control table)
-                row2 = conn.execute("SELECT patient_id FROM reports WHERE report_id = ?;", (report_id,)).fetchone()
+                row2 = local_conn.execute("SELECT patient_id FROM reports WHERE report_id = ?;", (report_id,)).fetchone()
                 if not row2:
                     return False
                 patient_id = row2["patient_id"]
         except Exception:
             return False
         finally:
-            conn.close()
+            if conn is None:
+                local_conn.close()
 
-        return self.can_access_patient(user, patient_id)
+        return self.can_access_patient(user, patient_id, conn=conn)
 
     def validate_scan_patient_match(self, scan_id: int, patient_id: str) -> bool:
         """Enforces cross-entity consistency. Verifies that the scan belongs to the specified patient."""

@@ -1150,6 +1150,9 @@ def create_app(db_path: str) -> Flask:
             restrict_doctor_id = current_user.id if current_user.role == Role.DOCTOR else None
             criteria = HistorySearchCriteria(patient_id=patient_id, restrict_to_doctor_id=restrict_doctor_id)
             summaries = history_repo.search_history(criteria)
+            from security.application.authorization_service import AuthorizationService
+            auth_svc = AuthorizationService(db_path=app.config["DB_PATH"])
+            authorized_patient_ids = auth_svc.get_authorized_patient_ids(current_user)
 
             data = []
             for s in summaries:
@@ -1158,9 +1161,7 @@ def create_app(db_path: str) -> Flask:
                     if s.patient_id.lower() != current_user.uuid.lower():
                         continue
                 if current_user.role == Role.DOCTOR:
-                    from security.application.authorization_service import AuthorizationService
-                    auth_svc = AuthorizationService(db_path=app.config["DB_PATH"])
-                    if not auth_svc.can_access_patient(current_user, s.patient_id):
+                    if authorized_patient_ids is not None and str(s.patient_id).lower() not in authorized_patient_ids:
                         continue
 
                 data.append({
@@ -1287,6 +1288,9 @@ def create_app(db_path: str) -> Flask:
                 restrict_to_doctor_id=restrict_doctor_id
             )
             summaries = history_repo.search_history(criteria)
+            from security.application.authorization_service import AuthorizationService
+            auth_svc = AuthorizationService(db_path=app.config["DB_PATH"])
+            authorized_patient_ids = auth_svc.get_authorized_patient_ids(current_user)
 
             data = []
             for s in summaries:
@@ -1295,9 +1299,7 @@ def create_app(db_path: str) -> Flask:
                     if s.patient_name.lower() != current_user.full_name.lower() and s.patient_id.lower() != current_user.uuid.lower():
                         continue
                 if current_user.role == Role.DOCTOR:
-                    from security.application.authorization_service import AuthorizationService
-                    auth_svc = AuthorizationService(db_path=app.config["DB_PATH"])
-                    if not auth_svc.can_access_patient(current_user, s.patient_id):
+                    if authorized_patient_ids is not None and str(s.patient_id).lower() not in authorized_patient_ids:
                         continue
                 data.append({
                     "report_id": s.report_id,

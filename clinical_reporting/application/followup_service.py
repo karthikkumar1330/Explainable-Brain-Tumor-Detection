@@ -192,40 +192,36 @@ class FollowupScheduleService:
             raise FollowupScheduleServiceException("Patient ID is required.")
         pid_clean = patient_id.strip()
 
-        # 4. Check patient existence
+        # 4. Check patient existence, authorization and write using a single connection
         conn = self._get_connection()
         try:
             pat_row = conn.execute("SELECT 1 FROM patients WHERE patient_id = ?;", (pid_clean,)).fetchone()
             if not pat_row:
                 raise FollowupScheduleServiceException(f"Patient with ID {pid_clean} not found.")
-        finally:
-            conn.close()
 
-        # 5. Check Authorization
-        if not self.auth_svc.can_access_patient(actor, pid_clean):
-            self._log_audit_event("FOLLOWUP_CREATED", actor, "FAILED", f"Access denied: Doctor not assigned to patient: {pid_clean}")
-            raise FollowupScheduleServiceException("Access denied.")
+            # 5. Check Authorization
+            if not self.auth_svc.can_access_patient(actor, pid_clean, conn=conn):
+                self._log_audit_event("FOLLOWUP_CREATED", actor, "FAILED", f"Access denied: Doctor not assigned to patient: {pid_clean}")
+                raise FollowupScheduleServiceException("Access denied.")
 
-        # 6. Validate scheduled_date
-        if not scheduled_date or not isinstance(scheduled_date, str):
-            raise FollowupScheduleServiceException("Scheduled date is required.")
-        try:
-            sd_clean = self._parse_and_normalize_date(scheduled_date)
-        except ValueError as e:
-            raise FollowupScheduleServiceException(f"Invalid scheduled date format. {str(e)}")
+            # 6. Validate scheduled_date
+            if not scheduled_date or not isinstance(scheduled_date, str):
+                raise FollowupScheduleServiceException("Scheduled date is required.")
+            try:
+                sd_clean = self._parse_and_normalize_date(scheduled_date)
+            except ValueError as e:
+                raise FollowupScheduleServiceException(f"Invalid scheduled date format. {str(e)}")
 
-        # 7. Validate reason / notes length
-        reason_clean = reason.strip() if reason else ""
-        if len(reason_clean) > 2000:
-            raise FollowupScheduleServiceException("Reason exceeds maximum length of 2000 characters.")
-        notes_clean = notes.strip() if notes else ""
-        if len(notes_clean) > 2000:
-            raise FollowupScheduleServiceException("Notes exceed maximum length of 2000 characters.")
+            # 7. Validate reason / notes length
+            reason_clean = reason.strip() if reason else ""
+            if len(reason_clean) > 2000:
+                raise FollowupScheduleServiceException("Reason exceeds maximum length of 2000 characters.")
+            notes_clean = notes.strip() if notes else ""
+            if len(notes_clean) > 2000:
+                raise FollowupScheduleServiceException("Notes exceed maximum length of 2000 characters.")
 
-        # 8. Save to DB
-        now_str = datetime.datetime.utcnow().isoformat()
-        conn = self._get_connection()
-        try:
+            # 8. Save to DB
+            now_str = datetime.datetime.utcnow().isoformat()
             with conn:
                 cursor = conn.execute(
                     """
@@ -259,6 +255,8 @@ class FollowupScheduleService:
                 "completed_at": None
             }
         except Exception as e:
+            if isinstance(e, FollowupScheduleServiceException):
+                raise e
             self.logger.error(f"Error creating follow-up: {e}")
             raise FollowupScheduleServiceException("Failed to create follow-up due to an internal database error.")
         finally:
@@ -338,6 +336,7 @@ class FollowupScheduleService:
             raise FollowupScheduleServiceException("Invalid follow-up ID.")
 
         # 4. Fetch existing follow-up to retrieve patient_id and verify existence
+        # 4. Check existence, authorization and write using a single connection
         conn = self._get_connection()
         try:
             row = conn.execute(
@@ -346,44 +345,36 @@ class FollowupScheduleService:
             if not row:
                 raise FollowupScheduleServiceException(f"Follow-up schedule with ID {followup_id} not found.")
             patient_id = row["patient_id"]
-        finally:
-            conn.close()
 
-        # 5. Check patient existence
-        conn = self._get_connection()
-        try:
+            # 5. Check patient existence
             pat_row = conn.execute("SELECT 1 FROM patients WHERE patient_id = ?;", (patient_id,)).fetchone()
             if not pat_row:
                 raise FollowupScheduleServiceException(f"Patient with ID {patient_id} not found.")
-        finally:
-            conn.close()
 
-        # 6. Check Authorization
-        if not self.auth_svc.can_access_patient(actor, patient_id):
-            self._log_audit_event("FOLLOWUP_MODIFIED", actor, "FAILED", f"Access denied updating follow-up: Doctor not assigned to patient: {patient_id}")
-            raise FollowupScheduleServiceException("Access denied.")
+            # 6. Check Authorization using the open connection
+            if not self.auth_svc.can_access_patient(actor, patient_id, conn=conn):
+                self._log_audit_event("FOLLOWUP_MODIFIED", actor, "FAILED", f"Access denied updating follow-up: Doctor not assigned to patient: {patient_id}")
+                raise FollowupScheduleServiceException("Access denied.")
 
-        # 7. Validate scheduled_date if provided
-        sd_clean = None
-        if scheduled_date is not None:
-            try:
-                sd_clean = self._parse_and_normalize_date(scheduled_date)
-            except ValueError as e:
-                raise FollowupScheduleServiceException(f"Invalid scheduled date format. {str(e)}")
+            # 7. Validate scheduled_date if provided
+            sd_clean = None
+            if scheduled_date is not None:
+                try:
+                    sd_clean = self._parse_and_normalize_date(scheduled_date)
+                except ValueError as e:
+                    raise FollowupScheduleServiceException(f"Invalid scheduled date format. {str(e)}")
 
-        # 8. Validate status if provided
-        status_clean = None
-        if status is not None:
-            if not isinstance(status, str):
-                raise FollowupScheduleServiceException("Status must be a string.")
-            status_clean = status.strip().lower()
-            if status_clean not in ["scheduled", "completed", "cancelled", "overdue"]:
-                raise FollowupScheduleServiceException("Invalid follow-up status.")
+            # 8. Validate status if provided
+            status_clean = None
+            if status is not None:
+                if not isinstance(status, str):
+                    raise FollowupScheduleServiceException("Status must be a string.")
+                status_clean = status.strip().lower()
+                if status_clean not in ["scheduled", "completed", "cancelled", "overdue"]:
+                    raise FollowupScheduleServiceException("Invalid follow-up status.")
 
-        # 9. Update DB
-        now_str = datetime.datetime.utcnow().isoformat()
-        conn = self._get_connection()
-        try:
+            # 9. Update DB
+            now_str = datetime.datetime.utcnow().isoformat()
             with conn:
                 # Build dynamic query
                 fields = []

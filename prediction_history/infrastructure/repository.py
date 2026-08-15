@@ -136,8 +136,6 @@ class SQLitePredictionHistoryRepository(IPredictionHistoryRepository):
         if conditions:
             where_clause = " WHERE " + " AND ".join(conditions)
 
-        main_query = base_query + where_clause
-
         # Safe Sorting Whitelist
         sort_by_map = {
             "report_id": "cr.id",
@@ -152,19 +150,21 @@ class SQLitePredictionHistoryRepository(IPredictionHistoryRepository):
             "referring_doctor": "s.ref_physician",
             "report_status": "r.status",
         }
-        # If sorted by patient_name, we sort in Python, otherwise let DB do base sorting
+
         sort_col = sort_by_map.get(criteria.sort_by, "cr.created_at")
         sort_dir = "ASC" if criteria.sort_order and criteria.sort_order.lower() == "asc" else "DESC"
         order_clause = f" ORDER BY {sort_col} {sort_dir}"
 
+        # Determine if database-side pagination is safe to execute (no PII sorting/filtering active)
+        is_pii_filter_active = (
+            criteria.patient_name is not None or
+            criteria.q is not None or
+            criteria.restrict_to_patient_name is not None or
+            criteria.sort_by == "patient_name"
+        )
+
         conn = self._get_connection()
         try:
-            cursor = conn.cursor()
-            # Fetch all candidate records for the non-PII query
-            query = main_query + order_clause
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-
             # Instantiate PII encryption service
             try:
                 from security.infrastructure.encryption_service import PIIEncryptionService
@@ -172,94 +172,140 @@ class SQLitePredictionHistoryRepository(IPredictionHistoryRepository):
             except Exception:
                 encryption_service = None
 
-            # Decrypt in memory
-            candidates = []
-            for row in rows:
-                p_name = row["patient_name"]
-                if p_name is not None:
-                    is_enc = str(p_name).startswith("enc:v1:")
-                    if is_enc:
+            if not is_pii_filter_active and criteria.page is not None and criteria.page_size is not None:
+                # 1. Total Count query
+                count_query = count_base_query + where_clause
+                cursor = conn.cursor()
+                cursor.execute(count_query, tuple(params))
+                total_count = cursor.fetchone()[0]
+
+                # 2. Paginated results query
+                offset = (criteria.page - 1) * criteria.page_size
+                paginated_query = base_query + where_clause + order_clause + " LIMIT ? OFFSET ?"
+                paginated_params = params + [criteria.page_size, offset]
+
+                cursor.execute(paginated_query, tuple(paginated_params))
+                rows = cursor.fetchall()
+
+                results = []
+                for row in rows:
+                    p_name = row["patient_name"]
+                    decrypted_name = p_name
+                    if p_name is not None and str(p_name).startswith("enc:v1:"):
                         if encryption_service is None:
                             raise ValueError("PII patient_name is encrypted but PII_ENCRYPTION_KEY is missing.")
                         decrypted_name = encryption_service.decrypt(p_name)
-                    else:
-                        decrypted_name = p_name
-                else:
-                    decrypted_name = ""
 
-                candidates.append({
-                    "report_id": row["report_id"],
-                    "prediction_id": row["prediction_id"],
-                    "patient_id": row["patient_id"],
-                    "patient_name": decrypted_name,
-                    "scan_date": row["scan_date"],
-                    "predicted_class": row["predicted_class"],
-                    "confidence_score": row["confidence_score"],
-                    "tumor_area_mm2": row["tumor_area_mm2"],
-                    "rule_based_severity": row["rule_based_severity"],
-                    "created_at": row["created_at"],
-                    "referring_doctor": row["referring_doctor"],
-                    "report_status": row["report_status"]
-                })
-
-            # Filter in Python
-            filtered_candidates = []
-            for c in candidates:
-                # Patient RBAC filter
-                if criteria.restrict_to_patient_uuid is not None and criteria.restrict_to_patient_name is not None:
-                    uuid_match = str(c["patient_id"]).lower() == str(criteria.restrict_to_patient_uuid).lower()
-                    name_match = str(c["patient_name"]).lower() == str(criteria.restrict_to_patient_name).lower()
-                    if not (uuid_match or name_match):
-                        continue
-
-                # Global query q filter
-                if criteria.q is not None:
-                    q_val = str(criteria.q).lower()
-                    pat_id_match = q_val in str(c["patient_id"]).lower()
-                    pat_name_match = q_val in str(c["patient_name"]).lower()
-                    ref_doc_match = q_val in str(c["referring_doctor"]).lower() if c["referring_doctor"] else False
-                    if not (pat_id_match or pat_name_match or ref_doc_match):
-                        continue
-
-                # Exact/Partial name filter
-                if criteria.patient_name is not None:
-                    name_search = str(criteria.patient_name).lower()
-                    if name_search not in str(c["patient_name"]).lower():
-                        continue
-
-                filtered_candidates.append(c)
-
-            # Sort in Python if patient_name was requested
-            if criteria.sort_by == "patient_name":
-                reverse_sort = not (criteria.sort_order and criteria.sort_order.lower() == "asc")
-                filtered_candidates.sort(key=lambda x: str(x["patient_name"]).lower(), reverse=reverse_sort)
-
-            # Paginate in Python
-            total_count = len(filtered_candidates)
-            results = []
-
-            if criteria.page is not None and criteria.page_size is not None:
-                offset = (criteria.page - 1) * criteria.page_size
-                page_items = filtered_candidates[offset : offset + criteria.page_size]
+                    results.append(PredictionSummary(
+                        report_id=row["report_id"],
+                        prediction_id=row["prediction_id"],
+                        patient_id=row["patient_id"],
+                        patient_name=decrypted_name or "",
+                        scan_date=row["scan_date"],
+                        predicted_class=row["predicted_class"],
+                        confidence_score=row["confidence_score"],
+                        tumor_area_mm2=row["tumor_area_mm2"],
+                        rule_based_severity=row["rule_based_severity"],
+                        created_at=row["created_at"],
+                        referring_doctor=row["referring_doctor"],
+                        report_status=row["report_status"]
+                    ))
+                return PaginatedList(results, total_count)
             else:
-                page_items = filtered_candidates
+                # Fallback path: fetch all candidate records for memory-based decryption/filtering/sorting/pagination
+                cursor = conn.cursor()
+                query = main_query = base_query + where_clause + order_clause
+                cursor.execute(query, tuple(params))
+                rows = cursor.fetchall()
 
-            for c in page_items:
-                results.append(PredictionSummary(
-                    report_id=c["report_id"],
-                    prediction_id=c["prediction_id"],
-                    patient_id=c["patient_id"],
-                    patient_name=c["patient_name"],
-                    scan_date=c["scan_date"],
-                    predicted_class=c["predicted_class"],
-                    confidence_score=c["confidence_score"],
-                    tumor_area_mm2=c["tumor_area_mm2"],
-                    rule_based_severity=c["rule_based_severity"],
-                    created_at=c["created_at"],
-                    referring_doctor=c["referring_doctor"],
-                    report_status=c["report_status"]
-                ))
-            return PaginatedList(results, total_count)
+                # Decrypt in memory
+                candidates = []
+                for row in rows:
+                    p_name = row["patient_name"]
+                    if p_name is not None:
+                        is_enc = str(p_name).startswith("enc:v1:")
+                        if is_enc:
+                            if encryption_service is None:
+                                raise ValueError("PII patient_name is encrypted but PII_ENCRYPTION_KEY is missing.")
+                            decrypted_name = encryption_service.decrypt(p_name)
+                        else:
+                            decrypted_name = p_name
+                    else:
+                        decrypted_name = ""
+
+                    candidates.append({
+                        "report_id": row["report_id"],
+                        "prediction_id": row["prediction_id"],
+                        "patient_id": row["patient_id"],
+                        "patient_name": decrypted_name,
+                        "scan_date": row["scan_date"],
+                        "predicted_class": row["predicted_class"],
+                        "confidence_score": row["confidence_score"],
+                        "tumor_area_mm2": row["tumor_area_mm2"],
+                        "rule_based_severity": row["rule_based_severity"],
+                        "created_at": row["created_at"],
+                        "referring_doctor": row["referring_doctor"],
+                        "report_status": row["report_status"]
+                    })
+
+                # Filter in Python
+                filtered_candidates = []
+                for c in candidates:
+                    # Patient RBAC filter
+                    if criteria.restrict_to_patient_uuid is not None and criteria.restrict_to_patient_name is not None:
+                        uuid_match = str(c["patient_id"]).lower() == str(criteria.restrict_to_patient_uuid).lower()
+                        name_match = str(c["patient_name"]).lower() == str(criteria.restrict_to_patient_name).lower()
+                        if not (uuid_match or name_match):
+                            continue
+
+                    # Global query q filter
+                    if criteria.q is not None:
+                        q_val = str(criteria.q).lower()
+                        pat_id_match = q_val in str(c["patient_id"]).lower()
+                        pat_name_match = q_val in str(c["patient_name"]).lower()
+                        ref_doc_match = q_val in str(c["referring_doctor"]).lower() if c["referring_doctor"] else False
+                        if not (pat_id_match or pat_name_match or ref_doc_match):
+                            continue
+
+                    # Exact/Partial name filter
+                    if criteria.patient_name is not None:
+                        name_search = str(criteria.patient_name).lower()
+                        if name_search not in str(c["patient_name"]).lower():
+                            continue
+
+                    filtered_candidates.append(c)
+
+                # Sort in Python if patient_name was requested
+                if criteria.sort_by == "patient_name":
+                    reverse_sort = not (criteria.sort_order and criteria.sort_order.lower() == "asc")
+                    filtered_candidates.sort(key=lambda x: str(x["patient_name"]).lower(), reverse=reverse_sort)
+
+                # Paginate in Python
+                total_count = len(filtered_candidates)
+                results = []
+
+                if criteria.page is not None and criteria.page_size is not None:
+                    offset = (criteria.page - 1) * criteria.page_size
+                    page_items = filtered_candidates[offset : offset + criteria.page_size]
+                else:
+                    page_items = filtered_candidates
+
+                for c in page_items:
+                    results.append(PredictionSummary(
+                        report_id=c["report_id"],
+                        prediction_id=c["prediction_id"],
+                        patient_id=c["patient_id"],
+                        patient_name=c["patient_name"],
+                        scan_date=c["scan_date"],
+                        predicted_class=c["predicted_class"],
+                        confidence_score=c["confidence_score"],
+                        tumor_area_mm2=c["tumor_area_mm2"],
+                        rule_based_severity=c["rule_based_severity"],
+                        created_at=c["created_at"],
+                        referring_doctor=c["referring_doctor"],
+                        report_status=c["report_status"]
+                    ))
+                return PaginatedList(results, total_count)
         except Exception as e:
             self.logger.error(f"Failed to query database for history: {e}")
             raise e

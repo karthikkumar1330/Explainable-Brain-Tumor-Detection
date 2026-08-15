@@ -1768,10 +1768,11 @@ def get_prediction_history(patient_id: Optional[str] = Query(None), current_user
 
     try:
         summaries = history_repo.search_history(criteria)
+        authorized_patient_ids = auth_svc.get_authorized_patient_ids(current_user)
         results = []
         for s in summaries:
             # Multi-tenant safeguard: skip records that don't belong to this patient
-            if not auth_svc.can_access_patient(current_user, s.patient_id):
+            if authorized_patient_ids is not None and str(s.patient_id).lower() not in authorized_patient_ids:
                 continue
 
             results.append({
