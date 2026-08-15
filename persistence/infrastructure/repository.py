@@ -66,6 +66,22 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         );
         """
 
+        create_model_provenance_sql = """
+        CREATE TABLE IF NOT EXISTS model_provenance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            model_type TEXT NOT NULL,
+            model_name TEXT NOT NULL,
+            architecture TEXT NOT NULL,
+            model_version TEXT,
+            checkpoint_identifier TEXT NOT NULL,
+            checkpoint_sha256 TEXT NOT NULL,
+            device TEXT NOT NULL,
+            loaded_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1
+        );
+        """
+
         create_predictions_sql = """
         CREATE TABLE IF NOT EXISTS predictions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -420,12 +436,14 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             "CREATE INDEX IF NOT EXISTS idx_mri_rectangle_annotations_doctor ON mri_rectangle_annotations(doctor_id);",
             "CREATE INDEX IF NOT EXISTS idx_mri_rectangle_annotations_created ON mri_rectangle_annotations(created_at);",
             "CREATE INDEX IF NOT EXISTS idx_http_request_telemetry_timestamp ON http_request_telemetry(timestamp);",
-            "CREATE INDEX IF NOT EXISTS idx_batch_performance_telemetry_timestamp ON batch_performance_telemetry(timestamp);"
+            "CREATE INDEX IF NOT EXISTS idx_batch_performance_telemetry_timestamp ON batch_performance_telemetry(timestamp);",
+            "CREATE INDEX IF NOT EXISTS idx_model_provenance_sha256 ON model_provenance(checkpoint_sha256);"
         ]
 
         conn = self._get_connection()
         try:
             with conn:
+                conn.execute(create_model_provenance_sql)
                 conn.execute(create_patients_sql)
                 conn.execute(create_scans_sql)
                 conn.execute(create_predictions_sql)
@@ -491,6 +509,17 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                         conn.execute("ALTER TABLE clinical_reports ADD COLUMN xai_overlap_percentage REAL;")
                     except Exception as alt_err:
                         self.logger.warning(f"Could not migrate clinical_reports schema: {alt_err}")
+
+                # Migrate predictions schema to support model provenance FK columns
+                for col in ["classification_model_provenance_id", "segmentation_model_provenance_id"]:
+                    try:
+                        conn.execute(f"SELECT {col} FROM predictions LIMIT 1;")
+                    except sqlite3.OperationalError:
+                        try:
+                            conn.execute(f"ALTER TABLE predictions ADD COLUMN {col} INTEGER;")
+                            self.logger.info(f"Added column {col} to predictions table")
+                        except Exception as alt_err:
+                            self.logger.warning(f"Could not migrate predictions column {col}: {alt_err}")
 
                 # Run legacy reports migration
                 self._migrate_legacy_reports(conn)
@@ -715,14 +744,18 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 prob_pituitary = probs.get("Pituitary", 0.0)
                 prob_no_tumor = probs.get("No Tumor", 0.0)
 
+                cls_prov_id = getattr(report.processing_summary, "classification_model_provenance_id", None)
+                seg_prov_id = getattr(report.processing_summary, "segmentation_model_provenance_id", None)
+
                 # 4. Insert Prediction Record
                 pred_sql = """
                 INSERT INTO predictions (
                     scan_id, predicted_class, confidence_score,
                     prob_glioma, prob_meningioma, prob_pituitary, prob_no_tumor,
                     tumor_pixel_count, tumor_area_mm2, tumor_percentage_brain, tumor_percentage_image,
-                    estimated_brain_pixel_count, rule_based_severity, severity_rule_description, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    estimated_brain_pixel_count, rule_based_severity, severity_rule_description, created_at,
+                    classification_model_provenance_id, segmentation_model_provenance_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """
                 cursor = conn.execute(pred_sql, (
                     scan_id,
@@ -730,10 +763,9 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                     report.classification.confidence_score,
                     prob_glioma, prob_meningioma, prob_pituitary, prob_no_tumor,
                     pixel_count, tumor_area, pct_brain, pct_image,
-                    brain_pixels, severity, rule_desc, now_str
+                    brain_pixels, severity, rule_desc, now_str,
+                    cls_prov_id, seg_prov_id
                 ))
-                pred_id = cursor.lastrowid
-
                 pred_id = cursor.lastrowid
 
                 # 5. Insert Report Record
@@ -1319,6 +1351,42 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             batch_p95 = SQLitePersistenceRepository.calculate_percentile(batch_durations, 95.0)
             batch_p99 = SQLitePersistenceRepository.calculate_percentile(batch_durations, 99.0)
 
+            # Fetch active model details for percentiles/admin audit
+            active_cls = None
+            active_seg = None
+            try:
+                cursor.execute("""
+                    SELECT model_name, architecture, model_version, checkpoint_sha256
+                    FROM model_provenance
+                    WHERE model_type = 'CLASSIFICATION' AND is_active = 1
+                    ORDER BY loaded_at DESC LIMIT 1;
+                """)
+                row = cursor.fetchone()
+                if row:
+                    active_cls = {
+                        "model_name": row[0],
+                        "architecture": row[1],
+                        "model_version": row[2],
+                        "checkpoint_sha256": row[3]
+                    }
+
+                cursor.execute("""
+                    SELECT model_name, architecture, model_version, checkpoint_sha256
+                    FROM model_provenance
+                    WHERE model_type = 'SEGMENTATION' AND is_active = 1
+                    ORDER BY loaded_at DESC LIMIT 1;
+                """)
+                row = cursor.fetchone()
+                if row:
+                    active_seg = {
+                        "model_name": row[0],
+                        "architecture": row[1],
+                        "model_version": row[2],
+                        "checkpoint_sha256": row[3]
+                    }
+            except Exception:
+                pass
+
             return {
                 "total_predictions": total_predictions,
                 "avg_confidence": avg_confidence,
@@ -1340,7 +1408,9 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 "http_p99_latency_ms": http_p99,
                 "batch_p50_latency_ms": batch_p50,
                 "batch_p95_latency_ms": batch_p95,
-                "batch_p99_latency_ms": batch_p99
+                "batch_p99_latency_ms": batch_p99,
+                "active_classification_model": active_cls,
+                "active_segmentation_model": active_seg
             }
         except Exception as e:
             self.logger.error(f"Failed to query health telemetry: {e}")
@@ -1365,7 +1435,9 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 "http_p99_latency_ms": None,
                 "batch_p50_latency_ms": None,
                 "batch_p95_latency_ms": None,
-                "batch_p99_latency_ms": None
+                "batch_p99_latency_ms": None,
+                "active_classification_model": None,
+                "active_segmentation_model": None
             }
         finally:
             conn.close()
@@ -1459,3 +1531,67 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         idx_high = min(idx_low + 1, n - 1)
         weight = idx_float - idx_low
         return float(sorted_vals[idx_low] * (1.0 - weight) + sorted_vals[idx_high] * weight)
+
+    def register_model_provenance(
+        self,
+        model_type: str,
+        model_name: str,
+        architecture: str,
+        model_version: str,
+        checkpoint_identifier: str,
+        checkpoint_sha256: str,
+        device: str,
+        loaded_at: str
+    ) -> int:
+        """Registers a model provenance record in the database idempotently and returns its ID."""
+        conn = self._get_connection()
+        try:
+            # Idempotence check
+            query = """
+            SELECT id FROM model_provenance
+            WHERE model_type = ? AND model_name = ? AND architecture = ? AND model_version = ?
+              AND checkpoint_identifier = ? AND checkpoint_sha256 = ? AND device = ?;
+            """
+            cursor = conn.execute(query, (
+                model_type, model_name, architecture, model_version,
+                checkpoint_identifier, checkpoint_sha256, device
+            ))
+            row = cursor.fetchone()
+            if row:
+                return row[0]
+
+            # Register new
+            sql = """
+            INSERT INTO model_provenance (
+                model_type, model_name, architecture, model_version,
+                checkpoint_identifier, checkpoint_sha256, device, loaded_at, created_at, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1);
+            """
+            now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with conn:
+                res = conn.execute(sql, (
+                    model_type, model_name, architecture, model_version,
+                    checkpoint_identifier, checkpoint_sha256, device, loaded_at, now_str
+                ))
+                return res.lastrowid
+        except Exception as e:
+            self.logger.error(f"Failed to register model provenance: {e}")
+            raise e
+        finally:
+            conn.close()
+
+    def get_model_provenance(self, provenance_id: int) -> Optional[Dict[str, Any]]:
+        """Loads a model provenance record by its ID."""
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        sql = "SELECT * FROM model_provenance WHERE id = ?;"
+        try:
+            row = conn.execute(sql, (provenance_id,)).fetchone()
+            if row:
+                return dict(row)
+            return None
+        except Exception as e:
+            self.logger.error(f"Failed to retrieve model provenance for ID {provenance_id}: {e}")
+            return None
+        finally:
+            conn.close()

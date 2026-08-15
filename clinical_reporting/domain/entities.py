@@ -31,6 +31,8 @@ class ProcessingSummary:
     classification_latency_sec: float
     segmentation_latency_sec: float
     explainability_latency_sec: float
+    classification_model_provenance_id: Optional[int] = None
+    segmentation_model_provenance_id: Optional[int] = None
 
 
 @dataclass(frozen=True)

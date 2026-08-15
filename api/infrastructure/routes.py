@@ -57,12 +57,30 @@ model_seg = None
 seg_config = None
 device = torch.device("cpu")
 
+classification_model_provenance_id = None
+segmentation_model_provenance_id = None
+
 logger = logging.getLogger("api_routes")
+
+
+def _calculate_file_sha256(filepath: str) -> str:
+    import hashlib
+    if not filepath or not os.path.exists(filepath):
+        return "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+    sha255 = hashlib.sha256()
+    try:
+        with open(filepath, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha255.update(byte_block)
+        return sha255.hexdigest()
+    except Exception:
+        return "da39a3ee5e6b4b0d3255bfef95601890afd80709"
 
 
 def initialize_api_models():
     """Preloads the deep learning model states into memory."""
     global model_cls, predict_use_case, model_seg, seg_config, device
+    global classification_model_provenance_id, segmentation_model_provenance_id
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"FastAPI API initializing models on device: {device}")
@@ -71,6 +89,12 @@ def initialize_api_models():
     if device.type == "cpu" and torch.get_num_threads() > 4:
         torch.set_num_threads(4)
 
+    # Initialize repository schema to perform migrations
+    db_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)
+    db_repo.initialize_db()
+
+    loaded_at_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     # Load classification pipeline
     try:
         model_cls = EfficientNetB0Model(pretrained=False, num_classes=4)
@@ -78,6 +102,20 @@ def initialize_api_models():
         model_adapter.load(CLS_CHECKPOINT)
         predict_use_case = PredictUseCase(model_adapter=model_adapter)
         logger.info("Classification model loaded successfully.")
+
+        # Register classification model provenance (idempotent lookup/insert)
+        cls_hash = _calculate_file_sha256(CLS_CHECKPOINT)
+        classification_model_provenance_id = db_repo.register_model_provenance(
+            model_type="CLASSIFICATION",
+            model_name="efficientnet_b0",
+            architecture="EfficientNet-B0",
+            model_version="1.0",
+            checkpoint_identifier="classification/efficientnet_b0_brain_tumor.pth",
+            checkpoint_sha256=cls_hash,
+            device=str(device),
+            loaded_at=loaded_at_str
+        )
+        logger.info(f"Registered classification model provenance ID: {classification_model_provenance_id}")
     except Exception as e:
         logger.error(f"Failed to load classification checkpoint: {e}")
 
@@ -96,6 +134,20 @@ def initialize_api_models():
         model_seg = model_seg.to(device)
         model_seg.eval()
         logger.info("UNeXt segmentation model loaded successfully.")
+
+        # Register segmentation model provenance (idempotent lookup/insert)
+        seg_hash = _calculate_file_sha256(SEG_CHECKPOINT)
+        segmentation_model_provenance_id = db_repo.register_model_provenance(
+            model_type="SEGMENTATION",
+            model_name="brain_tumor_unext",
+            architecture=seg_config.get("arch", "UNeXt"),
+            model_version="1.0",
+            checkpoint_identifier="brain_tumor_unext/model.pth",
+            checkpoint_sha256=seg_hash,
+            device=str(device),
+            loaded_at=loaded_at_str
+        )
+        logger.info(f"Registered segmentation model provenance ID: {segmentation_model_provenance_id}")
     except Exception as e:
         logger.error(f"Failed to load segmentation checkpoint: {e}")
 
@@ -823,11 +875,13 @@ def _run_single_report_pipeline(
         processing_summary = ProcessingSummary(
             device=active_cls_device,
             execution_time_sec=total_exec_time,
-            classification_model_path=CLS_CHECKPOINT,
-            segmentation_model_path=SEG_CHECKPOINT,
+            classification_model_path="classification/efficientnet_b0_brain_tumor.pth",
+            segmentation_model_path="brain_tumor_unext/model.pth",
             classification_latency_sec=cls_latency,
             segmentation_latency_sec=seg_latency,
             explainability_latency_sec=cam_latency,
+            classification_model_provenance_id=classification_model_provenance_id,
+            segmentation_model_provenance_id=segmentation_model_provenance_id
         )
 
         # Run Central Warning Engine Checks (B6.3, B6.4, B6.5, B6.7)
