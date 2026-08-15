@@ -427,6 +427,10 @@
                     <i class="fa-solid fa-columns text-lg w-5 shrink-0 text-indigo-400"></i>
                     <span>Dashboard</span>
                 </button>
+                <button onclick="switchTab('monitoring')" id="nav-monitoring" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" title="System Monitoring">
+                    <i class="fa-solid fa-chart-line text-lg w-5 shrink-0"></i>
+                    <span>Monitoring</span>
+                </button>
                 <button onclick="switchTab('generate')" id="nav-generate" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" title="AI Analysis">
                     <i class="fa-solid fa-brain text-lg w-5 shrink-0"></i>
                     <span>AI Analysis</span>
@@ -637,6 +641,256 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- TAB: SYSTEM PERFORMANCE & AI MONITORING -->
+            <div id="tab-monitoring" class="hidden space-y-6">
+                <!-- Status Header -->
+                <div class="glass-panel p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 border-t-2 border-t-sky-500">
+                    <div class="flex items-center space-x-3">
+                        <div class="h-10 w-10 rounded-xl bg-sky-500/10 text-sky-400 flex items-center justify-center text-lg border border-sky-500/20">
+                            <i class="fa-solid fa-chart-line"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-extrabold text-slate-100 text-sm">System Monitoring & Analytics</h4>
+                            <p class="text-[10px] text-slate-400">Last updated: <span id="mon-last-updated" class="font-bold text-slate-350">-</span></p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <div id="mon-loading-spinner" class="text-xs text-slate-400 hidden">
+                            <i class="fa-solid fa-spinner fa-spin text-sky-400 mr-2"></i>Updating telemetry...
+                        </div>
+                        <button onclick="loadAdminMonitoring()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-3.5 py-2 rounded-xl border border-slate-750 transition flex items-center gap-1.5 shadow-sm">
+                            <i class="fa-solid fa-rotate-right"></i> Refresh Telemetry
+                        </button>
+                    </div>
+                </div>
+
+                <!-- KPI Metrics Cards Row -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="glass-panel p-5 rounded-2xl flex items-center justify-between border-t-2 border-t-emerald-500">
+                        <div>
+                            <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">System Status</span>
+                            <span id="mon-system-health" class="text-lg font-extrabold mt-1 inline-block text-emerald-400">HEALTHY</span>
+                        </div>
+                        <div class="h-10 w-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center border border-emerald-500/20">
+                            <i class="fa-solid fa-square-poll-horizontal text-lg"></i>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-5 rounded-2xl flex items-center justify-between border-t-2 border-t-sky-500">
+                        <div>
+                            <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Database Integrity</span>
+                            <span id="mon-db-health" class="text-lg font-extrabold mt-1 inline-block text-sky-400">HEALTHY</span>
+                        </div>
+                        <div class="h-10 w-10 rounded-xl bg-sky-500/10 text-sky-400 flex items-center justify-center border border-sky-500/20">
+                            <i class="fa-solid fa-database text-lg"></i>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-5 rounded-2xl flex items-center justify-between border-t-2 border-t-indigo-500">
+                        <div>
+                            <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">HTTP Requests</span>
+                            <span id="mon-http-req-count" class="text-2xl font-extrabold mt-1 inline-block text-slate-100 glow-accent">-</span>
+                        </div>
+                        <div class="h-10 w-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/20">
+                            <i class="fa-solid fa-arrow-down-up-lock text-lg"></i>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-5 rounded-2xl flex items-center justify-between border-t-2 border-t-red-500">
+                        <div>
+                            <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">HTTP Error Rate</span>
+                            <span id="mon-http-error-rate" class="text-2xl font-extrabold mt-1 inline-block text-emerald-400">-</span>
+                        </div>
+                        <div class="h-10 w-10 rounded-xl bg-red-500/10 text-red-400 flex items-center justify-center border border-red-500/20">
+                            <i class="fa-solid fa-triangle-exclamation text-lg"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hardware Specifications & Resource Meters -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="glass-panel p-5 rounded-2xl space-y-4 lg:col-span-2">
+                        <h4 class="font-extrabold text-xs text-sky-400 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-microchip"></i> System Hardware Telemetry
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <!-- CPU Usage -->
+                            <div class="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl space-y-2">
+                                <div class="flex justify-between items-center text-xs">
+                                    <span class="font-bold text-slate-350">CPU load</span>
+                                    <span id="mon-cpu-usage-val" class="font-extrabold text-indigo-400">-</span>
+                                </div>
+                                <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                                    <div id="mon-cpu-usage-bar" class="h-full bg-indigo-500 transition-all duration-500" style="width: 0%"></div>
+                                </div>
+                                <div class="text-[9px] text-slate-500 font-bold flex justify-between">
+                                    <span>Cores: <span id="mon-cpu-cores">-</span></span>
+                                    <span>Threads: <span id="mon-cpu-threads">-</span></span>
+                                </div>
+                            </div>
+                            <!-- RAM Usage -->
+                            <div class="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl space-y-2">
+                                <div class="flex justify-between items-center text-xs">
+                                    <span class="font-bold text-slate-350">RAM utilization</span>
+                                    <span id="mon-ram-usage-val" class="font-extrabold text-emerald-400">-</span>
+                                </div>
+                                <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                                    <div id="mon-ram-usage-bar" class="h-full bg-emerald-500 transition-all duration-500" style="width: 0%"></div>
+                                </div>
+                                <div class="text-[9px] text-slate-500 font-bold flex justify-between">
+                                    <span>Used: <span id="mon-ram-used">-</span> GB</span>
+                                    <span>Total: <span id="mon-ram-total">-</span> GB</span>
+                                </div>
+                            </div>
+                            <!-- Disk Space -->
+                            <div class="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl space-y-2">
+                                <div class="flex justify-between items-center text-xs">
+                                    <span class="font-bold text-slate-350">Disk usage</span>
+                                    <span id="mon-disk-usage-val" class="font-extrabold text-amber-400">-</span>
+                                </div>
+                                <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                                    <div id="mon-disk-usage-bar" class="h-full bg-amber-500 transition-all duration-500" style="width: 0%"></div>
+                                </div>
+                                <div class="text-[9px] text-slate-500 font-bold flex justify-between">
+                                    <span>Free: <span id="mon-disk-free">-</span> GB</span>
+                                    <span>Total: <span id="mon-disk-total">-</span> GB</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- GPU Telemetry Card -->
+                    <div class="glass-panel p-5 rounded-2xl flex flex-col justify-between">
+                        <h4 class="font-extrabold text-xs text-slate-300 uppercase tracking-wider flex items-center gap-2 mb-3">
+                            <i class="fa-solid fa-server text-cyan-400"></i> GPU Accelerators
+                        </h4>
+                        <div class="space-y-3 text-xs flex-1 flex flex-col justify-center">
+                            <div class="flex justify-between border-b border-slate-800 pb-1.5">
+                                <span class="text-slate-400">GPU status</span>
+                                <span id="mon-gpu-status" class="text-slate-300 font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between border-b border-slate-800 pb-1.5">
+                                <span class="text-slate-400">VRAM allocated</span>
+                                <span id="mon-vram-used" class="text-slate-355 font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between pb-1">
+                                <span class="text-slate-400">VRAM free</span>
+                                <span id="mon-vram-free" class="text-slate-355 font-bold">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- API & Batch Performance Stats -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- HTTP Latencies -->
+                    <div class="glass-panel p-5 rounded-2xl space-y-4">
+                        <h4 class="font-extrabold text-xs text-indigo-400 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-globe"></i> API Latency statistics
+                        </h4>
+                        <div class="grid grid-cols-2 gap-4 text-center">
+                            <div class="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl">
+                                <span class="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">Average Latency</span>
+                                <span id="mon-http-avg-latency" class="text-xl font-extrabold text-slate-200 mt-1 inline-block">-</span>
+                            </div>
+                            <div class="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl">
+                                <span class="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">P50 (Median)</span>
+                                <span id="mon-http-p50" class="text-xl font-extrabold text-slate-200 mt-1 inline-block">-</span>
+                            </div>
+                            <div class="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl">
+                                <span class="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">P95 percentile</span>
+                                <span id="mon-http-p95" class="text-xl font-extrabold text-indigo-400 mt-1 inline-block">-</span>
+                            </div>
+                            <div class="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl">
+                                <span class="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">P99 percentile</span>
+                                <span id="mon-http-p99" class="text-xl font-extrabold text-purple-400 mt-1 inline-block">-</span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Batch processing stats -->
+                    <div class="glass-panel p-5 rounded-2xl space-y-4">
+                        <h4 class="font-extrabold text-xs text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-list-check"></i> Batch AI performance
+                        </h4>
+                        <div class="grid grid-cols-2 gap-4 text-center">
+                            <div class="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl col-span-2 flex justify-between items-center text-xs px-4">
+                                <span class="text-slate-400 font-bold">Total Batch runs / Items</span>
+                                <span class="text-slate-200 font-extrabold"><span id="mon-batch-count">-</span> runs / <span id="mon-batch-items">-</span> items</span>
+                            </div>
+                            <div class="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl col-span-2 flex justify-between items-center text-xs px-4">
+                                <span class="text-slate-400 font-bold">Batch Item Error Rate</span>
+                                <span id="mon-batch-error-rate" class="text-slate-200 font-extrabold">-</span>
+                            </div>
+                            <div class="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl">
+                                <span class="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">Average Duration</span>
+                                <span id="mon-batch-avg-duration" class="text-base font-extrabold text-slate-200 mt-1 inline-block">-</span>
+                            </div>
+                            <div class="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl">
+                                <span class="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">Batch P50 / P95 / P99</span>
+                                <span class="text-xs font-extrabold text-slate-355 mt-1.5 inline-block">
+                                    <span id="mon-batch-p50">-</span> / <span id="mon-batch-p95">-</span> / <span id="mon-batch-p99">-</span>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active AI Checkpoints Provenance -->
+                <div class="glass-panel p-5 rounded-2xl space-y-4">
+                    <h4 class="font-extrabold text-xs text-sky-400 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-dna"></i> Active Deep learning models registry
+                    </h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                        <div class="p-4 bg-slate-950/70 border border-slate-800/80 rounded-xl space-y-2">
+                            <div class="flex justify-between items-center">
+                                <span class="font-extrabold text-slate-200">Classification Model</span>
+                                <span id="mon-cls-health" class="px-2 py-0.5 rounded font-bold uppercase tracking-wider text-[8px]">-</span>
+                            </div>
+                            <div class="space-y-1.5 text-[11px] text-slate-400">
+                                <div class="flex justify-between"><span class="font-semibold">Name:</span> <span id="mon-cls-name" class="font-bold text-slate-300">-</span></div>
+                                <div class="flex justify-between"><span class="font-semibold">Architecture:</span> <span id="mon-cls-arch" class="font-bold text-slate-300">-</span></div>
+                                <div class="flex justify-between"><span class="font-semibold">Version:</span> <span id="mon-cls-version" class="font-bold text-slate-300">-</span></div>
+                                <div class="flex flex-col gap-0.5"><span class="font-semibold">Weight SHA-256 Hash:</span> <span id="mon-cls-sha" class="font-mono text-[9px] text-indigo-400 bg-slate-950/90 p-1.5 rounded border border-slate-855 mt-0.5 break-all">-</span></div>
+                            </div>
+                        </div>
+                        <div class="p-4 bg-slate-950/70 border border-slate-800/80 rounded-xl space-y-2">
+                            <div class="flex justify-between items-center">
+                                <span class="font-extrabold text-slate-200">Segmentation Model (UNeXt)</span>
+                                <span id="mon-seg-health" class="px-2 py-0.5 rounded font-bold uppercase tracking-wider text-[8px]">-</span>
+                            </div>
+                            <div class="space-y-1.5 text-[11px] text-slate-400">
+                                <div class="flex justify-between"><span class="font-semibold">Name:</span> <span id="mon-seg-name" class="font-bold text-slate-300">-</span></div>
+                                <div class="flex justify-between"><span class="font-semibold">Architecture:</span> <span id="mon-seg-arch" class="font-bold text-slate-300">-</span></div>
+                                <div class="flex justify-between"><span class="font-semibold">Version:</span> <span id="mon-seg-version" class="font-bold text-slate-300">-</span></div>
+                                <div class="flex flex-col gap-0.5"><span class="font-semibold">Weight SHA-256 Hash:</span> <span id="mon-seg-sha" class="font-mono text-[9px] text-indigo-400 bg-slate-950/90 p-1.5 rounded border border-slate-855 mt-0.5 break-all">-</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Historical Performance Trends -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="glass-panel p-5 rounded-2xl space-y-3">
+                        <h4 class="font-extrabold text-xs text-indigo-400 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-chart-area"></i> Daily Request volume trends
+                        </h4>
+                        <div id="chart-http-volume" class="h-56 bg-slate-950/50 rounded-xl border border-slate-850/80 flex items-center justify-center p-3 text-slate-500 text-xs">
+                            Loading volume chart...
+                        </div>
+                    </div>
+                    <div class="glass-panel p-5 rounded-2xl space-y-3">
+                        <h4 class="font-extrabold text-xs text-purple-400 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-chart-line"></i> Daily Latency performance trends
+                        </h4>
+                        <div id="chart-http-latency" class="h-56 bg-slate-950/50 rounded-xl border border-slate-850/80 flex items-center justify-center p-3 text-slate-500 text-xs">
+                            Loading latency chart...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Error Alert Box -->
+                <div id="mon-error-banner" class="hidden p-4 bg-red-500/20 border border-red-500/30 rounded-2xl flex items-center justify-between text-xs text-red-400">
+                    <span class="flex items-center gap-2"><i class="fa-solid fa-circle-exclamation text-base"></i> <span id="mon-error-message">Failed to connect to backend telemetry server.</span></span>
+                    <button onclick="loadAdminMonitoring()" class="bg-red-500/20 hover:bg-red-500/30 text-red-200 font-bold px-3 py-1.5 rounded-xl border border-red-500/30 transition">Retry</button>
                 </div>
             </div>
 
@@ -1087,6 +1341,7 @@
 
         const pageTitles = {
             'overview': 'System Administrator Dashboard',
+            'monitoring': 'System Performance & AI Monitoring',
             'generate': 'AI Diagnostic Workspace',
             'users': 'User Management Registry',
             'reports': 'Clinical Diagnostic Reports Directory',
@@ -1095,8 +1350,10 @@
             'profile': 'Administrator User Profile'
         };
 
+        let monitoringPollIntervalId = null;
+
         function switchTab(tabName) {
-            ['overview', 'generate', 'users', 'reports', 'audit', 'settings', 'profile'].forEach(t => {
+            ['overview', 'monitoring', 'generate', 'users', 'reports', 'audit', 'settings', 'profile'].forEach(t => {
                 const el = document.getElementById(`tab-${t}`);
                 const btn = document.getElementById(`nav-${t}`);
                 if (el) el.classList.add('hidden');
@@ -1104,7 +1361,7 @@
                     btn.className = "w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left text-sm transition-all duration-200 sidebar-nav-btn";
                 }
             });
-            
+
             const activeEl = document.getElementById(`tab-${tabName}`);
             if (activeEl) activeEl.classList.remove('hidden');
             const activeBtn = document.getElementById(`nav-${tabName}`);
@@ -1118,6 +1375,17 @@
                 document.getElementById('breadcrumb-page').innerText = tabName.charAt(0).toUpperCase() + tabName.slice(1);
             }
 
+            // Cleanup monitoring polling interval when leaving the tab
+            if (tabName !== 'monitoring') {
+                if (monitoringPollIntervalId) {
+                    clearInterval(monitoringPollIntervalId);
+                    monitoringPollIntervalId = null;
+                }
+            }
+
+            if (tabName === 'monitoring') {
+                loadAdminMonitoring();
+            }
             if (tabName === 'users') {
                 if (!adminUsersLoaded) {
                     loadAdminUsers();
@@ -1133,6 +1401,206 @@
                     loadSettingsData();
                 }
             }
+        }
+
+        function loadAdminMonitoring() {
+            document.getElementById('mon-loading-spinner').classList.remove('hidden');
+            document.getElementById('mon-error-banner').classList.add('hidden');
+
+            fetchMonitoringData();
+            fetchMonitoringTrends();
+
+            if (monitoringPollIntervalId) clearInterval(monitoringPollIntervalId);
+            monitoringPollIntervalId = setInterval(fetchMonitoringData, 15000);
+        }
+
+        async function fetchMonitoringData() {
+            try {
+                const response = await fetchWithAuth("/api/health-telemetry");
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                const data = await response.json();
+
+                // Update timestamp
+                document.getElementById('mon-last-updated').textContent = new Date().toLocaleTimeString();
+
+                // 1. KPI Cards
+                document.getElementById('mon-system-health').textContent = data.overall_status || 'UNKNOWN';
+                if (data.overall_status === 'HEALTHY') {
+                    document.getElementById('mon-system-health').className = "text-lg font-extrabold mt-1 inline-block text-emerald-400";
+                } else if (data.overall_status === 'WARNING') {
+                    document.getElementById('mon-system-health').className = "text-lg font-extrabold mt-1 inline-block text-amber-400";
+                } else {
+                    document.getElementById('mon-system-health').className = "text-lg font-extrabold mt-1 inline-block text-red-500";
+                }
+
+                const hist = data.historical_telemetry || {};
+                document.getElementById('mon-db-health').textContent = hist.db_healthy ? 'HEALTHY' : 'CRITICAL';
+                document.getElementById('mon-db-health').className = hist.db_healthy ? "text-lg font-extrabold mt-1 inline-block text-sky-400" : "text-lg font-extrabold mt-1 inline-block text-red-500";
+
+                document.getElementById('mon-http-req-count').textContent = hist.total_http_requests !== undefined ? hist.total_http_requests : '-';
+                document.getElementById('mon-http-error-rate').textContent = hist.http_error_rate !== undefined ? `${(hist.http_error_rate * 100).toFixed(1)}%` : '0.0%';
+
+                if (hist.http_error_rate > 0.05) {
+                    document.getElementById('mon-http-error-rate').className = "text-2xl font-extrabold mt-1 inline-block text-red-500";
+                } else if (hist.http_error_rate > 0.0) {
+                    document.getElementById('mon-http-error-rate').className = "text-2xl font-extrabold mt-1 inline-block text-amber-400";
+                } else {
+                    document.getElementById('mon-http-error-rate').className = "text-2xl font-extrabold mt-1 inline-block text-emerald-400";
+                }
+
+                // 2. Hardware Resource Metrics
+                document.getElementById('mon-cpu-usage-val').textContent = data.cpu_usage_percent !== undefined ? `${data.cpu_usage_percent.toFixed(1)}%` : '0.0%';
+                document.getElementById('mon-cpu-usage-bar').style.width = data.cpu_usage_percent !== undefined ? `${data.cpu_usage_percent}%` : '0%';
+                document.getElementById('mon-cpu-cores').textContent = data.cpu_cores || '-';
+                document.getElementById('mon-cpu-threads').textContent = data.cpu_threads || '-';
+
+                document.getElementById('mon-ram-usage-val').textContent = data.ram_usage_percent !== undefined ? `${data.ram_usage_percent.toFixed(1)}%` : '0.0%';
+                document.getElementById('mon-ram-usage-bar').style.width = data.ram_usage_percent !== undefined ? `${data.ram_usage_percent}%` : '0%';
+                document.getElementById('mon-ram-used').textContent = data.ram_used_gb !== undefined ? data.ram_used_gb.toFixed(1) : '-';
+                document.getElementById('mon-ram-total').textContent = data.ram_total_gb !== undefined ? data.ram_total_gb.toFixed(1) : '-';
+
+                document.getElementById('mon-disk-usage-val').textContent = data.disk_usage_percent !== undefined ? `${data.disk_usage_percent.toFixed(1)}%` : '0.0%';
+                document.getElementById('mon-disk-usage-bar').style.width = data.disk_usage_percent !== undefined ? `${data.disk_usage_percent}%` : '0%';
+                document.getElementById('mon-disk-free').textContent = data.disk_free_gb !== undefined ? data.disk_free_gb.toFixed(1) : '-';
+                document.getElementById('mon-disk-total').textContent = data.disk_total_gb !== undefined ? data.disk_total_gb.toFixed(1) : '-';
+
+                // GPU details
+                if (data.cuda_available) {
+                    document.getElementById('mon-gpu-status').textContent = data.gpu_device_name || 'Online (Active)';
+                    document.getElementById('mon-gpu-status').className = "text-emerald-400 font-bold";
+                    document.getElementById('mon-vram-used').textContent = data.gpu_vram_used_mb !== undefined ? `${data.gpu_vram_used_mb.toFixed(0)} MB` : '-';
+                    document.getElementById('mon-vram-free').textContent = data.gpu_vram_free_mb !== undefined ? `${data.gpu_vram_free_mb.toFixed(0)} MB` : '-';
+                } else {
+                    document.getElementById('mon-gpu-status').textContent = 'No CUDA acceleration';
+                    document.getElementById('mon-gpu-status').className = "text-slate-500 font-medium";
+                    document.getElementById('mon-vram-used').textContent = 'N/A';
+                    document.getElementById('mon-vram-free').textContent = 'N/A';
+                }
+
+                // 3. API & Batch Performance Stats
+                document.getElementById('mon-http-avg-latency').textContent = hist.avg_http_latency_ms !== undefined ? `${hist.avg_http_latency_ms.toFixed(1)} ms` : '-';
+                document.getElementById('mon-http-p50').textContent = hist.http_p50_latency_ms !== undefined ? `${hist.http_p50_latency_ms.toFixed(1)} ms` : '-';
+                document.getElementById('mon-http-p95').textContent = hist.http_p95_latency_ms !== undefined ? `${hist.http_p95_latency_ms.toFixed(1)} ms` : '-';
+                document.getElementById('mon-http-p99').textContent = hist.http_p99_latency_ms !== undefined ? `${hist.http_p99_latency_ms.toFixed(1)} ms` : '-';
+
+                document.getElementById('mon-batch-count').textContent = hist.total_batches !== undefined ? hist.total_batches : '-';
+                document.getElementById('mon-batch-items').textContent = hist.total_batch_items !== undefined ? hist.total_batch_items : '-';
+                document.getElementById('mon-batch-error-rate').textContent = hist.batch_error_rate !== undefined ? `${(hist.batch_error_rate * 100).toFixed(1)}%` : '0.0%';
+                document.getElementById('mon-batch-avg-duration').textContent = hist.avg_batch_latency_ms !== undefined ? `${(hist.avg_batch_latency_ms / 1000).toFixed(2)} s` : '-';
+                document.getElementById('mon-batch-p50').textContent = hist.batch_p50_latency_ms !== undefined ? `${(hist.batch_p50_latency_ms / 1000).toFixed(1)}s` : '-';
+                document.getElementById('mon-batch-p95').textContent = hist.batch_p95_latency_ms !== undefined ? `${(hist.batch_p95_latency_ms / 1000).toFixed(1)}s` : '-';
+                document.getElementById('mon-batch-p99').textContent = hist.batch_p99_latency_ms !== undefined ? `${(hist.batch_p99_latency_ms / 1000).toFixed(1)}s` : '-';
+
+                // 4. Model details
+                const clsInfo = hist.active_classification_model || {};
+                document.getElementById('mon-cls-health').textContent = data.efficientnet_health || 'HEALTHY';
+                document.getElementById('mon-cls-health').className = (data.efficientnet_health || 'HEALTHY').includes('CRITICAL') ? "px-2 py-0.5 rounded font-bold uppercase tracking-wider text-[8px] bg-red-500/20 text-red-400" : "px-2 py-0.5 rounded font-bold uppercase tracking-wider text-[8px] bg-emerald-500/20 text-emerald-400";
+                document.getElementById('mon-cls-name').textContent = clsInfo.model_name || '-';
+                document.getElementById('mon-cls-arch').textContent = clsInfo.architecture || '-';
+                document.getElementById('mon-cls-version').textContent = clsInfo.model_version || '-';
+                document.getElementById('mon-cls-sha').textContent = clsInfo.checkpoint_sha256 || 'No checkpoints registered';
+
+                const segInfo = hist.active_segmentation_model || {};
+                document.getElementById('mon-seg-health').textContent = data.unext_health || 'HEALTHY';
+                document.getElementById('mon-seg-health').className = (data.unext_health || 'HEALTHY').includes('CRITICAL') ? "px-2 py-0.5 rounded font-bold uppercase tracking-wider text-[8px] bg-red-500/20 text-red-400" : "px-2 py-0.5 rounded font-bold uppercase tracking-wider text-[8px] bg-emerald-500/20 text-emerald-400";
+                document.getElementById('mon-seg-name').textContent = segInfo.model_name || '-';
+                document.getElementById('mon-seg-arch').textContent = segInfo.architecture || '-';
+                document.getElementById('mon-seg-version').textContent = segInfo.model_version || '-';
+                document.getElementById('mon-seg-sha').textContent = segInfo.checkpoint_sha256 || 'No checkpoints registered';
+
+            } catch (err) {
+                console.error("Error loading telemetry info: ", err);
+                document.getElementById('mon-error-message').textContent = `Telemetry connection error: ${err.message}`;
+                document.getElementById('mon-error-banner').classList.remove('hidden');
+            } finally {
+                document.getElementById('mon-loading-spinner').classList.add('hidden');
+            }
+        }
+
+        async function fetchMonitoringTrends() {
+            try {
+                const response = await fetchWithAuth("/api/admin/monitoring/trends?days=7");
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                const data = await response.json();
+
+                renderSvgLineChart('chart-http-volume', data.http || [], 'period', 'request_count', '#6366f1');
+                renderSvgLineChart('chart-http-latency', data.http || [], 'period', 'average_latency_ms', '#a855f7');
+            } catch (err) {
+                console.error("Error loading trends charts: ", err);
+                document.getElementById('chart-http-volume').innerHTML = `<div class="text-xs text-red-400 text-center py-8">Trends load failed: ${err.message}</div>`;
+                document.getElementById('chart-http-latency').innerHTML = `<div class="text-xs text-red-400 text-center py-8">Trends load failed: ${err.message}</div>`;
+            }
+        }
+
+        function renderSvgLineChart(containerId, data, keyField, valField, strokeColor) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            if (!data || data.length === 0) {
+                container.innerHTML = '<div class="text-[10px] text-slate-500 text-center py-8">No historical trends logged.</div>';
+                return;
+            }
+
+            const width = 500;
+            const height = 200;
+            const paddingX = 45;
+            const paddingY = 20;
+
+            const vals = data.map(d => d[valField]);
+            const maxVal = Math.max(...vals, 1);
+            const minVal = 0;
+
+            const points = [];
+            const stepX = (data.length > 1) ? (width - paddingX * 2) / (data.length - 1) : 0;
+            const rangeY = maxVal - minVal;
+
+            for (let i = 0; i < data.length; i++) {
+                const x = paddingX + i * stepX;
+                const val = data[i][valField];
+                const y = height - paddingY - ((val - minVal) / rangeY) * (height - paddingY * 2);
+                points.push({ x, y, item: data[i] });
+            }
+
+            let pathD = '';
+            if (points.length > 0) {
+                pathD = `M ${points[0].x} ${points[0].y} ` + points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ');
+            }
+
+            let svgHtml = `<svg viewBox="0 0 ${width} ${height}" class="w-full h-full overflow-visible">`;
+
+            const gridCount = 4;
+            for (let i = 0; i <= gridCount; i++) {
+                const y = paddingY + i * (height - paddingY * 2) / gridCount;
+                const val = maxVal - i * (maxVal - minVal) / gridCount;
+                svgHtml += `<line x1="${paddingX}" y1="${y}" x2="${width - paddingX}" y2="${y}" stroke="rgba(255,255,255,0.06)" stroke-width="1" />`;
+                svgHtml += `<text x="${paddingX - 8}" y="${y + 3}" fill="#64748b" font-size="9" font-weight="bold" text-anchor="end">${Math.round(val)}</text>`;
+            }
+
+            if (pathD) {
+                svgHtml += `<path d="${pathD}" fill="none" stroke="${strokeColor || '#6366f1'}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />`;
+            }
+
+            points.forEach((p, idx) => {
+                if (data.length <= 7 || idx % Math.ceil(data.length / 5) === 0 || idx === data.length - 1) {
+                    const shortPeriod = p.item[keyField].slice(-5);
+                    svgHtml += `<text x="${p.x}" y="${height - 4}" fill="#64748b" font-size="8" font-weight="bold" text-anchor="middle">${shortPeriod}</text>`;
+                }
+
+                svgHtml += `
+                    <g class="group/dot cursor-pointer">
+                        <circle cx="${p.x}" cy="${p.y}" r="3.5" fill="${strokeColor || '#6366f1'}" stroke="#0f172a" stroke-width="1.5" />
+                        <circle cx="${p.x}" cy="${p.y}" r="8" fill="transparent" />
+                        <title>${p.item[keyField]}: ${Math.round(p.item[valField] * 10) / 10}</title>
+                    </g>
+                `;
+            });
+
+            svgHtml += '</svg>';
+            container.innerHTML = svgHtml;
         }
 
         function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
