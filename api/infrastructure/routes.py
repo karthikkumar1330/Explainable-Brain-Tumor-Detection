@@ -1114,6 +1114,7 @@ async def generate_clinical_report_batch(
     import hashlib
     batch_id = str(uuid.uuid4())
     t_batch_start = time.time()
+    t_batch_perf_start = time.perf_counter()
 
     # Parse ensemble mode string
     ensemble_val = ensemble_mode.lower() == "true"
@@ -1334,6 +1335,28 @@ async def generate_clinical_report_batch(
                     pass
 
     stats["total_duration_sec"] = time.time() - t_batch_start
+
+    # Record batch performance telemetry safely
+    try:
+        t_batch_dur_ms = (time.perf_counter() - t_batch_perf_start) * 1000.0
+        avg_item_dur_ms = t_batch_dur_ms / len(files) if files else 0.0
+
+        # Save telemetry
+        import datetime
+        db_path = DEFAULT_DB_PATH
+        db_repo = SQLitePersistenceRepository(db_path=db_path)
+        db_repo.save_batch_performance_telemetry(
+            batch_id=batch_id,
+            timestamp=datetime.datetime.utcnow().isoformat(),
+            total_items=len(files),
+            successful_items=stats["successful"],
+            failed_items=stats["failed"],
+            total_duration_ms=t_batch_dur_ms,
+            average_item_duration_ms=avg_item_dur_ms
+        )
+    except Exception as telemetry_err:
+        logger.error(f"Failed to record batch performance telemetry: {telemetry_err}")
+
     return {
         "stats": stats,
         "results": results

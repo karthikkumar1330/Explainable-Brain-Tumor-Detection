@@ -364,6 +364,19 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         );
         """
 
+        create_batch_performance_telemetry_sql = """
+        CREATE TABLE IF NOT EXISTS batch_performance_telemetry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id TEXT NOT NULL UNIQUE,
+            timestamp TEXT NOT NULL,
+            total_items INTEGER NOT NULL,
+            successful_items INTEGER NOT NULL,
+            failed_items INTEGER NOT NULL,
+            total_duration_ms REAL NOT NULL,
+            average_item_duration_ms REAL NOT NULL
+        );
+        """
+
         # Analytics and Delivery Indices
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_followup_schedules_patient ON followup_schedules(patient_id);",
@@ -404,10 +417,10 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             "CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_patient ON mri_point_annotations(patient_id);",
             "CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_doctor ON mri_point_annotations(doctor_id);",
             "CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_created ON mri_point_annotations(created_at);",
-            "CREATE INDEX IF NOT EXISTS idx_mri_rectangle_annotations_scan ON mri_rectangle_annotations(scan_id);",
             "CREATE INDEX IF NOT EXISTS idx_mri_rectangle_annotations_doctor ON mri_rectangle_annotations(doctor_id);",
             "CREATE INDEX IF NOT EXISTS idx_mri_rectangle_annotations_created ON mri_rectangle_annotations(created_at);",
-            "CREATE INDEX IF NOT EXISTS idx_http_request_telemetry_timestamp ON http_request_telemetry(timestamp);"
+            "CREATE INDEX IF NOT EXISTS idx_http_request_telemetry_timestamp ON http_request_telemetry(timestamp);",
+            "CREATE INDEX IF NOT EXISTS idx_batch_performance_telemetry_timestamp ON batch_performance_telemetry(timestamp);"
         ]
 
         conn = self._get_connection()
@@ -432,6 +445,7 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 conn.execute(create_mri_rectangle_annotations_sql)
                 conn.execute(create_followup_schedules_sql)
                 conn.execute(create_http_request_telemetry_sql)
+                conn.execute(create_batch_performance_telemetry_sql)
                 for idx_sql in indices:
                     conn.execute(idx_sql)
 
@@ -1266,6 +1280,21 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 total_http_requests = 0
                 avg_http_latency_ms = 0.0
 
+            # 11. Batch Performance Telemetry aggregates
+            try:
+                cursor.execute("SELECT COUNT(*) FROM batch_performance_telemetry;")
+                total_batches = cursor.fetchone()[0]
+                cursor.execute("SELECT AVG(total_duration_ms) FROM batch_performance_telemetry;")
+                row = cursor.fetchone()
+                avg_batch_latency_ms = row[0] if row[0] is not None else 0.0
+                cursor.execute("SELECT SUM(total_items) FROM batch_performance_telemetry;")
+                row = cursor.fetchone()
+                total_batch_items = row[0] if row[0] is not None else 0
+            except Exception:
+                total_batches = 0
+                avg_batch_latency_ms = 0.0
+                total_batch_items = 0
+
             return {
                 "total_predictions": total_predictions,
                 "avg_confidence": avg_confidence,
@@ -1278,7 +1307,10 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 "avg_xai_overlap": avg_xai_overlap,
                 "xai_methods": xai_methods,
                 "total_http_requests": total_http_requests,
-                "avg_http_latency_ms": avg_http_latency_ms
+                "avg_http_latency_ms": avg_http_latency_ms,
+                "total_batches": total_batches,
+                "avg_batch_latency_ms": avg_batch_latency_ms,
+                "total_batch_items": total_batch_items
             }
         except Exception as e:
             self.logger.error(f"Failed to query health telemetry: {e}")
@@ -1294,7 +1326,10 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 "avg_xai_overlap": 0.0,
                 "xai_methods": {},
                 "total_http_requests": 0,
-                "avg_http_latency_ms": 0.0
+                "avg_http_latency_ms": 0.0,
+                "total_batches": 0,
+                "avg_batch_latency_ms": 0.0,
+                "total_batch_items": 0
             }
         finally:
             conn.close()
@@ -1342,5 +1377,20 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 conn.execute(sql, (timestamp, duration_ms, method.upper(), route, status_code))
         except Exception as e:
             self.logger.error(f"Failed to save HTTP request telemetry: {e}")
+        finally:
+            conn.close()
+
+    def save_batch_performance_telemetry(self, batch_id: str, timestamp: str, total_items: int, successful_items: int, failed_items: int, total_duration_ms: float, average_item_duration_ms: float) -> None:
+        """Persists batch performance telemetry safely in SQLite database with idempotency checks."""
+        conn = self._get_connection()
+        sql = """
+        INSERT OR IGNORE INTO batch_performance_telemetry (batch_id, timestamp, total_items, successful_items, failed_items, total_duration_ms, average_item_duration_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?);
+        """
+        try:
+            with conn:
+                conn.execute(sql, (batch_id, timestamp, total_items, successful_items, failed_items, total_duration_ms, average_item_duration_ms))
+        except Exception as e:
+            self.logger.error(f"Failed to save batch performance telemetry: {e}")
         finally:
             conn.close()
