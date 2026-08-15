@@ -55,6 +55,9 @@ app = FastAPI(
 async def add_request_telemetry(request: Request, call_next):
     from security.infrastructure.audit_context import audit_context
     import os
+    import time
+    import datetime
+    from persistence.infrastructure.repository import SQLitePersistenceRepository
 
     trust_proxy = os.environ.get("TRUST_PROXY", "0") == "1"
     client_ip = request.client.host if request.client else "127.0.0.1"
@@ -69,11 +72,50 @@ async def add_request_telemetry(request: Request, call_next):
         "client_ip": client_ip,
         "user_agent": user_agent
     })
+
+    start_time = time.perf_counter()
+    status_code = 500
     try:
         response = await call_next(request)
+        status_code = response.status_code
         return response
+    except Exception as exc:
+        status_code = 500
+        raise exc
     finally:
         audit_context.reset(token)
+        duration_ms = (time.perf_counter() - start_time) * 1000.0
+
+        # Resolve normalized route
+        route_obj = request.scope.get("route")
+        if route_obj:
+            route_path = getattr(route_obj, "path", request.url.path)
+            if request.url.path.startswith("/api") and not route_path.startswith("/api"):
+                route_path = "/api" + route_path
+            import re
+            normalized_route = re.sub(r"\{([^}]+)\}", r"<\1>", route_path)
+        else:
+            normalized_route = request.url.path
+
+        # Strip trailing slash for consistency
+        if normalized_route.endswith("/") and len(normalized_route) > 1:
+            normalized_route = normalized_route[:-1]
+
+        # Exclude public health probes
+        if normalized_route not in ["/ping", "/health", "/api/ping", "/api/health"]:
+            try:
+                db_path = os.environ.get("DB_PATH", "outputs/clinical_reports.db")
+                db_repo = SQLitePersistenceRepository(db_path=db_path)
+                db_repo.save_http_request_telemetry(
+                    timestamp=datetime.datetime.utcnow().isoformat(),
+                    duration_ms=duration_ms,
+                    method=request.method,
+                    route=normalized_route,
+                    status_code=status_code
+                )
+            except Exception as db_err:
+                # Telemetry failure must not break the request
+                pass
 
 
 # OWASP Security Headers Middleware

@@ -353,6 +353,17 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         );
         """
 
+        create_http_request_telemetry_sql = """
+        CREATE TABLE IF NOT EXISTS http_request_telemetry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            duration_ms REAL NOT NULL,
+            method TEXT NOT NULL,
+            route TEXT NOT NULL,
+            status_code INTEGER NOT NULL
+        );
+        """
+
         # Analytics and Delivery Indices
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_followup_schedules_patient ON followup_schedules(patient_id);",
@@ -394,9 +405,9 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             "CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_doctor ON mri_point_annotations(doctor_id);",
             "CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_created ON mri_point_annotations(created_at);",
             "CREATE INDEX IF NOT EXISTS idx_mri_rectangle_annotations_scan ON mri_rectangle_annotations(scan_id);",
-            "CREATE INDEX IF NOT EXISTS idx_mri_rectangle_annotations_patient ON mri_rectangle_annotations(patient_id);",
             "CREATE INDEX IF NOT EXISTS idx_mri_rectangle_annotations_doctor ON mri_rectangle_annotations(doctor_id);",
-            "CREATE INDEX IF NOT EXISTS idx_mri_rectangle_annotations_created ON mri_rectangle_annotations(created_at);"
+            "CREATE INDEX IF NOT EXISTS idx_mri_rectangle_annotations_created ON mri_rectangle_annotations(created_at);",
+            "CREATE INDEX IF NOT EXISTS idx_http_request_telemetry_timestamp ON http_request_telemetry(timestamp);"
         ]
 
         conn = self._get_connection()
@@ -420,6 +431,7 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 conn.execute(create_mri_point_annotations_sql)
                 conn.execute(create_mri_rectangle_annotations_sql)
                 conn.execute(create_followup_schedules_sql)
+                conn.execute(create_http_request_telemetry_sql)
                 for idx_sql in indices:
                     conn.execute(idx_sql)
 
@@ -1243,6 +1255,17 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             xai_rows = cursor.fetchall()
             xai_methods = {r["xai_method"]: r["cnt"] for r in xai_rows}
 
+            # 10. HTTP Request Telemetry aggregates
+            try:
+                cursor.execute("SELECT COUNT(*) FROM http_request_telemetry;")
+                total_http_requests = cursor.fetchone()[0]
+                cursor.execute("SELECT AVG(duration_ms) FROM http_request_telemetry;")
+                row = cursor.fetchone()
+                avg_http_latency_ms = row[0] if row[0] is not None else 0.0
+            except Exception:
+                total_http_requests = 0
+                avg_http_latency_ms = 0.0
+
             return {
                 "total_predictions": total_predictions,
                 "avg_confidence": avg_confidence,
@@ -1253,7 +1276,9 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 "diagnosis_distribution": diag_dist,
                 "avg_tumor_area": avg_tumor_area,
                 "avg_xai_overlap": avg_xai_overlap,
-                "xai_methods": xai_methods
+                "xai_methods": xai_methods,
+                "total_http_requests": total_http_requests,
+                "avg_http_latency_ms": avg_http_latency_ms
             }
         except Exception as e:
             self.logger.error(f"Failed to query health telemetry: {e}")
@@ -1267,7 +1292,9 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 "diagnosis_distribution": {},
                 "avg_tumor_area": 0.0,
                 "avg_xai_overlap": 0.0,
-                "xai_methods": {}
+                "xai_methods": {},
+                "total_http_requests": 0,
+                "avg_http_latency_ms": 0.0
             }
         finally:
             conn.close()
@@ -1300,5 +1327,20 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         except Exception as e:
             self.logger.error(f"Failed to retrieve timeline trace: {e}")
             return None
+        finally:
+            conn.close()
+
+    def save_http_request_telemetry(self, timestamp: str, duration_ms: float, method: str, route: str, status_code: int) -> None:
+        """Persists HTTP request performance telemetry safely in SQLite database."""
+        conn = self._get_connection()
+        sql = """
+        INSERT INTO http_request_telemetry (timestamp, duration_ms, method, route, status_code)
+        VALUES (?, ?, ?, ?, ?);
+        """
+        try:
+            with conn:
+                conn.execute(sql, (timestamp, duration_ms, method.upper(), route, status_code))
+        except Exception as e:
+            self.logger.error(f"Failed to save HTTP request telemetry: {e}")
         finally:
             conn.close()

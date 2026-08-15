@@ -118,6 +118,83 @@ def create_app(db_path: str) -> Flask:
         return response
 
     @app.before_request
+    def record_request_start():
+        import time
+        from flask import g
+        g.request_start_time = time.perf_counter()
+        g.request_logged = False
+
+    @app.after_request
+    def save_request_telemetry(response):
+        import time
+        import datetime
+        import re
+        from flask import g, request
+
+        start_time = getattr(g, "request_start_time", None)
+        if start_time is not None and not getattr(g, "request_logged", False):
+            g.request_logged = True
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
+
+            rule = request.url_rule
+            if rule:
+                # Remove Flask type converters (e.g. <int:report_id> -> <report_id>)
+                normalized_route = re.sub(r"<[a-zA-Z_]+:([a-zA-Z_]+)>", r"<\1>", rule.rule)
+            else:
+                normalized_route = request.path
+
+            if normalized_route.endswith("/") and len(normalized_route) > 1:
+                normalized_route = normalized_route[:-1]
+
+            if normalized_route not in ["/ping", "/health", "/api/ping", "/api/health"] and not normalized_route.startswith("/static/"):
+                try:
+                    db_repo = SQLitePersistenceRepository(db_path=app.config["DB_PATH"])
+                    db_repo.save_http_request_telemetry(
+                        timestamp=datetime.datetime.utcnow().isoformat(),
+                        duration_ms=duration_ms,
+                        method=request.method,
+                        route=normalized_route,
+                        status_code=response.status_code
+                    )
+                except Exception:
+                    pass
+        return response
+
+    @app.teardown_request
+    def teardown_request_telemetry(exception=None):
+        import time
+        import datetime
+        import re
+        from flask import g, request
+
+        start_time = getattr(g, "request_start_time", None)
+        if start_time is not None and not getattr(g, "request_logged", False):
+            g.request_logged = True
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
+
+            rule = request.url_rule
+            if rule:
+                normalized_route = re.sub(r"<[a-zA-Z_]+:([a-zA-Z_]+)>", r"<\1>", rule.rule)
+            else:
+                normalized_route = request.path
+
+            if normalized_route.endswith("/") and len(normalized_route) > 1:
+                normalized_route = normalized_route[:-1]
+
+            if normalized_route not in ["/ping", "/health", "/api/ping", "/api/health"] and not normalized_route.startswith("/static/"):
+                try:
+                    db_repo = SQLitePersistenceRepository(db_path=app.config["DB_PATH"])
+                    db_repo.save_http_request_telemetry(
+                        timestamp=datetime.datetime.utcnow().isoformat(),
+                        duration_ms=duration_ms,
+                        method=request.method,
+                        route=normalized_route,
+                        status_code=500
+                    )
+                except Exception:
+                    pass
+
+    @app.before_request
     def set_audit_context():
         from security.infrastructure.audit_context import audit_context
         trust_proxy = os.environ.get("TRUST_PROXY", "0") == "1"
