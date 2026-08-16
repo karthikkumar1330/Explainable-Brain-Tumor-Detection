@@ -1930,14 +1930,16 @@
             </div>
 
             <!-- Report Metadata Details (F2.1) -->
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-900/40 rounded-2xl border border-slate-800/50 mb-6 text-xs shadow-inner">
+            <div class="grid grid-cols-2 sm:grid-cols-6 gap-4 p-4 bg-slate-900/40 rounded-2xl border border-slate-800/50 mb-6 text-xs shadow-inner">
                 <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Report Number</span><span id="modal-report-number" class="font-extrabold text-slate-100 text-sm">-</span></div>
                 <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Status</span><span id="modal-report-status" class="font-extrabold text-slate-100 text-sm">-</span></div>
                 <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Current Version</span><span id="modal-report-version" class="font-extrabold text-slate-100 text-sm">-</span></div>
                 <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Updated At</span><span id="modal-report-updated" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">AI Uncertainty</span><span id="modal-report-entropy" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Review Status</span><span id="modal-report-review" class="font-extrabold text-slate-100 text-sm">-</span></div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                 <!-- Grad-CAM Blended View -->
                 <div class="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 flex flex-col justify-between">
                     <div class="flex justify-between items-center mb-3">
@@ -1989,14 +1991,14 @@
                                 </div>
                             </div>
                         </div>
-                    </div>>
+                    </div>
                     <div>
                         <input type="range" min="0" max="100" value="70" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-400" oninput="adjustOpacity('overlay', this.value)">
                     </div>
                 </div>
 
                 <!-- Segmentation Blended View -->
-                <div class="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 flex flex-col justify-between">
+                <div class="bg-slate-955/70 p-4 rounded-2xl border border-slate-800 flex flex-col justify-between">
                     <div class="flex justify-between items-center mb-3">
                         <h5 class="text-xs font-bold text-slate-355 uppercase tracking-wider flex items-center gap-1.5">
                             <i class="fa-solid fa-draw-polygon text-sky-400"></i> UNeXt Segmentation Outline Blending
@@ -2013,6 +2015,23 @@
                     </div>
                     <div>
                         <input type="range" min="0" max="100" value="70" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-400" oninput="adjustOpacity('mask', this.value)">
+                    </div>
+                </div>
+
+                <!-- AI Spatial Uncertainty Blending -->
+                <div class="bg-slate-955/70 p-4 rounded-2xl border border-slate-800 flex flex-col justify-between">
+                    <div class="flex justify-between items-center mb-3">
+                        <h5 class="text-xs font-bold text-slate-355 uppercase tracking-wider flex items-center gap-1.5">
+                            <i class="fa-solid fa-circle-nodes text-yellow-500"></i> AI Spatial Uncertainty Blending
+                        </h5>
+                        <span id="label-uncertainty-opacity" class="text-[10px] text-yellow-500 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-850">Opacity: 70%</span>
+                    </div>
+                    <div class="relative w-full h-72 bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-center overflow-hidden mb-3">
+                        <img id="modal-uncertainty-raw" class="absolute max-w-full max-h-full object-contain" src="" alt="Raw MRI Scan" onload="alignSvgOverlay()">
+                        <img id="modal-uncertainty-img" class="absolute max-w-full max-h-full object-contain pointer-events-none" src="" alt="AI Uncertainty Map" style="opacity: 0.70;">
+                    </div>
+                    <div>
+                        <input type="range" min="0" max="100" value="70" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-yellow-500" oninput="adjustOpacity('uncertainty', this.value)">
                     </div>
                 </div>
             </div>
@@ -3603,6 +3622,17 @@
                 document.getElementById("modal-report-version").innerText = `v${data.current_version || 1}`;
                 document.getElementById("modal-report-updated").innerText = data.updated_at || data.created_at;
 
+                // Populate Phase I4 uncertainty fields
+                const entropyVal = data.predictive_entropy !== null && data.predictive_entropy !== undefined ? parseFloat(data.predictive_entropy).toFixed(4) : "0.0000";
+                document.getElementById("modal-report-entropy").innerText = `H(Y|x) = ${entropyVal}`;
+
+                const reviewEl = document.getElementById("modal-report-review");
+                if (data.requires_review) {
+                    reviewEl.innerHTML = `<span class="text-amber-500 font-extrabold uppercase tracking-wider flex items-center gap-1"><i class="fa-solid fa-triangle-exclamation text-amber-400"></i> Review recommended</span>`;
+                } else {
+                    reviewEl.innerHTML = `<span class="text-emerald-500 font-extrabold uppercase tracking-wider flex items-center gap-1"><i class="fa-solid fa-circle-check text-emerald-400"></i> Normal</span>`;
+                }
+
                 // Populate Versions list
                 const versionsList = document.getElementById("modal-versions-list");
                 versionsList.innerHTML = "";
@@ -3741,9 +3771,15 @@
                 if (maskImg) maskImg.style.opacity = 0.70;
                 setImgSrc("modal-mask-img", `/api/report/${data.report_id}/visuals/mask`);
 
+                setImgSrc("modal-uncertainty-raw", rawUrl);
+                const uncertaintyImg = document.getElementById("modal-uncertainty-img");
+                if (uncertaintyImg) uncertaintyImg.style.opacity = 0.70;
+                setImgSrc("modal-uncertainty-img", `/api/report/${data.report_id}/visuals/uncertainty`);
+
                 // Reset Opacity elements
                 document.getElementById("label-overlay-opacity").innerText = "Opacity: 70%";
                 document.getElementById("label-mask-opacity").innerText = "Opacity: 70%";
+                document.getElementById("label-uncertainty-opacity").innerText = "Opacity: 70%";
 
                 // Reset sliders inputs
                 const sliders = document.querySelectorAll("#details-modal input[type='range']");
@@ -3773,7 +3809,10 @@
 
                 tbody.innerHTML += `
                 <tr class="table-row-hover">
-                    <td class="p-4 font-bold text-slate-300 font-mono">#${r.report_id}</td>
+                    <td class="p-4 font-bold text-slate-300 font-mono">
+                        #${r.report_id}
+                        ${r.requires_review ? '<div class="mt-1 text-[9px] text-amber-500 font-extrabold flex items-center gap-1 uppercase tracking-wider"><i class="fa-solid fa-triangle-exclamation text-amber-400"></i> Review Recommended</div>' : ''}
+                    </td>
                     <td class="p-4">
                         <div class="flex items-center space-x-2.5">
                             <div class="h-8 w-8 rounded-full bg-slate-800 text-sky-400 font-extrabold flex items-center justify-center text-[10px] border border-slate-700">
@@ -4197,6 +4236,9 @@
             } else if (type === 'mask') {
                 document.getElementById("modal-mask-img").style.opacity = opacityVal;
                 document.getElementById("label-mask-opacity").innerText = `Opacity: ${value}%`;
+            } else if (type === 'uncertainty') {
+                document.getElementById("modal-uncertainty-img").style.opacity = opacityVal;
+                document.getElementById("label-uncertainty-opacity").innerText = `Opacity: ${value}%`;
             }
         }
 

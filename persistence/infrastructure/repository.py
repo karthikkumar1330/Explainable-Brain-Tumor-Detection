@@ -501,6 +501,17 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 for idx_sql in indices:
                     conn.execute(idx_sql)
 
+                # Phase I4: Additive table schema migrations
+                pred_cols = [row["name"] for row in conn.execute("PRAGMA table_info(predictions);").fetchall()]
+                if "predictive_entropy" not in pred_cols:
+                    conn.execute("ALTER TABLE predictions ADD COLUMN predictive_entropy REAL DEFAULT NULL;")
+                if "requires_review" not in pred_cols:
+                    conn.execute("ALTER TABLE predictions ADD COLUMN requires_review INTEGER DEFAULT 0;")
+
+                report_cols = [row["name"] for row in conn.execute("PRAGMA table_info(clinical_reports);").fetchall()]
+                if "uncertainty_path" not in report_cols:
+                    conn.execute("ALTER TABLE clinical_reports ADD COLUMN uncertainty_path TEXT DEFAULT NULL;")
+
                 import sys
                 import os
                 if any(m in sys.modules for m in ["pytest", "unittest"]) and os.environ.get("DISABLE_TEST_AUTO_ASSIGN") != "1":
@@ -788,9 +799,12 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                     prob_glioma, prob_meningioma, prob_pituitary, prob_no_tumor,
                     tumor_pixel_count, tumor_area_mm2, tumor_percentage_brain, tumor_percentage_image,
                     estimated_brain_pixel_count, rule_based_severity, severity_rule_description, created_at,
-                    classification_model_provenance_id, segmentation_model_provenance_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    classification_model_provenance_id, segmentation_model_provenance_id,
+                    predictive_entropy, requires_review
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """
+                pred_entropy_val = getattr(report.classification, "predictive_entropy", None)
+                req_review_val = 1 if getattr(report.classification, "requires_review", False) else 0
                 cursor = conn.execute(pred_sql, (
                     scan_id,
                     report.classification.class_name,
@@ -798,7 +812,8 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                     prob_glioma, prob_meningioma, prob_pituitary, prob_no_tumor,
                     pixel_count, tumor_area, pct_brain, pct_image,
                     brain_pixels, severity, rule_desc, now_str,
-                    cls_prov_id, seg_prov_id
+                    cls_prov_id, seg_prov_id,
+                    pred_entropy_val, req_review_val
                 ))
                 pred_id = cursor.lastrowid
 
@@ -806,8 +821,9 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 report_sql = """
                 INSERT INTO clinical_reports (
                     prediction_id, markdown_path, json_path, pdf_path,
-                    heatmap_path, overlay_path, mask_path, xai_method, xai_overlap_percentage, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    heatmap_path, overlay_path, mask_path, xai_method, xai_overlap_percentage, created_at,
+                    uncertainty_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """
                 # Extract paths from report object
                 # Markdown & JSON generated outputs are generated using PatientID prefix
@@ -827,7 +843,8 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                     report.segmentation_mask_path,
                     getattr(report, "xai_method", None),
                     getattr(report, "xai_overlap_percentage", None),
-                    now_str
+                    now_str,
+                    getattr(report, "uncertainty_image_path", None)
                 ))
                 report_id = cursor.lastrowid
 
@@ -1330,6 +1347,21 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             row = cursor.fetchone()
             avg_xai_overlap = row[0] if row[0] is not None else 0.0
 
+            # Phase I4 uncertainty aggregates
+            try:
+                cursor.execute("SELECT AVG(predictive_entropy) FROM predictions WHERE predictive_entropy IS NOT NULL;")
+                row = cursor.fetchone()
+                avg_predictive_entropy = row[0] if row[0] is not None else 0.0
+
+                cursor.execute("SELECT COUNT(*) FROM predictions WHERE requires_review = 1;")
+                total_reviews_recommended = cursor.fetchone()[0]
+
+                review_rate = total_reviews_recommended / total_predictions if total_predictions > 0 else 0.0
+            except Exception:
+                avg_predictive_entropy = 0.0
+                total_reviews_recommended = 0
+                review_rate = 0.0
+
             # 9. Active XAI methods count
             cursor.execute("SELECT xai_method, COUNT(*) as cnt FROM clinical_reports WHERE xai_method IS NOT NULL GROUP BY xai_method;")
             xai_rows = cursor.fetchall()
@@ -1449,6 +1481,9 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 "diagnosis_distribution": diag_dist,
                 "avg_tumor_area": avg_tumor_area,
                 "avg_xai_overlap": avg_xai_overlap,
+                "avg_predictive_entropy": avg_predictive_entropy,
+                "total_reviews_recommended": total_reviews_recommended,
+                "review_rate": review_rate,
                 "xai_methods": xai_methods,
                 "total_http_requests": total_http_requests,
                 "avg_http_latency_ms": avg_http_latency_ms,
@@ -1478,6 +1513,9 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 "diagnosis_distribution": {},
                 "avg_tumor_area": 0.0,
                 "avg_xai_overlap": 0.0,
+                "avg_predictive_entropy": 0.0,
+                "total_reviews_recommended": 0,
+                "review_rate": 0.0,
                 "xai_methods": {},
                 "total_http_requests": 0,
                 "avg_http_latency_ms": 0.0,

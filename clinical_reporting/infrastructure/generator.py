@@ -74,6 +74,8 @@ class MarkdownJSONReportGenerator(IClinicalReportGenerator):
                 "uncalibrated_probabilities": getattr(report.classification, "uncalibrated_probabilities", None),
                 "calibration_method": getattr(report.classification, "calibration_method", None),
                 "calibration_parameters": getattr(report.classification, "calibration_parameters", None),
+                "predictive_entropy": getattr(report.classification, "predictive_entropy", None),
+                "requires_review": getattr(report.classification, "requires_review", False),
             },
             "files": {
                 "original_image": report.original_image_path,
@@ -81,6 +83,7 @@ class MarkdownJSONReportGenerator(IClinicalReportGenerator):
                 "overlay_image": report.overlay_image_path,
                 "segmentation_mask": report.segmentation_mask_path,
                 "comparison_image": report.comparison_image_path,
+                "uncertainty_image": report.uncertainty_image_path,
             }
         }
 

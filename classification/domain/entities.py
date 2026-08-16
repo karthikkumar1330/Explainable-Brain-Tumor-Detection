@@ -42,3 +42,7 @@ class PredictionResult:
     calibration_method: Optional[str] = None
     calibration_parameters: Optional[Dict[str, Any]] = None
     is_calibrated: bool = False
+
+    # Uncertainty fields
+    predictive_entropy: Optional[float] = None
+    requires_review: Optional[bool] = None

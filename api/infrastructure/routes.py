@@ -43,6 +43,56 @@ from clinical_reporting.application.services import ReportService
 
 
 # Configure paths
+def calculate_predictive_entropy(probabilities: Dict[str, float]) -> float:
+    """Calculates classification predictive entropy over probabilities dictionary."""
+    import math
+    if not probabilities:
+        return 0.0
+    # Sanity checks: probabilities should be between 0 and 1
+    for prob in probabilities.values():
+        if prob < 0.0 or prob > 1.0:
+            return 0.0
+    entropy = 0.0
+    for prob in probabilities.values():
+        if prob > 1e-9:
+            entropy -= prob * math.log2(prob)
+    return float(entropy)
+
+
+def generate_spatial_uncertainty_map(sigmoid_probs: np.ndarray, threshold_norm: int = 25) -> np.ndarray:
+    """Calculates pixel-wise Shannon entropy over segmentation sigmoid outputs.
+
+    Args:
+        sigmoid_probs: float numpy array of shape (H, W) or (1, H, W) containing values in [0, 1].
+        threshold_norm: Normalized entropy threshold under which colors are masked out.
+
+    Returns:
+        A colorized uint8 BGR image representing the boundary uncertainty heatmap.
+    """
+    # Ensure float32 array
+    probs = np.asarray(sigmoid_probs, dtype=np.float32)
+    # Remove channel dim if present
+    if probs.ndim == 3:
+        if probs.shape[0] == 1:
+            probs = probs[0]
+        elif probs.shape[-1] == 1:
+            probs = probs[..., 0]
+
+    # Clip to avoid float overflows or negative values
+    probs = np.clip(probs, 1e-12, 1.0 - 1e-12)
+
+    # Calculate Shannon entropy per pixel
+    entropy = -probs * np.log2(probs) - (1.0 - probs) * np.log2(1.0 - probs)
+
+    # Normalize to [0, 255]
+    # Maximum possible entropy for binary classification is 1.0 (at prob = 0.5)
+    entropy_norm = np.clip(entropy * 255.0, 0, 255).astype(np.uint8)
+
+    # Generate transparent red/orange contours where entropy is high, or apply COLORMAP_JET
+    color_map = cv2.applyColorMap(entropy_norm, cv2.COLORMAP_JET)
+
+    return color_map, entropy_norm
+
 DEFAULT_DB_PATH = os.environ.get("DB_PATH", "outputs/clinical_reports.db")
 CLS_CHECKPOINT = "models/classification/efficientnet_b0_brain_tumor.pth"
 SEG_CHECKPOINT = "models/brain_tumor_unext/model.pth"
@@ -805,6 +855,25 @@ def _run_single_report_pipeline(
                 logger.critical(f"CPU fallback for classification failed: {cpu_err}")
                 raise HTTPException(status_code=500, detail=f"Classification inference failed: {cpu_err}")
 
+        # Compute predictive entropy & check review threshold (Phase I4)
+        try:
+            pred_entropy = calculate_predictive_entropy(classification_result.probabilities)
+            # Find the top two classes to calculate confidence margin
+            sorted_probs = sorted(classification_result.probabilities.values(), reverse=True)
+            margin = sorted_probs[0] - sorted_probs[1] if len(sorted_probs) >= 2 else 1.0
+
+            # Wording standard / logic: requires_review = 1 if entropy >= 1.0 or margin < 0.10
+            req_review = (pred_entropy >= 1.0) or (margin < 0.10)
+
+            from dataclasses import replace
+            classification_result = replace(
+                classification_result,
+                predictive_entropy=pred_entropy,
+                requires_review=req_review
+            )
+        except Exception as ent_calc_err:
+            logger.error(f"Failed to calculate classification uncertainty metrics: {ent_calc_err}")
+
         cls_latency = time.time() - t_cls
         timeline["Classification"] = time.time() - t_endpoint_start
         timeline["Calibration"] = time.time() - t_endpoint_start
@@ -963,6 +1032,27 @@ def _run_single_report_pipeline(
         if not success_m:
             logger.error(f"Failed to write segmentation mask to: {mask_path}")
 
+        # Phase I4: Generate and save Spatial Boundary Uncertainty map overlay
+        uncertainty_filename = f"{intake.patient_id}_api_uncertainty.png"
+        uncertainty_path = os.path.join(OUTPUT_REPORTS_DIR, uncertainty_filename)
+        uncertainty_overlay = img_bgr.copy()
+        try:
+            # Generate color map using the entropy helper function
+            color_entropy, entropy_norm = generate_spatial_uncertainty_map(prob_map_resized)
+            high_entropy_mask = (entropy_norm > 25)
+
+            # Blend colormap with the original scan
+            cv2.addWeighted(color_entropy, 0.6, img_bgr, 0.4, 0, dst=uncertainty_overlay)
+            uncertainty_overlay[~high_entropy_mask] = img_bgr[~high_entropy_mask]
+        except Exception as ent_err:
+            logger.error(f"Failed to generate spatial uncertainty overlay: {ent_err}")
+            # Fallback to a simple red boundary outline if calculation fails
+            uncertainty_overlay = overlay_tumor_contour(img_bgr, final_mask, color=(0, 0, 255))
+
+        success_u = cv2.imwrite(uncertainty_path, uncertainty_overlay)
+        if not success_u:
+            logger.error(f"Failed to write spatial uncertainty overlay to: {uncertainty_path}")
+
         # Save before-after post-processing comparison image
         comparison_filename = f"{intake.patient_id}_api_comparison.png"
         comparison_path = os.path.join(OUTPUT_REPORTS_DIR, comparison_filename)
@@ -1091,7 +1181,16 @@ def _run_single_report_pipeline(
         )
         quality_warnings = engine_result["warnings"]
 
+        # Phase I4 warning trigger check:
+        if len(quality_warnings) > 0 or not engine_result.get("is_safe", True):
+            from dataclasses import replace
+            classification_result = replace(
+                classification_result,
+                requires_review=True
+            )
+
         # Generate Clinical Insight (B6.15)
+
         from clinical_insight.application.use_cases import GenerateClinicalInsightUseCase
         insight_use_case = GenerateClinicalInsightUseCase()
 
@@ -1126,6 +1225,7 @@ def _run_single_report_pipeline(
             heatmap_image_path=heatmap_path,
             overlay_image_path=overlay_path,
             segmentation_mask_path=mask_path,
+            uncertainty_image_path=uncertainty_path,
             comparison_image_path=comparison_path,
             xai_method=xai_param,
             xai_explanation_text=xai_result.explanation_text,
@@ -1798,7 +1898,7 @@ def serve_report_visual(report_id: int, visual_type: str, current_user: User = D
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT cr.overlay_path, cr.heatmap_path, cr.mask_path, s.image_path as raw_path
+            SELECT cr.overlay_path, cr.heatmap_path, cr.mask_path, cr.uncertainty_path, s.image_path as raw_path
             FROM clinical_reports cr
             JOIN predictions pr ON cr.prediction_id = pr.id
             JOIN mri_scans s ON pr.scan_id = s.id
@@ -1838,6 +1938,8 @@ def serve_report_visual(report_id: int, visual_type: str, current_user: User = D
                 img_path = row["heatmap_path"]
             elif visual_type == "mask":
                 img_path = row["mask_path"]
+            elif visual_type == "uncertainty":
+                img_path = row["uncertainty_path"]
             elif visual_type == "raw":
                 img_path = row["raw_path"]
             else:

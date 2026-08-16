@@ -2027,7 +2027,8 @@ def create_app(db_path: str) -> Flask:
                 SELECT
                     cr.id as report_id, cr.prediction_id, s.id as scan_id, p.patient_id, p.name as patient_name,
                     pr.predicted_class, pr.confidence_score, pr.tumor_area_mm2, pr.tumor_percentage_brain,
-                    pr.rule_based_severity, pr.severity_rule_description, cr.created_at
+                    pr.rule_based_severity, pr.severity_rule_description, cr.created_at,
+                    pr.predictive_entropy, pr.requires_review
                 FROM clinical_reports cr
                 JOIN predictions pr ON cr.prediction_id = pr.id
                 JOIN mri_scans s ON pr.scan_id = s.id
@@ -3090,7 +3091,7 @@ def create_app(db_path: str) -> Flask:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT cr.overlay_path, cr.heatmap_path, cr.mask_path, s.image_path as raw_path
+                SELECT cr.overlay_path, cr.heatmap_path, cr.mask_path, cr.uncertainty_path, s.image_path as raw_path
                 FROM clinical_reports cr
                 JOIN predictions pr ON cr.prediction_id = pr.id
                 JOIN mri_scans s ON pr.scan_id = s.id
@@ -3131,6 +3132,8 @@ def create_app(db_path: str) -> Flask:
                     img_path = row["heatmap_path"]
                 elif image_type == "mask":
                     img_path = row["mask_path"]
+                elif image_type == "uncertainty":
+                    img_path = row["uncertainty_path"]
                 elif image_type == "raw":
                     img_path = row["raw_path"]
                 else:

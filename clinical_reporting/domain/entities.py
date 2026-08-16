@@ -47,6 +47,7 @@ class ClinicalReport:
     heatmap_image_path: Optional[str]
     overlay_image_path: Optional[str]
     segmentation_mask_path: Optional[str]
+    uncertainty_image_path: Optional[str] = None
     comparison_image_path: Optional[str] = None
     xai_method: Optional[str] = None
     xai_explanation_text: Optional[str] = None
