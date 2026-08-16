@@ -2943,3 +2943,75 @@ def archive_mri_rectangle_annotation_api(
     except Exception as e:
         logger.error(f"Error in archive rectangle annotation API: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+class SegmentationReviewPayload(BaseModel):
+    patient_id: str
+    review_status: str
+    comment: Optional[str] = None
+
+
+@router.post("/doctor/scans/{scan_id}/reviews")
+def create_or_update_segmentation_review_api(
+    scan_id: int,
+    payload: SegmentationReviewPayload,
+    current_user: User = Depends(require_roles([Role.DOCTOR, Role.ADMIN]))
+):
+    """API Endpoint: Creates or updates a clinician's segmentation review for a scan."""
+    from clinical_reporting.application.segmentation_review_service import SegmentationReviewService, SegmentationReviewServiceException
+    service = SegmentationReviewService(db_path=DEFAULT_DB_PATH)
+    try:
+        review = service.create_or_update_review(
+            actor=current_user,
+            scan_id=scan_id,
+            patient_id=payload.patient_id,
+            status=payload.review_status,
+            comment=payload.comment
+        )
+        return review
+    except SegmentationReviewServiceException as e:
+        err_msg = str(e)
+        if "Access denied" in err_msg:
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg:
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=400, detail=err_msg)
+    except Exception as e:
+        logger.error(f"Error in create/update review API: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/doctor/scans/{scan_id}/reviews")
+def get_segmentation_review_api(
+    scan_id: int,
+    current_user: User = Depends(require_roles([Role.DOCTOR, Role.ADMIN]))
+):
+    """API Endpoint: Retrieves the active clinician review for a given MRI scan."""
+    from clinical_reporting.application.segmentation_review_service import SegmentationReviewService, SegmentationReviewServiceException
+    service = SegmentationReviewService(db_path=DEFAULT_DB_PATH)
+    try:
+        review = service.get_review_for_scan(
+            actor=current_user,
+            scan_id=scan_id
+        )
+        if not review:
+            raise HTTPException(status_code=404, detail="No review found for this scan.")
+        return review
+    except SegmentationReviewServiceException as e:
+        err_msg = str(e)
+        if "Access denied" in err_msg:
+            raise HTTPException(status_code=403, detail=err_msg)
+        elif "Authentication required" in err_msg:
+            raise HTTPException(status_code=401, detail=err_msg)
+        elif "not found" in err_msg.lower():
+            raise HTTPException(status_code=404, detail=err_msg)
+        else:
+            raise HTTPException(status_code=400, detail=err_msg)
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error in get review API: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")

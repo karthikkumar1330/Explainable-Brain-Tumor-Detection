@@ -2004,8 +2004,12 @@
                         <span id="label-mask-opacity" class="text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-850">Opacity: 70%</span>
                     </div>
                     <div class="relative w-full h-72 bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-center overflow-hidden mb-3">
-                        <img id="modal-mask-raw" class="absolute max-w-full max-h-full object-contain" src="" alt="Raw MRI Scan">
+                        <img id="modal-mask-raw" class="absolute max-w-full max-h-full object-contain" src="" alt="Raw MRI Scan" onload="alignSvgOverlay()">
                         <img id="modal-mask-img" class="absolute max-w-full max-h-full object-contain pointer-events-none" src="" alt="Segmentation Mask" style="opacity: 0.70;">
+                        <!-- Point Annotations SVG Overlay for Segmentation View -->
+                        <svg id="segmentation-svg-overlay" class="absolute pointer-events-auto select-none" style="display:none;" onclick="handleSvgOverlayClick(event)">
+                            <!-- Circles are rendered here -->
+                        </svg>
                     </div>
                     <div>
                         <input type="range" min="0" max="100" value="70" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-400" oninput="adjustOpacity('mask', this.value)">
@@ -2107,6 +2111,63 @@
                             Submit Quality Flag
                         </button>
                     </div>
+            <!-- Clinician Segmentation Review Panel (Phase I2) -->
+            <div id="segmentation-review-panel" class="bg-slate-950 p-5 rounded-2xl border border-slate-800 text-xs text-slate-300 mb-6 space-y-4">
+                <div class="border-b border-slate-800 pb-3 flex justify-between items-center">
+                    <span class="font-extrabold text-slate-200 uppercase tracking-wider text-[11px] flex items-center gap-2">
+                        <i class="fa-solid fa-clipboard-check text-sky-400 text-sm"></i> Clinician Segmentation Review
+                    </span>
+                    <span class="text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-850" id="review-panel-badge">Pending Review</span>
+                </div>
+
+                <!-- Review Status Display (Only shown if already reviewed) -->
+                <div id="review-display-section" class="hidden p-3.5 rounded-xl bg-slate-900/40 border border-slate-800 space-y-2">
+                    <div class="flex justify-between items-center">
+                        <span class="text-slate-400">Review Decision:</span>
+                        <span id="review-decision-status" class="font-bold text-sm">-</span>
+                    </div>
+                    <div class="flex justify-between items-center text-[11px]">
+                        <span class="text-slate-400">Reviewed By:</span>
+                        <span id="review-decision-reviewer" class="font-semibold text-slate-300">-</span>
+                    </div>
+                    <div class="flex justify-between items-center text-[11px]">
+                        <span class="text-slate-400">Reviewed Timestamp:</span>
+                        <span id="review-decision-time" class="font-medium text-slate-400">-</span>
+                    </div>
+                    <div class="pt-2 border-t border-slate-900">
+                        <span class="text-[10px] text-slate-450 block font-bold uppercase mb-1">Clinician Comment:</span>
+                        <p id="review-decision-comment" class="text-slate-250 italic bg-slate-950 p-2 rounded-lg border border-slate-900/60 whitespace-pre-wrap">-</p>
+                    </div>
+                </div>
+
+                <!-- Review Form -->
+                <div id="review-form-section" class="space-y-3">
+                    <div class="space-y-1.5">
+                        <span class="text-[10px] text-slate-450 block font-bold uppercase">Review Decision Status:</span>
+                        <div class="grid grid-cols-3 gap-2">
+                            <button id="btn-status-asis" type="button" onclick="selectReviewStatus('APPROVED_AS_IS')" class="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 p-2.5 rounded-xl font-bold transition text-center cursor-pointer flex flex-col items-center gap-1">
+                                <i class="fa-solid fa-circle-check text-emerald-450 text-sm"></i>
+                                <span>Approve As-Is</span>
+                            </button>
+                            <button id="btn-status-corrections" type="button" onclick="selectReviewStatus('APPROVED_WITH_CORRECTIONS')" class="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 p-2.5 rounded-xl font-bold transition text-center cursor-pointer flex flex-col items-center gap-1">
+                                <i class="fa-solid fa-user-pen text-sky-455 text-sm"></i>
+                                <span>With Corrections</span>
+                            </button>
+                            <button id="btn-status-rejected" type="button" onclick="selectReviewStatus('REJECTED')" class="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 p-2.5 rounded-xl font-bold transition text-center cursor-pointer flex flex-col items-center gap-1">
+                                <i class="fa-solid fa-circle-xmark text-rose-455 text-sm"></i>
+                                <span>Reject Output</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="space-y-1.5">
+                        <span class="text-[10px] text-slate-450 block font-bold uppercase">Clinician Comments (Max 2000 chars):</span>
+                        <textarea id="review-comment-input" rows="3" placeholder="Enter comments on UNeXt segmentation, quality observations, or correction notes... Comments are encrypted at rest." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
+                    </div>
+
+                    <button id="submit-review-btn" onclick="submitClinicalReview()" class="w-full bg-sky-600 hover:bg-sky-500 text-slate-950 font-extrabold py-2 rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md">
+                        <i class="fa-solid fa-check-double"></i> Submit Segmentation Review
+                    </button>
                 </div>
             </div>
 
@@ -2361,6 +2422,7 @@
         // Report In-App Preview Globals (F2.1 - F2.12)
         let currentSelectedReportId = null;
         let currentSelectedScanId = null;
+        let currentSelectedPatientId = null;
         let editingNoteId = null;
 
         // Point and Rectangle Annotation Globals (Phase H3.2-B & H3.2-C)
@@ -3512,8 +3574,10 @@
 
                 currentSelectedReportId = data.report_id;
                 currentSelectedScanId = data.scan_id;
+                currentSelectedPatientId = data.patient_id;
                 loadClinicianNotes(data.scan_id);
                 loadMriAnnotations(data.scan_id);
+                loadClinicianReview(data.scan_id);
 
                 document.getElementById("modal-title").innerText = `Diagnostic Report Details: #${data.report_id}`;
                 document.getElementById("modal-patient-meta").innerText = `Patient ID: ${data.patient_id} | Name: ${data.patient_name}`;
@@ -6075,9 +6139,10 @@
                 toggleRectangleMode();
             }
 
-            const svg = document.getElementById("annotation-svg-overlay");
-            if (!svg) return;
-            svg.innerHTML = "";
+            const svgHeatmap = document.getElementById("annotation-svg-overlay");
+            const svgSeg = document.getElementById("segmentation-svg-overlay");
+            if (svgHeatmap) svgHeatmap.innerHTML = "";
+            if (svgSeg) svgSeg.innerHTML = "";
 
             if (!scanId) return;
 
@@ -6101,18 +6166,33 @@
         }
 
         function alignSvgOverlay() {
-            const img = document.getElementById("modal-heatmap-raw");
-            const svg = document.getElementById("annotation-svg-overlay");
-            if (!img || !svg) return;
+            // Align Heatmap SVG
+            const imgHeatmap = document.getElementById("modal-heatmap-raw");
+            const svgHeatmap = document.getElementById("annotation-svg-overlay");
+            if (imgHeatmap && svgHeatmap) {
+                const rect = imgHeatmap.getBoundingClientRect();
+                const parentRect = imgHeatmap.parentElement.getBoundingClientRect();
 
-            const rect = img.getBoundingClientRect();
-            const parentRect = img.parentElement.getBoundingClientRect();
+                svgHeatmap.style.left = `${rect.left - parentRect.left}px`;
+                svgHeatmap.style.top = `${rect.top - parentRect.top}px`;
+                svgHeatmap.style.width = `${rect.width}px`;
+                svgHeatmap.style.height = `${rect.height}px`;
+                svgHeatmap.style.display = "block";
+            }
 
-            svg.style.left = `${rect.left - parentRect.left}px`;
-            svg.style.top = `${rect.top - parentRect.top}px`;
-            svg.style.width = `${rect.width}px`;
-            svg.style.height = `${rect.height}px`;
-            svg.style.display = "block";
+            // Align Segmentation Mask SVG
+            const imgSeg = document.getElementById("modal-mask-raw");
+            const svgSeg = document.getElementById("segmentation-svg-overlay");
+            if (imgSeg && svgSeg) {
+                const rect = imgSeg.getBoundingClientRect();
+                const parentRect = imgSeg.parentElement.getBoundingClientRect();
+
+                svgSeg.style.left = `${rect.left - parentRect.left}px`;
+                svgSeg.style.top = `${rect.top - parentRect.top}px`;
+                svgSeg.style.width = `${rect.width}px`;
+                svgSeg.style.height = `${rect.height}px`;
+                svgSeg.style.display = "block";
+            }
 
             drawMarkers();
         }
@@ -6125,117 +6205,120 @@
         });
 
         function drawMarkers() {
-            const svg = document.getElementById("annotation-svg-overlay");
-            if (!svg) return;
+            const svgHeatmap = document.getElementById("annotation-svg-overlay");
+            const svgSeg = document.getElementById("segmentation-svg-overlay");
+            const svgs = [];
+            if (svgHeatmap) svgs.push(svgHeatmap);
+            if (svgSeg) svgs.push(svgSeg);
 
-            const previewCircle = svg.querySelector(".preview-marker");
-            const previewRect = svg.querySelector(".preview-rect");
-            svg.innerHTML = "";
-            if (previewCircle) {
-                svg.appendChild(previewCircle);
-            }
-            if (previewRect) {
-                svg.appendChild(previewRect);
-            }
+            svgs.forEach(svg => {
+                const previewCircle = svg.querySelector(".preview-marker");
+                const previewRect = svg.querySelector(".preview-rect");
+                svg.innerHTML = "";
+                if (previewCircle) {
+                    svg.appendChild(previewCircle);
+                }
+                if (previewRect) {
+                    svg.appendChild(previewRect);
+                }
 
-            const svgWidth = svg.clientWidth || svg.getBoundingClientRect().width;
-            const svgHeight = svg.clientHeight || svg.getBoundingClientRect().height;
+                const svgWidth = svg.clientWidth || svg.getBoundingClientRect().width;
+                const svgHeight = svg.clientHeight || svg.getBoundingClientRect().height;
 
-            if (!svgWidth || !svgHeight) return;
+                if (!svgWidth || !svgHeight) return;
 
-            // Render points
-            activeAnnotations.forEach(ann => {
-                const cx = ann.x * svgWidth;
-                const cy = ann.y * svgHeight;
+                // Render points
+                activeAnnotations.forEach(ann => {
+                    const cx = ann.x * svgWidth;
+                    const cy = ann.y * svgHeight;
 
-                const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-                g.setAttribute("class", "annotation-marker cursor-pointer group/marker");
-                g.setAttribute("data-id", ann.annotation_id);
+                    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                    g.setAttribute("class", "annotation-marker cursor-pointer group/marker");
+                    g.setAttribute("data-id", ann.annotation_id);
 
-                g.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    openAnnotationEdit(ann, cx, cy);
+                    g.addEventListener("click", (e) => {
+                        e.stopPropagation();
+                        openAnnotationEdit(ann, cx, cy);
+                    });
+
+                    const ring = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                    ring.setAttribute("cx", cx);
+                    ring.setAttribute("cy", cy);
+                    ring.setAttribute("r", 9);
+                    ring.setAttribute("fill", "none");
+                    ring.setAttribute("stroke", "#38bdf8");
+                    ring.setAttribute("stroke-width", 2);
+                    ring.setAttribute("opacity", 0);
+                    ring.setAttribute("class", "transition duration-200 group-hover/marker:opacity-80");
+
+                    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                    circle.setAttribute("cx", cx);
+                    circle.setAttribute("cy", cy);
+                    circle.setAttribute("r", 5);
+                    circle.setAttribute("fill", "#0284c7");
+                    circle.setAttribute("stroke", "#f8fafc");
+                    circle.setAttribute("stroke-width", 1.5);
+
+                    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+                    title.textContent = `${ann.label || 'Point'} - Observed by ${ann.doctor_name || ann.doctor_email}`;
+                    g.appendChild(title);
+
+                    g.appendChild(ring);
+                    g.appendChild(circle);
+                    svg.appendChild(g);
                 });
 
-                const ring = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-                ring.setAttribute("cx", cx);
-                ring.setAttribute("cy", cy);
-                ring.setAttribute("r", 9);
-                ring.setAttribute("fill", "none");
-                ring.setAttribute("stroke", "#38bdf8");
-                ring.setAttribute("stroke-width", 2);
-                ring.setAttribute("opacity", 0);
-                ring.setAttribute("class", "transition duration-200 group-hover/marker:opacity-80");
+                // Render rectangles
+                activeRectAnnotations.forEach(ann => {
+                    const rx = ann.x * svgWidth;
+                    const ry = ann.y * svgHeight;
+                    const rw = ann.width * svgWidth;
+                    const rh = ann.height * svgHeight;
 
-                const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-                circle.setAttribute("cx", cx);
-                circle.setAttribute("cy", cy);
-                circle.setAttribute("r", 5);
-                circle.setAttribute("fill", "#0284c7");
-                circle.setAttribute("stroke", "#f8fafc");
-                circle.setAttribute("stroke-width", 1.5);
+                    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                    g.setAttribute("class", "annotation-marker rectangle-marker cursor-pointer group/marker");
+                    g.setAttribute("data-id", ann.annotation_id);
 
-                const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
-                title.textContent = `${ann.label || 'Point'} - Observed by ${ann.doctor_name || ann.doctor_email}`;
-                g.appendChild(title);
+                    g.addEventListener("click", (e) => {
+                        e.stopPropagation();
+                        openRectangleEdit(ann, rx + rw / 2, ry + rh / 2);
+                    });
 
-                g.appendChild(ring);
-                g.appendChild(circle);
-                svg.appendChild(g);
-            });
+                    const hoverRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    hoverRect.setAttribute("x", rx - 4);
+                    hoverRect.setAttribute("y", ry - 4);
+                    hoverRect.setAttribute("width", rw + 8);
+                    hoverRect.setAttribute("height", rh + 8);
+                    hoverRect.setAttribute("fill", "none");
+                    hoverRect.setAttribute("stroke", "#38bdf8");
+                    hoverRect.setAttribute("stroke-width", 2);
+                    hoverRect.setAttribute("opacity", 0);
+                    hoverRect.setAttribute("class", "transition duration-200 group-hover/marker:opacity-80");
 
-            // Render rectangles
-            activeRectAnnotations.forEach(ann => {
-                const rx = ann.x * svgWidth;
-                const ry = ann.y * svgHeight;
-                const rw = ann.width * svgWidth;
-                const rh = ann.height * svgHeight;
+                    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    rect.setAttribute("x", rx);
+                    rect.setAttribute("y", ry);
+                    rect.setAttribute("width", rw);
+                    rect.setAttribute("height", rh);
+                    rect.setAttribute("fill", "none");
+                    rect.setAttribute("stroke", "#0284c7");
+                    rect.setAttribute("stroke-width", 2);
 
-                const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-                g.setAttribute("class", "annotation-marker rectangle-marker cursor-pointer group/marker");
-                g.setAttribute("data-id", ann.annotation_id);
+                    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+                    title.textContent = `${ann.label || 'Rectangle ROI'} - Observed by ${ann.doctor_name || ann.doctor_email}`;
+                    g.appendChild(title);
 
-                g.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    openRectangleEdit(ann, rx + rw / 2, ry + rh / 2);
+                    g.appendChild(hoverRect);
+                    g.appendChild(rect);
+                    svg.appendChild(g);
                 });
-
-                // Strong outline on hover
-                const hoverRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                hoverRect.setAttribute("x", rx - 4);
-                hoverRect.setAttribute("y", ry - 4);
-                hoverRect.setAttribute("width", rw + 8);
-                hoverRect.setAttribute("height", rh + 8);
-                hoverRect.setAttribute("fill", "none");
-                hoverRect.setAttribute("stroke", "#38bdf8");
-                hoverRect.setAttribute("stroke-width", 2);
-                hoverRect.setAttribute("opacity", 0);
-                hoverRect.setAttribute("class", "transition duration-200 group-hover/marker:opacity-80");
-
-                // Main visible rectangle
-                const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                rect.setAttribute("x", rx);
-                rect.setAttribute("y", ry);
-                rect.setAttribute("width", rw);
-                rect.setAttribute("height", rh);
-                rect.setAttribute("fill", "none");
-                rect.setAttribute("stroke", "#0284c7");
-                rect.setAttribute("stroke-width", 2);
-
-                const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
-                title.textContent = `${ann.label || 'Rectangle ROI'} - Observed by ${ann.doctor_name || ann.doctor_email}`;
-                g.appendChild(title);
-
-                g.appendChild(hoverRect);
-                g.appendChild(rect);
-                svg.appendChild(g);
             });
         }
 
         function handleSvgOverlayClick(event) {
             if (!annotationModeActive) return;
 
-            const svg = document.getElementById("annotation-svg-overlay");
+            const svg = event.currentTarget;
             if (!svg) return;
 
             const rect = svg.getBoundingClientRect();
@@ -6247,8 +6330,8 @@
 
             placementCoordinates = { x: xNorm, y: yNorm };
 
-            const oldPreview = svg.querySelector(".preview-marker");
-            if (oldPreview) oldPreview.remove();
+            // Remove preview markers on BOTH SVGs
+            document.querySelectorAll("#annotation-svg-overlay .preview-marker, #segmentation-svg-overlay .preview-marker").forEach(el => el.remove());
 
             const previewG = document.createElementNS("http://www.w3.org/2000/svg", "g");
             previewG.setAttribute("class", "preview-marker");
@@ -6329,62 +6412,73 @@
         function toggleAnnotationMode() {
             annotationModeActive = !annotationModeActive;
             const btn = document.getElementById("toggle-annotation-btn");
-            const svg = document.getElementById("annotation-svg-overlay");
+            const svgs = document.querySelectorAll("#annotation-svg-overlay, #segmentation-svg-overlay");
 
             if (annotationModeActive && rectangleModeActive) {
                 toggleRectangleMode();
             }
 
             if (annotationModeActive) {
-                btn.innerHTML = '<i class="fa-solid fa-ban text-rose-450"></i> Cancel Point';
+                btn.innerHTML = '<i class="fa-solid fa-ban text-rose-455"></i> Cancel Point';
                 btn.className = "bg-rose-950/40 text-rose-300 border border-rose-800 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1";
-                svg.classList.add("cursor-crosshair");
+                svgs.forEach(svg => {
+                    svg.classList.add("cursor-crosshair");
+                    svg.style.pointerEvents = "auto";
+                });
                 closeAnnotationPopover();
             } else {
                 btn.innerHTML = '<i class="fa-solid fa-location-dot text-sky-400"></i> Add Point';
                 btn.className = "bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1";
-                svg.classList.remove("cursor-crosshair");
-
-                const preview = svg.querySelector(".preview-marker");
-                if (preview) preview.remove();
+                svgs.forEach(svg => {
+                    svg.classList.remove("cursor-crosshair");
+                    const preview = svg.querySelector(".preview-marker");
+                    if (preview) preview.remove();
+                });
             }
         }
 
         function toggleRectangleMode() {
             rectangleModeActive = !rectangleModeActive;
             const rectBtn = document.getElementById("toggle-rectangle-btn");
-            const svg = document.getElementById("annotation-svg-overlay");
+            const svgs = document.querySelectorAll("#annotation-svg-overlay, #segmentation-svg-overlay");
 
             if (rectangleModeActive && annotationModeActive) {
                 toggleAnnotationMode();
             }
 
             if (rectangleModeActive) {
-                rectBtn.innerHTML = '<i class="fa-solid fa-ban text-rose-450"></i> Cancel Rectangle';
+                rectBtn.innerHTML = '<i class="fa-solid fa-ban text-rose-455"></i> Cancel Rectangle';
                 rectBtn.className = "bg-rose-950/40 text-rose-300 border border-rose-800 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1";
-                svg.classList.add("cursor-crosshair");
                 closeAnnotationPopover();
 
-                svg.addEventListener("mousedown", handleSvgMouseDown);
-                svg.addEventListener("mousemove", handleSvgMouseMove);
-                svg.addEventListener("mouseup", handleSvgMouseUp);
-                svg.addEventListener("pointerdown", handleSvgMouseDown);
-                svg.addEventListener("pointermove", handleSvgMouseMove);
-                svg.addEventListener("pointerup", handleSvgMouseUp);
+                svgs.forEach(svg => {
+                    svg.classList.add("cursor-crosshair");
+                    svg.style.pointerEvents = "auto";
+
+                    svg.addEventListener("mousedown", handleSvgMouseDown);
+                    svg.addEventListener("mousemove", handleSvgMouseMove);
+                    svg.addEventListener("mouseup", handleSvgMouseUp);
+                    svg.addEventListener("pointerdown", handleSvgMouseDown);
+                    svg.addEventListener("pointermove", handleSvgMouseMove);
+                    svg.addEventListener("pointerup", handleSvgMouseUp);
+                });
             } else {
                 rectBtn.innerHTML = '<i class="fa-solid fa-vector-square text-sky-400"></i> Add Rectangle';
                 rectBtn.className = "bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1";
-                svg.classList.remove("cursor-crosshair");
 
-                svg.removeEventListener("mousedown", handleSvgMouseDown);
-                svg.removeEventListener("mousemove", handleSvgMouseMove);
-                svg.removeEventListener("mouseup", handleSvgMouseUp);
-                svg.removeEventListener("pointerdown", handleSvgMouseDown);
-                svg.removeEventListener("pointermove", handleSvgMouseMove);
-                svg.removeEventListener("pointerup", handleSvgMouseUp);
+                svgs.forEach(svg => {
+                    svg.classList.remove("cursor-crosshair");
 
-                const preview = svg.querySelector(".preview-rect");
-                if (preview) preview.remove();
+                    svg.removeEventListener("mousedown", handleSvgMouseDown);
+                    svg.removeEventListener("mousemove", handleSvgMouseMove);
+                    svg.removeEventListener("mouseup", handleSvgMouseUp);
+                    svg.removeEventListener("pointerdown", handleSvgMouseDown);
+                    svg.removeEventListener("pointermove", handleSvgMouseMove);
+                    svg.removeEventListener("pointerup", handleSvgMouseUp);
+
+                    const preview = svg.querySelector(".preview-rect");
+                    if (preview) preview.remove();
+                });
 
                 isDragging = false;
             }
@@ -6394,7 +6488,7 @@
             if (!rectangleModeActive) return;
             event.stopPropagation();
 
-            const svg = document.getElementById("annotation-svg-overlay");
+            const svg = event.currentTarget;
             if (!svg) return;
 
             const rect = svg.getBoundingClientRect();
@@ -6422,7 +6516,7 @@
             if (!rectangleModeActive || !isDragging) return;
             event.stopPropagation();
 
-            const svg = document.getElementById("annotation-svg-overlay");
+            const svg = event.currentTarget;
             if (!svg) return;
 
             const rect = svg.getBoundingClientRect();
@@ -6448,7 +6542,7 @@
             event.stopPropagation();
             isDragging = false;
 
-            const svg = document.getElementById("annotation-svg-overlay");
+            const svg = event.currentTarget;
             if (!svg) return;
 
             const rect = svg.getBoundingClientRect();
@@ -6477,6 +6571,132 @@
 
             placementCoordinates = { x: xNorm, y: yNorm, width: wNorm, height: hNorm };
             openRectangleCreate(currentX, currentY);
+        }
+
+        // --- Clinician Segmentation Review Functions (Phase I2) ---
+        let selectedReviewStatus = null;
+
+        function selectReviewStatus(status) {
+            selectedReviewStatus = status;
+
+            const btnAsis = document.getElementById("btn-status-asis");
+            const btnCorr = document.getElementById("btn-status-corrections");
+            const btnRej = document.getElementById("btn-status-rejected");
+
+            if (btnAsis) btnAsis.className = "bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 p-2.5 rounded-xl font-bold transition text-center cursor-pointer flex flex-col items-center gap-1";
+            if (btnCorr) btnCorr.className = "bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 p-2.5 rounded-xl font-bold transition text-center cursor-pointer flex flex-col items-center gap-1";
+            if (btnRej) btnRej.className = "bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 p-2.5 rounded-xl font-bold transition text-center cursor-pointer flex flex-col items-center gap-1";
+
+            if (status === 'APPROVED_AS_IS' && btnAsis) {
+                btnAsis.className = "bg-emerald-500/10 text-emerald-400 border border-emerald-500 p-2.5 rounded-xl font-bold transition text-center cursor-pointer flex flex-col items-center gap-1";
+            } else if (status === 'APPROVED_WITH_CORRECTIONS' && btnCorr) {
+                btnCorr.className = "bg-sky-500/10 text-sky-400 border border-sky-500 p-2.5 rounded-xl font-bold transition text-center cursor-pointer flex flex-col items-center gap-1";
+            } else if (status === 'REJECTED' && btnRej) {
+                btnRej.className = "bg-rose-500/10 text-rose-455 border border-rose-500 p-2.5 rounded-xl font-bold transition text-center cursor-pointer flex flex-col items-center gap-1";
+            }
+        }
+
+        async function submitClinicalReview() {
+            if (!selectedReviewStatus) {
+                alert("Please select a review decision status.");
+                return;
+            }
+
+            const commentInput = document.getElementById("review-comment-input");
+            const commentText = commentInput ? commentInput.value.trim() : "";
+
+            const payload = {
+                patient_id: currentSelectedPatientId,
+                review_status: selectedReviewStatus,
+                comment: commentText
+            };
+
+            const submitBtn = document.getElementById("submit-review-btn");
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerText = "Submitting Review...";
+            }
+
+            try {
+                const res = await fetchWithAuth(`/api/doctor/scans/${currentSelectedScanId}/reviews`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                if (res.ok) {
+                    alert("Segmentation review submitted successfully.");
+                    loadClinicianReview(currentSelectedScanId);
+                } else {
+                    alert("Failed to submit review: " + (data.detail || data.error || "Unknown error"));
+                }
+            } catch (err) {
+                console.error("Submit review error:", err);
+                alert("Network error submitting review.");
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = "Submit Segmentation Review";
+                }
+            }
+        }
+
+        async function loadClinicianReview(scanId) {
+            selectReviewStatus(null);
+            const commentInput = document.getElementById("review-comment-input");
+            if (commentInput) commentInput.value = "";
+
+            const badge = document.getElementById("review-panel-badge");
+            if (badge) {
+                badge.innerText = "Pending Review";
+                badge.className = "text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-850";
+            }
+
+            const disp = document.getElementById("review-display-section");
+            const frm = document.getElementById("review-form-section");
+            if (disp) disp.classList.add("hidden");
+            if (frm) frm.classList.remove("hidden");
+
+            if (!scanId) return;
+
+            try {
+                const res = await fetchWithAuth(`/api/doctor/scans/${scanId}/reviews`);
+                if (res.ok) {
+                    const data = await res.json();
+
+                    if (badge) {
+                        badge.innerText = "Reviewed";
+                        badge.className = "text-[10px] text-emerald-450 font-bold bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-900";
+                    }
+
+                    const elStatus = document.getElementById("review-decision-status");
+                    if (elStatus) {
+                        elStatus.innerText = data.review_status.replace(/_/g, " ");
+                        if (data.review_status === 'APPROVED_AS_IS') {
+                            elStatus.className = "font-bold text-sm text-emerald-400";
+                        } else if (data.review_status === 'APPROVED_WITH_CORRECTIONS') {
+                            elStatus.className = "font-bold text-sm text-sky-400";
+                        } else {
+                            elStatus.className = "font-bold text-sm text-rose-455";
+                        }
+                    }
+
+                    const elRev = document.getElementById("review-decision-reviewer");
+                    if (elRev) elRev.innerText = `${data.reviewer_name} (${data.reviewer_email})`;
+
+                    const elTime = document.getElementById("review-decision-time");
+                    if (elTime) elTime.innerText = new Date(data.created_at + "Z").toLocaleString();
+
+                    const elComment = document.getElementById("review-decision-comment");
+                    if (elComment) elComment.innerText = data.comment || "No comment provided.";
+
+                    if (disp) disp.classList.remove("hidden");
+                    if (frm) frm.classList.add("hidden");
+                }
+            } catch (err) {
+                console.error("Failed to load review:", err);
+            }
         }
 
         function openRectangleCreate(cx, cy) {

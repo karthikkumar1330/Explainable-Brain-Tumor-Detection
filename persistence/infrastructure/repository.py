@@ -393,6 +393,33 @@ class SQLitePersistenceRepository(IPersistenceRepository):
         );
         """
 
+        create_segmentation_reviews_sql = """
+        CREATE TABLE IF NOT EXISTS segmentation_reviews (
+            review_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scan_id INTEGER NOT NULL,
+            patient_id TEXT NOT NULL,
+            reviewer_id INTEGER NOT NULL,
+            prediction_id INTEGER NOT NULL,
+            review_status TEXT NOT NULL,
+            encrypted_comment TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (scan_id) REFERENCES mri_scans(id) ON DELETE CASCADE,
+            FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE,
+            FOREIGN KEY (reviewer_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE CASCADE,
+            UNIQUE(scan_id, reviewer_id)
+        );
+        """
+
+        create_segmentation_reviews_no_delete_trigger_sql = """
+        CREATE TRIGGER IF NOT EXISTS segmentation_reviews_no_delete
+        BEFORE DELETE ON segmentation_reviews
+        BEGIN
+            SELECT RAISE(FAIL, 'Deletions of clinician segmentation reviews are not allowed.');
+        END;
+        """
+
         # Analytics and Delivery Indices
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_followup_schedules_patient ON followup_schedules(patient_id);",
@@ -441,7 +468,8 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             "CREATE INDEX IF NOT EXISTS idx_mri_scans_patient_id ON mri_scans(patient_id);",
             "CREATE INDEX IF NOT EXISTS idx_predictions_scan_id ON predictions(scan_id);",
             "CREATE INDEX IF NOT EXISTS idx_clinical_reports_prediction_id ON clinical_reports(prediction_id);",
-            "CREATE INDEX IF NOT EXISTS idx_doctor_patient_assignments_doc_pat ON doctor_patient_assignments(doctor_id, patient_id);"
+            "CREATE INDEX IF NOT EXISTS idx_doctor_patient_assignments_doc_pat ON doctor_patient_assignments(doctor_id, patient_id);",
+            "CREATE INDEX IF NOT EXISTS idx_segmentation_reviews_scan ON segmentation_reviews(scan_id);"
         ]
 
         conn = self._get_connection()
@@ -468,6 +496,8 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                 conn.execute(create_followup_schedules_sql)
                 conn.execute(create_http_request_telemetry_sql)
                 conn.execute(create_batch_performance_telemetry_sql)
+                conn.execute(create_segmentation_reviews_sql)
+                conn.execute(create_segmentation_reviews_no_delete_trigger_sql)
                 for idx_sql in indices:
                     conn.execute(idx_sql)
 
@@ -1691,6 +1721,64 @@ class SQLitePersistenceRepository(IPersistenceRepository):
             return None
         except Exception as e:
             self.logger.error(f"Failed to retrieve model provenance for ID {provenance_id}: {e}")
+            return None
+        finally:
+            conn.close()
+
+    def save_segmentation_review(
+        self,
+        scan_id: int,
+        patient_id: str,
+        reviewer_id: int,
+        prediction_id: int,
+        review_status: str,
+        encrypted_comment: Optional[str]
+    ) -> Dict[str, Any]:
+        """Saves or updates a clinician segmentation review in the database."""
+        conn = self._get_connection()
+        now_str = datetime.datetime.utcnow().isoformat()
+        try:
+            with conn:
+                sql = """
+                INSERT INTO segmentation_reviews (
+                    scan_id, patient_id, reviewer_id, prediction_id, review_status, encrypted_comment, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(scan_id, reviewer_id) DO UPDATE SET
+                    review_status=excluded.review_status,
+                    encrypted_comment=excluded.encrypted_comment,
+                    updated_at=excluded.updated_at;
+                """
+                conn.execute(sql, (
+                    scan_id, patient_id, reviewer_id, prediction_id, review_status, encrypted_comment, now_str, now_str
+                ))
+
+                row = conn.execute(
+                    "SELECT * FROM segmentation_reviews WHERE scan_id = ? AND reviewer_id = ?;",
+                    (scan_id, reviewer_id)
+                ).fetchone()
+                return dict(row)
+        except Exception as e:
+            self.logger.error(f"Failed to save segmentation review for scan {scan_id} and reviewer {reviewer_id}: {e}")
+            raise e
+        finally:
+            conn.close()
+
+    def get_segmentation_review(self, scan_id: int) -> Optional[Dict[str, Any]]:
+        """Retrieves the clinical segmentation review for a given MRI scan."""
+        conn = self._get_connection()
+        try:
+            sql = """
+            SELECT r.*, u.full_name as reviewer_name, u.email as reviewer_email
+            FROM segmentation_reviews r
+            JOIN users u ON r.reviewer_id = u.id
+            WHERE r.scan_id = ?;
+            """
+            row = conn.execute(sql, (scan_id,)).fetchone()
+            if row:
+                return dict(row)
+            return None
+        except Exception as e:
+            self.logger.error(f"Failed to fetch segmentation review for scan {scan_id}: {e}")
             return None
         finally:
             conn.close()
