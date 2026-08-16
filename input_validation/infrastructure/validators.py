@@ -24,7 +24,10 @@ class OpenCVMriValidator(IMriValidator):
         max_resolution: int = 4096,
         min_contrast: float = 3.0,
         min_blur_score: float = 4.0,
-        min_snr: float = 1.5
+        min_snr: float = 1.5,
+        min_mean_intensity: float = 5.0,
+        max_mean_intensity: float = 240.0,
+        min_entropy: float = 0.5
     ) -> None:
         self.max_file_size_bytes = max_file_size_bytes
         self.min_resolution = min_resolution
@@ -32,6 +35,9 @@ class OpenCVMriValidator(IMriValidator):
         self.min_contrast = min_contrast
         self.min_blur_score = min_blur_score
         self.min_snr = min_snr
+        self.min_mean_intensity = min_mean_intensity
+        self.max_mean_intensity = max_mean_intensity
+        self.min_entropy = min_entropy
 
     def validate_file(
         self,
@@ -89,6 +95,7 @@ class OpenCVMriValidator(IMriValidator):
 
         corrupt_check_passed = img is not None
         if img is None:
+            errors.append("Image parsing error: Failed to decode byte stream (corrupt image data).")
             return ValidationScorecard(
                 is_valid=False,
                 file_validation=file_validation,
@@ -194,17 +201,24 @@ class OpenCVMriValidator(IMriValidator):
         )
 
         # 4. Image Quality Assessment (QA)
+        qa_errors = []
+        qa_warnings = []
+
         # Blurriness via Laplacian variance
         blur_score = float(cv2.Laplacian(gray, cv2.CV_64F).var())
         blur_valid = bool(blur_score >= self.min_blur_score)
         if not blur_valid:
-            errors.append(f"Image quality: High blur/motion artifacts detected (Variance: {blur_score:.1f}, Min required: {self.min_blur_score})")
+            msg = f"Image quality: High blur/motion artifacts detected (Variance: {blur_score:.1f}, Min required: {self.min_blur_score})"
+            qa_warnings.append(msg)
+            errors.append(msg)
 
         # Contrast via RMS contrast of foreground pixels
         contrast_score = float(np.std(fg_vals)) if len(fg_vals) > 0 else 0.0
         contrast_valid = bool(contrast_score >= self.min_contrast)
         if not contrast_valid:
-            errors.append(f"Image quality: Insufficient contrast variance (RMS Contrast: {contrast_score:.1f}, Min required: {self.min_contrast})")
+            msg = f"Image quality: Insufficient contrast variance (RMS Contrast: {contrast_score:.1f}, Min required: {self.min_contrast})"
+            qa_warnings.append(msg)
+            errors.append(msg)
 
         # Noise level via Estimated SNR
         bg_mask = ~fg_mask
@@ -214,7 +228,35 @@ class OpenCVMriValidator(IMriValidator):
         noise_score = float(fg_mean_val / bg_std) if bg_std > 0.5 else 50.0
         noise_valid = bool(noise_score >= self.min_snr)
         if not noise_valid:
-            errors.append(f"Image quality: Excess noise level detected (SNR: {noise_score:.2f}, Min required: {self.min_snr})")
+            msg = f"Image quality: Excess noise level detected (SNR: {noise_score:.2f}, Min required: {self.min_snr})"
+            qa_warnings.append(msg)
+            errors.append(msg)
+
+        # Brightness (mean pixel intensity)
+        mean_intensity = float(gray.mean())
+        brightness_valid = bool(self.min_mean_intensity <= mean_intensity <= self.max_mean_intensity)
+        if not brightness_valid:
+            msg = f"Image quality: Mean intensity out of range (Mean: {mean_intensity:.1f}, Allowed: {self.min_mean_intensity}-{self.max_mean_intensity})"
+            qa_warnings.append(msg)
+            errors.append(msg)
+
+        # Shannon Entropy
+        entropy = self._compute_entropy(gray)
+        entropy_valid = bool(entropy >= self.min_entropy)
+        if not entropy_valid:
+            msg = f"Image quality: Information entropy below threshold (Entropy: {entropy:.2f}, Min: {self.min_entropy:.2f})"
+            qa_warnings.append(msg)
+            errors.append(msg)
+
+        qa_is_valid = bool(blur_valid and contrast_valid and noise_valid and brightness_valid and entropy_valid)
+
+        metrics = {
+            "brightness": mean_intensity,
+            "entropy": entropy,
+            "contrast": contrast_score,
+            "blur": blur_score,
+            "noise": noise_score
+        }
 
         quality_assessment = QualityAssessmentResult(
             contrast_score=contrast_score,
@@ -222,7 +264,17 @@ class OpenCVMriValidator(IMriValidator):
             blur_score=blur_score,
             blur_valid=blur_valid,
             noise_score=noise_score,
-            noise_valid=noise_valid
+            noise_valid=noise_valid,
+            brightness_score=mean_intensity,
+            brightness_valid=brightness_valid,
+            entropy_score=entropy,
+            entropy_valid=entropy_valid,
+            overall_score=100.0 if qa_is_valid else 70.0,
+            is_valid=qa_is_valid,
+            errors=qa_errors,
+            warnings=qa_warnings,
+            metrics=metrics,
+            validation_version="1.0.0"
         )
 
         # 5. Compile temporary Duplicate result (to be filled by use cases via SHA256 / perceptual average hash)
@@ -232,8 +284,7 @@ class OpenCVMriValidator(IMriValidator):
         )
 
         is_valid = bool(extension_valid and size_valid and magic_number_valid and \
-                    dimensions_valid and is_brain_mri and blur_valid and \
-                    contrast_valid and noise_valid)
+                    dimensions_valid and is_brain_mri and qa_is_valid)
 
         return ValidationScorecard(
             is_valid=is_valid,
@@ -244,6 +295,14 @@ class OpenCVMriValidator(IMriValidator):
             duplicate_check=duplicate_check,
             errors=errors
         )
+
+    def _compute_entropy(self, gray_img: np.ndarray) -> float:
+        """Computes the Shannon entropy of a grayscale image."""
+        hist = cv2.calcHist([gray_img], [0], None, [256], [0, 256])
+        hist_norm = hist.ravel() / hist.sum()
+        probs = hist_norm[hist_norm > 0]
+        entropy = -np.sum(probs * np.log2(probs))
+        return float(entropy)
 
     def _check_magic_number(self, file_bytes: bytes, file_ext: str) -> bool:
         ext = file_ext.lower().strip('.')

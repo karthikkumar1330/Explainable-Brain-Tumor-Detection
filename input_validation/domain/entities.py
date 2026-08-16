@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import List, Optional, Dict, Any
 
 
@@ -39,6 +39,16 @@ class QualityAssessmentResult:
     blur_valid: bool
     noise_score: float      # Estimated SNR (foreground mean / background std)
     noise_valid: bool
+    brightness_score: float = 0.0
+    brightness_valid: bool = True
+    entropy_score: float = 0.0
+    entropy_valid: bool = True
+    overall_score: float = 100.0
+    is_valid: bool = True
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    metrics: Dict[str, float] = field(default_factory=dict)
+    validation_version: str = "1.0.0"
 
 
 @dataclass(frozen=True)
@@ -60,6 +70,7 @@ class ValidationScorecard:
     quality_assessment: QualityAssessmentResult
     duplicate_check: DuplicateCheckResult
     errors: List[str]
+    override_metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Serializes the scorecard into a dictionary for JSON reporting and REST APIs."""

@@ -2212,6 +2212,68 @@
         </div>
     </div>
 
+    <!-- MRI QUALITY OVERRIDE MODAL (Phase I1) -->
+    <div id="mri-quality-override-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4">
+        <div class="bg-slate-900/95 border border-slate-800 rounded-3xl p-6 w-full max-w-xl shadow-2xl relative animate-[fadeIn_0.2s_ease-out]">
+            <button onclick="closeModal('mri-quality-override-modal')" class="absolute top-5 right-5 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 h-9 w-9 rounded-full flex items-center justify-center transition cursor-pointer">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <h3 class="font-extrabold text-xl text-slate-100 mb-2">MRI Quality Validation Gate</h3>
+            <p class="text-xs text-slate-400 mb-4">Ingestion blocked by default due to quality issues. Doctors can review and override warnings below.</p>
+
+            <!-- Quality Scorecard Table -->
+            <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 mb-4 overflow-x-auto">
+                <table class="w-full text-xs text-slate-350 text-left">
+                    <thead>
+                        <tr class="border-b border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            <th class="pb-2">Metric</th>
+                            <th class="pb-2">Value</th>
+                            <th class="pb-2">Threshold</th>
+                            <th class="pb-2 text-right">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mri-override-scorecard-tbody" class="divide-y divide-slate-800">
+                        <!-- Filled by JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- List of Warnings or Errors -->
+            <div id="mri-override-errors-container" class="bg-rose-950/30 border border-rose-900/50 p-4 rounded-xl text-xs text-rose-200 mb-4 hidden">
+                <span class="font-bold block mb-1">Critical Failures Detected (Cannot be overridden):</span>
+                <ul id="mri-override-errors-list" class="list-disc pl-4 space-y-1"></ul>
+            </div>
+
+            <div id="mri-override-warnings-container" class="bg-amber-950/30 border border-amber-900/50 p-4 rounded-xl text-xs text-amber-200 mb-4 hidden">
+                <span class="font-bold block mb-1">Quality Warnings:</span>
+                <ul id="mri-override-warnings-list" class="list-disc pl-4 space-y-1"></ul>
+            </div>
+
+            <!-- Override Controls -->
+            <div id="mri-override-form-container" class="space-y-4 hidden">
+                <div class="space-y-1.5">
+                    <span class="text-xs text-slate-400 block font-bold">Override Reason (Min 10 characters required):</span>
+                    <textarea id="mri-override-reason" rows="3" placeholder="Enter clinical reason to bypass quality warnings (e.g. slight movement but structure clear)..." class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="closeModal('mri-quality-override-modal')" class="w-1/2 bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold py-2.5 rounded-xl transition cursor-pointer">
+                        Cancel Ingestion
+                    </button>
+                    <button id="mri-override-confirm-btn" onclick="submitMriOverride()" class="w-1/2 bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold py-2.5 rounded-xl transition cursor-pointer">
+                        Confirm & Continue
+                    </button>
+                </div>
+            </div>
+
+            <div id="mri-override-blocked-container" class="hidden">
+                <p class="text-xs text-rose-400 font-bold mb-4">Override is blocked. Please re-acquire the scan or upload a valid MRI.</p>
+                <button onclick="closeModal('mri-quality-override-modal')" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold py-2.5 rounded-xl transition cursor-pointer">
+                    Dismiss
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- REPORT PREVIEW MODAL -->
     <div id="report-preview-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4" aria-modal="true" role="dialog" aria-labelledby="preview-modal-title">
         <div class="glass-panel w-full max-w-4xl rounded-3xl p-6 md:p-8 shadow-2xl relative max-h-[90vh] overflow-y-auto border border-slate-700 flex flex-col">
@@ -4388,7 +4450,101 @@
         }
 
         // Form Submission report generation
-        async function handleGenerateReport(e) {
+        let mriOverridePendingData = null;
+
+        function showMriQualityOverrideModal(scorecard, errors) {
+            mriOverridePendingData = {
+                scorecard: scorecard,
+                errors: errors
+            };
+
+            const tbody = document.getElementById("mri-override-scorecard-tbody");
+            tbody.innerHTML = "";
+
+            function addRow(metricName, value, threshold, isValid) {
+                const statusColor = isValid ? "text-emerald-400" : "text-amber-500 font-bold";
+                const statusIcon = isValid ? '<i class="fa-solid fa-circle-check"></i> Passed' : '<i class="fa-solid fa-triangle-exclamation"></i> Warning';
+                tbody.innerHTML += `
+                    <tr class="border-b border-slate-800/50">
+                        <td class="py-2 text-slate-350 font-medium">${metricName}</td>
+                        <td class="py-2 text-slate-100">${value}</td>
+                        <td class="py-2 text-slate-400">${threshold}</td>
+                        <td class="py-2 text-right ${statusColor}">${statusIcon}</td>
+                    </tr>
+                `;
+            }
+
+            const qa = scorecard.quality_assessment || {};
+            const metrics = qa.metrics || {};
+
+            addRow("Mean Intensity (Brightness)", metrics.brightness !== undefined ? metrics.brightness.toFixed(1) : "N/A", "5.0 - 240.0", qa.brightness_valid !== false);
+            addRow("Information Entropy", metrics.entropy !== undefined ? metrics.entropy.toFixed(2) : "N/A", ">= 0.50", qa.entropy_valid !== false);
+            addRow("RMS Contrast", metrics.contrast !== undefined ? metrics.contrast.toFixed(1) : "N/A", ">= 3.0", qa.contrast_valid !== false);
+            addRow("Laplacian Blur Variance", metrics.blur !== undefined ? metrics.blur.toFixed(1) : "N/A", ">= 4.0", qa.blur_valid !== false);
+            addRow("Signal-to-Noise Ratio (SNR)", metrics.noise !== undefined ? metrics.noise.toFixed(2) : "N/A", ">= 1.50", qa.noise_valid !== false);
+            addRow("Perceptual Duplicate Check", scorecard.duplicate_check.is_duplicate ? "Duplicate Found" : "Unique Scan", "Unique", !scorecard.duplicate_check.is_duplicate);
+
+            const criticalErrors = [];
+            const warnings = [];
+
+            if (!scorecard.file_validation.extension_valid) criticalErrors.push(`Invalid file extension '${scorecard.file_validation.file_ext}'.`);
+            if (!scorecard.file_validation.magic_number_valid) criticalErrors.push("File signature mismatch (magic number).");
+            if (!scorecard.file_validation.size_valid) criticalErrors.push("File size exceeds 15MB limit.");
+            if (!scorecard.image_validation.corrupt_check_passed) criticalErrors.push("Corrupted image byte stream.");
+            if (!scorecard.image_validation.dimensions_valid) criticalErrors.push(`Resolution out of limits: ${scorecard.image_validation.width}x${scorecard.image_validation.height}.`);
+            if (!scorecard.brain_detection.is_brain_mri) criticalErrors.push("Brain MRI heuristics check failed.");
+
+            if (qa.brightness_valid === false) warnings.push("Brightness (mean pixel intensity) is outside acceptable bounds.");
+            if (qa.entropy_valid === false) warnings.push("Shannon information entropy indicates blank/flat image details.");
+            if (qa.contrast_valid === false) warnings.push("RMS contrast is too low (insufficient variance).");
+            if (qa.blur_valid === false) warnings.push("Blur variance is below threshold (motion/blur artifacts).");
+            if (qa.noise_valid === false) warnings.push("Estimated Signal-to-Noise ratio (SNR) is too low.");
+            if (scorecard.duplicate_check.is_duplicate) warnings.push("Perceptual check matched existing scan in patient history.");
+
+            const errContainer = document.getElementById("mri-override-errors-container");
+            const warnContainer = document.getElementById("mri-override-warnings-container");
+            const formContainer = document.getElementById("mri-override-form-container");
+            const blockedContainer = document.getElementById("mri-override-blocked-container");
+
+            errContainer.classList.add("hidden");
+            warnContainer.classList.add("hidden");
+            formContainer.classList.add("hidden");
+            blockedContainer.classList.add("hidden");
+
+            if (criticalErrors.length > 0) {
+                errContainer.classList.remove("hidden");
+                const errList = document.getElementById("mri-override-errors-list");
+                errList.innerHTML = criticalErrors.map(e => `<li>${e}</li>`).join("");
+                blockedContainer.classList.remove("hidden");
+            } else {
+                warnContainer.classList.remove("hidden");
+                const warnList = document.getElementById("mri-override-warnings-list");
+                warnList.innerHTML = warnings.map(w => `<li>${w}</li>`).join("");
+                formContainer.classList.remove("hidden");
+                document.getElementById("mri-override-reason").value = "";
+            }
+
+            openModal("mri-quality-override-modal");
+        }
+
+        async function submitMriOverride() {
+            const reason = document.getElementById("mri-override-reason").value.trim();
+            if (reason.length < 10) {
+                alert("Please enter a valid override reason of at least 10 characters.");
+                return;
+            }
+
+            closeModal("mri-quality-override-modal");
+
+            const mockEvent = {
+                preventDefault: () => {}
+            };
+
+            await handleGenerateReport(mockEvent, true, reason);
+        }
+
+        // Form Submission report generation
+        async function handleGenerateReport(e, confirmOverride = false, overrideReason = "") {
             e.preventDefault();
 
             if (selectedBatchFiles.length === 0) {
@@ -4415,6 +4571,11 @@
             formData.append("pixel_spacing_mm", pixelSp);
             formData.append("xai_method", xaiMeth);
             formData.append("ensemble_mode", ensemble ? "true" : "false");
+
+            if (confirmOverride) {
+                formData.append("confirm_override", "true");
+                formData.append("override_reason", overrideReason);
+            }
 
             // Check single vs batch mode
             if (selectedBatchFiles.length === 1) {
@@ -4454,7 +4615,11 @@
 
                     if (data.error) {
                         closeModal("loader-modal");
-                        alert(`Report Generation Failed: ${data.error}`);
+                        if (data.scorecard) {
+                            showMriQualityOverrideModal(data.scorecard, data.errors || []);
+                        } else {
+                            alert(`Report Generation Failed: ${data.error}`);
+                        }
                         return;
                     }
 

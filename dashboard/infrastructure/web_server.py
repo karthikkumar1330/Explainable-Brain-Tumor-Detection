@@ -3216,6 +3216,8 @@ def create_app(db_path: str) -> Flask:
         pixel_spacing_str = request.form.get("pixel_spacing_mm", "1.0").strip()
         xai_method = request.form.get("xai_method", "gradcam").strip()
         ensemble_mode_str = request.form.get("ensemble_mode", "false").strip()
+        confirm_override_str = request.form.get("confirm_override", "false").strip()
+        override_reason = request.form.get("override_reason", "").strip()
 
         # Validate inputs basic
         if not patient_id or not patient_name:
@@ -3230,6 +3232,7 @@ def create_app(db_path: str) -> Flask:
             return jsonify({"error": "Pixel spacing must be a float."}), 400
 
         ensemble_mode = ensemble_mode_str.lower() == "true"
+        confirm_override = confirm_override_str.lower() == "true"
 
         # Forward token
         token = request.cookies.get("access_token")
@@ -3251,12 +3254,24 @@ def create_app(db_path: str) -> Flask:
             files = {
                 "file": (mri_file.filename, mri_file.read(), mri_file.content_type or "image/png")
             }
-            upload_resp = requests.post(f"{api_url}/api/upload", files=files, headers=headers, timeout=30)
+            data = {
+                "confirm_override": "true" if confirm_override else "false",
+                "override_reason": override_reason,
+                "patient_id": patient_id
+            }
+            upload_resp = requests.post(f"{api_url}/api/upload", files=files, data=data, headers=headers, timeout=30)
             if not upload_resp.ok:
                 try:
-                    err_msg = upload_resp.json().get("detail", "Failed upload to core API.")
-                    if isinstance(err_msg, dict) and "message" in err_msg:
-                        err_msg = f"{err_msg['message']}: {', '.join(err_msg.get('errors', []))}"
+                    err_json = upload_resp.json()
+                    detail = err_json.get("detail", {})
+                    if isinstance(detail, dict) and "scorecard" in detail:
+                        return jsonify({
+                            "error": detail.get("message", "MRI Input Validation Failed"),
+                            "errors": detail.get("errors", []),
+                            "scorecard": detail.get("scorecard", {})
+                        }), upload_resp.status_code
+                    else:
+                        err_msg = detail.get("message", str(detail)) if isinstance(detail, dict) else str(detail)
                 except Exception:
                     err_msg = upload_resp.text
                 return jsonify({"error": f"MRI Ingestion Failed: {err_msg}"}), upload_resp.status_code
@@ -3277,7 +3292,11 @@ def create_app(db_path: str) -> Flask:
 
             report_resp = requests.post(
                 f"{api_url}/api/report",
-                params={"filepath": filepath},
+                params={
+                    "filepath": filepath,
+                    "confirm_override": "true" if confirm_override else "false",
+                    "override_reason": override_reason
+                },
                 json=intake_payload,
                 headers=headers,
                 timeout=60
@@ -3285,9 +3304,16 @@ def create_app(db_path: str) -> Flask:
 
             if not report_resp.ok:
                 try:
-                    err_msg = report_resp.json().get("detail", "Failed report execution.")
-                    if isinstance(err_msg, dict) and "message" in err_msg:
-                        err_msg = f"{err_msg['message']}: {', '.join(err_msg.get('errors', []))}"
+                    err_json = report_resp.json()
+                    detail = err_json.get("detail", {})
+                    if isinstance(detail, dict) and "scorecard" in detail:
+                        return jsonify({
+                            "error": detail.get("message", "MRI Input Validation Failed"),
+                            "errors": detail.get("errors", []),
+                            "scorecard": detail.get("scorecard", {})
+                        }), report_resp.status_code
+                    else:
+                        err_msg = detail.get("message", str(detail)) if isinstance(detail, dict) else str(detail)
                 except Exception:
                     err_msg = report_resp.text
                 return jsonify({"error": f"AI Diagnostic Failure: {err_msg}"}), report_resp.status_code
@@ -3319,6 +3345,8 @@ def create_app(db_path: str) -> Flask:
         pixel_spacing_str = request.form.get("pixel_spacing_mm", "1.0").strip()
         xai_method = request.form.get("xai_method", "gradcam").strip()
         ensemble_mode_str = request.form.get("ensemble_mode", "false").strip()
+        confirm_override_str = request.form.get("confirm_override", "false").strip()
+        override_reason = request.form.get("override_reason", "").strip()
 
         # Validate inputs basic
         if not patient_id or not patient_name:
@@ -3367,7 +3395,9 @@ def create_app(db_path: str) -> Flask:
                 "ref_physician": ref_physician,
                 "pixel_spacing_mm": str(pixel_spacing_mm),
                 "xai_method": xai_method,
-                "ensemble_mode": ensemble_mode_str
+                "ensemble_mode": ensemble_mode_str,
+                "confirm_override": confirm_override_str,
+                "override_reason": override_reason
             }
 
             resp = requests.post(

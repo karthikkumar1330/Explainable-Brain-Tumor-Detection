@@ -219,7 +219,13 @@ router = APIRouter()
 
 
 @router.post("/upload")
-def upload_mri_file(file: UploadFile = File(...), current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))):
+def upload_mri_file(
+    file: UploadFile = File(...),
+    confirm_override: bool = Form(False),
+    override_reason: Optional[str] = Form(None),
+    patient_id: Optional[str] = Form(None),
+    current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))
+):
     """API Endpoint: Receives a raw brain MRI image slice upload and validates it."""
     os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
     temp_filename = f"upload_{int(time.time())}_{file.filename}"
@@ -242,7 +248,56 @@ def upload_mri_file(file: UploadFile = File(...), current_user: User = Depends(r
 
         validator = OpenCVMriValidator()
         use_case = ValidateMriUploadUseCase(validator=validator, db_path=DEFAULT_DB_PATH)
-        scorecard = use_case.execute(filepath=temp_filepath, file_bytes=file_bytes, filename=file.filename)
+
+        overridden_by = current_user.email if current_user else "unknown_doctor"
+
+        # Validate Override parameters and Authorization if requested
+        if confirm_override:
+            if not override_reason or len(override_reason.strip()) < 10:
+                user_repo.log_security_event(SecurityAuditLog(
+                    id=None,
+                    timestamp=now,
+                    event_type="MRI_QUALITY_OVERRIDE",
+                    user_id=current_user.id if current_user else None,
+                    email=current_user.email if current_user else None,
+                    ip_address="127.0.0.1",
+                    status="FAILED",
+                    details=f"Override attempt rejected: Missing or too short reason for filename: {file.filename}",
+                    user_agent="System"
+                ))
+                raise HTTPException(
+                    status_code=400,
+                    detail="Override rejected: Valid override reason (min 10 characters) is required."
+                )
+
+            if patient_id:
+                from security.application.authorization_service import AuthorizationService
+                auth_svc = AuthorizationService(DEFAULT_DB_PATH)
+                if not auth_svc.can_access_patient(current_user, patient_id):
+                    user_repo.log_security_event(SecurityAuditLog(
+                        id=None,
+                        timestamp=now,
+                        event_type="MRI_QUALITY_OVERRIDE",
+                        user_id=current_user.id if current_user else None,
+                        email=current_user.email if current_user else None,
+                        ip_address="127.0.0.1",
+                        status="FAILED",
+                        details=f"Override attempt rejected: Unauthorized doctor for Patient ID {patient_id}, filename: {file.filename}",
+                        user_agent="System"
+                    ))
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Access denied: Doctor not assigned to patient."
+                    )
+
+        scorecard = use_case.execute(
+            filepath=temp_filepath,
+            file_bytes=file_bytes,
+            filename=file.filename,
+            confirm_override=confirm_override,
+            override_reason=override_reason,
+            overridden_by=overridden_by
+        )
 
         if not scorecard.is_valid:
             if os.path.exists(temp_filepath):
@@ -270,18 +325,31 @@ def upload_mri_file(file: UploadFile = File(...), current_user: User = Depends(r
                 }
             )
 
-        # Log successful upload
-        user_repo.log_security_event(SecurityAuditLog(
-            id=None,
-            timestamp=now,
-            event_type="MRI_UPLOAD",
-            user_id=current_user.id if current_user else None,
-            email=current_user.email if current_user else None,
-            ip_address="127.0.0.1",
-            status="SUCCESS",
-            details=f"MRI file uploaded and validated successfully. Filename: {file.filename}",
-            user_agent="System"
-        ))
+        # Log successful upload and override details
+        if confirm_override and scorecard.override_metadata.get("overridden"):
+            user_repo.log_security_event(SecurityAuditLog(
+                id=None,
+                timestamp=now,
+                event_type="MRI_QUALITY_OVERRIDE",
+                user_id=current_user.id if current_user else None,
+                email=current_user.email if current_user else None,
+                ip_address="127.0.0.1",
+                status="SUCCESS",
+                details=f"Doctor {overridden_by} successfully bypassed quality warning for filename: {file.filename}. Reason: {override_reason}",
+                user_agent="System"
+            ))
+        else:
+            user_repo.log_security_event(SecurityAuditLog(
+                id=None,
+                timestamp=now,
+                event_type="MRI_UPLOAD",
+                user_id=current_user.id if current_user else None,
+                email=current_user.email if current_user else None,
+                ip_address="127.0.0.1",
+                status="SUCCESS",
+                details=f"MRI file uploaded and validated successfully. Filename: {file.filename}",
+                user_agent="System"
+            ))
 
         return {
             "filename": temp_filename,
@@ -522,7 +590,13 @@ def get_monitoring_trends(days: int = 30, current_user: User = Depends(require_r
 
 
 @router.post("/report")
-def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))):
+def generate_clinical_report_pipeline(
+    filepath: str,
+    intake: PatientIntake,
+    confirm_override: bool = False,
+    override_reason: Optional[str] = None,
+    current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))
+):
     """API Endpoint: Runs the complete end-to-end MRI diagnostics report pipeline with validation."""
     from security.application.authorization_service import AuthorizationService
     auth_svc = AuthorizationService(DEFAULT_DB_PATH)
@@ -547,7 +621,39 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
 
         validator = OpenCVMriValidator()
         use_case = ValidateMriUploadUseCase(validator=validator, db_path=DEFAULT_DB_PATH)
-        scorecard = use_case.execute(filepath=filepath, file_bytes=file_bytes, filename=os.path.basename(filepath))
+
+        overridden_by = current_user.email if current_user else "unknown_doctor"
+
+        if confirm_override:
+            if not override_reason or len(override_reason.strip()) < 10:
+                from security.infrastructure.repository import SQLiteUserRepository
+                from security.domain.entities import SecurityAuditLog
+                import datetime
+                user_repo = SQLiteUserRepository(db_path=DEFAULT_DB_PATH)
+                user_repo.log_security_event(SecurityAuditLog(
+                    id=None,
+                    timestamp=datetime.datetime.utcnow().isoformat(),
+                    event_type="MRI_QUALITY_OVERRIDE",
+                    user_id=current_user.id if current_user else None,
+                    email=current_user.email if current_user else None,
+                    ip_address="127.0.0.1",
+                    status="FAILED",
+                    details=f"Override attempt rejected: Missing or too short reason for report path: {filepath}",
+                    user_agent="System"
+                ))
+                raise HTTPException(
+                    status_code=400,
+                    detail="Override rejected: Valid override reason (min 10 characters) is required."
+                )
+
+        scorecard = use_case.execute(
+            filepath=filepath,
+            file_bytes=file_bytes,
+            filename=os.path.basename(filepath),
+            confirm_override=confirm_override,
+            override_reason=override_reason,
+            overridden_by=overridden_by
+        )
 
         timeline["Validation"] = time.time() - t_endpoint_start
 
@@ -560,6 +666,24 @@ def generate_clinical_report_pipeline(filepath: str, intake: PatientIntake, curr
                     "scorecard": scorecard.to_dict()
                 }
             )
+
+        # Log successful override
+        if confirm_override and scorecard.override_metadata.get("overridden"):
+            from security.infrastructure.repository import SQLiteUserRepository
+            from security.domain.entities import SecurityAuditLog
+            import datetime
+            user_repo = SQLiteUserRepository(db_path=DEFAULT_DB_PATH)
+            user_repo.log_security_event(SecurityAuditLog(
+                id=None,
+                timestamp=datetime.datetime.utcnow().isoformat(),
+                event_type="MRI_QUALITY_OVERRIDE",
+                user_id=current_user.id if current_user else None,
+                email=current_user.email if current_user else None,
+                ip_address="127.0.0.1",
+                status="SUCCESS",
+                details=f"Doctor {overridden_by} successfully bypassed quality warning for scan path: {filepath}. Reason: {override_reason}",
+                user_agent="System"
+            ))
 
         return _run_single_report_pipeline(
             filepath=filepath,
@@ -1201,6 +1325,8 @@ async def generate_clinical_report_batch(
     pixel_spacing_mm: float = Form(1.0),
     xai_method: Optional[str] = Form("gradcam"),
     ensemble_mode: Optional[str] = Form("false"),
+    confirm_override: bool = Form(False),
+    override_reason: Optional[str] = Form(None),
     current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))
 ):
     """API Endpoint: Runs the complete diagnostics pipeline on multiple MRI files in one batch."""
@@ -1211,6 +1337,13 @@ async def generate_clinical_report_batch(
 
     if not files:
         raise HTTPException(status_code=400, detail="No files provided in batch.")
+
+    if confirm_override:
+        if not override_reason or len(override_reason.strip()) < 10:
+            raise HTTPException(
+                status_code=400,
+                detail="Override rejected: Valid override reason (min 10 characters) is required."
+            )
 
     import uuid
     import hashlib
@@ -1310,7 +1443,14 @@ async def generate_clinical_report_batch(
 
         try:
             # 1. Run Validation
-            scorecard = use_case.execute(filepath=temp_filepath, file_bytes=file_bytes, filename=filename)
+            scorecard = use_case.execute(
+                filepath=temp_filepath,
+                file_bytes=file_bytes,
+                filename=filename,
+                confirm_override=confirm_override,
+                override_reason=override_reason,
+                overridden_by=current_user.email if current_user else "unknown_doctor"
+            )
 
             if not scorecard.is_valid:
                 stats["invalid_files"] += 1
