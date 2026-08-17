@@ -1071,9 +1071,13 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                         is_enc = str(val).startswith("enc:v1:")
                         if is_enc:
                             if encryption_service is None:
-                                raise ValueError(f"PII field '{field}' is encrypted but PII_ENCRYPTION_KEY is missing.")
-                            decrypted_val = encryption_service.decrypt(val)
-                            if field == "age" and decrypted_val is not None:
+                                decrypted_val = f"Encrypted {field.capitalize()}"
+                            else:
+                                try:
+                                    decrypted_val = encryption_service.decrypt(val)
+                                except Exception:
+                                    decrypted_val = f"Encrypted {field.capitalize()}"
+                            if field == "age" and decrypted_val is not None and not str(decrypted_val).startswith("Encrypted"):
                                 try:
                                     decrypted_val = int(decrypted_val)
                                 except ValueError:

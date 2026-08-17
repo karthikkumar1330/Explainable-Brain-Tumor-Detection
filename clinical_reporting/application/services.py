@@ -2201,8 +2201,12 @@ class ReportService:
             if pat_name_raw is not None:
                 if str(pat_name_raw).startswith("enc:v1:"):
                     if encryption_service is None:
-                        raise ValueError("Patient name is encrypted but PII_ENCRYPTION_KEY is missing.")
-                    patient_name = encryption_service.decrypt(pat_name_raw)
+                        patient_name = "Encrypted Patient"
+                    else:
+                        try:
+                            patient_name = encryption_service.decrypt(pat_name_raw)
+                        except Exception:
+                            patient_name = "Encrypted Patient"
                 else:
                     patient_name = pat_name_raw
             else:
@@ -2388,9 +2392,20 @@ class ReportService:
             pat_age_raw = row_pat["age"]
             pat_gender_raw = row_pat["gender"]
 
-            patient_name = encryption_service.decrypt(pat_name_raw) if encryption_service and pat_name_raw and str(pat_name_raw).startswith("enc:v1:") else pat_name_raw
-            patient_age = encryption_service.decrypt(pat_age_raw) if encryption_service and pat_age_raw and str(pat_age_raw).startswith("enc:v1:") else pat_age_raw
-            patient_gender = encryption_service.decrypt(pat_gender_raw) if encryption_service and pat_gender_raw and str(pat_gender_raw).startswith("enc:v1:") else pat_gender_raw
+            try:
+                patient_name = encryption_service.decrypt(pat_name_raw) if encryption_service and pat_name_raw and str(pat_name_raw).startswith("enc:v1:") else pat_name_raw
+            except Exception:
+                patient_name = "Encrypted Patient"
+
+            try:
+                patient_age = encryption_service.decrypt(pat_age_raw) if encryption_service and pat_age_raw and str(pat_age_raw).startswith("enc:v1:") else pat_age_raw
+            except Exception:
+                patient_age = "Encrypted Age"
+
+            try:
+                patient_gender = encryption_service.decrypt(pat_gender_raw) if encryption_service and pat_gender_raw and str(pat_gender_raw).startswith("enc:v1:") else pat_gender_raw
+            except Exception:
+                patient_gender = "Encrypted Gender"
 
             try:
                 if patient_age is not None:
@@ -2455,7 +2470,10 @@ class ReportService:
             for n in notes_rows:
                 nd = dict(n)
                 enc_content = nd.get("encrypted_content")
-                dec_content = encryption_service.decrypt(enc_content) if encryption_service and enc_content and str(enc_content).startswith("enc:v1:") else enc_content
+                try:
+                    dec_content = encryption_service.decrypt(enc_content) if encryption_service and enc_content and str(enc_content).startswith("enc:v1:") else enc_content
+                except Exception:
+                    dec_content = "Encrypted Content"
                 nd["content"] = dec_content
                 notes_list.append(nd)
 
@@ -2473,7 +2491,10 @@ class ReportService:
             for p in point_ann_rows:
                 pd = dict(p)
                 enc_comment = pd.get("encrypted_comment")
-                dec_comment = encryption_service.decrypt(enc_comment) if encryption_service and enc_comment and str(enc_comment).startswith("enc:v1:") else enc_comment
+                try:
+                    dec_comment = encryption_service.decrypt(enc_comment) if encryption_service and enc_comment and str(enc_comment).startswith("enc:v1:") else enc_comment
+                except Exception:
+                    dec_comment = "Encrypted Comment"
                 pd["comment"] = dec_comment
                 points_list.append(pd)
 
@@ -2491,7 +2512,10 @@ class ReportService:
             for r in rect_ann_rows:
                 rd = dict(r)
                 enc_comment = rd.get("encrypted_comment")
-                dec_comment = encryption_service.decrypt(enc_comment) if encryption_service and enc_comment and str(enc_comment).startswith("enc:v1:") else enc_comment
+                try:
+                    dec_comment = encryption_service.decrypt(enc_comment) if encryption_service and enc_comment and str(enc_comment).startswith("enc:v1:") else enc_comment
+                except Exception:
+                    dec_comment = "Encrypted Comment"
                 rd["comment"] = dec_comment
                 rectangles_list.append(rd)
 
@@ -2767,8 +2791,12 @@ class ReportService:
                 if pat_name_raw is not None:
                     if str(pat_name_raw).startswith("enc:v1:"):
                         if encryption_service is None:
-                            raise ValueError("Patient name is encrypted but PII_ENCRYPTION_KEY is missing.")
-                        pat_name = encryption_service.decrypt(pat_name_raw)
+                            pat_name = "Encrypted Patient"
+                        else:
+                            try:
+                                pat_name = encryption_service.decrypt(pat_name_raw)
+                            except Exception:
+                                pat_name = "Encrypted Patient"
                     else:
                         pat_name = pat_name_raw
                 else:

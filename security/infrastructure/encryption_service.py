@@ -1,12 +1,21 @@
 import os
 from typing import Optional
-from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 
 load_dotenv()
 
+try:
+    from cryptography.fernet import Fernet
+    CRYPTOGRAPHY_AVAILABLE = True
+except ImportError:
+    CRYPTOGRAPHY_AVAILABLE = False
+
 class EncryptionKeyMissingError(Exception):
     """Raised when the PII encryption key is not configured."""
+    pass
+
+class EncryptionDependencyError(Exception):
+    """Raised when the cryptography library is missing from the environment."""
     pass
 
 class PIIEncryptionService:
@@ -14,6 +23,9 @@ class PIIEncryptionService:
 
     def __init__(self, key: Optional[str] = None) -> None:
         """Initializes the encryption service using the configured PII_ENCRYPTION_KEY."""
+        if not CRYPTOGRAPHY_AVAILABLE:
+            raise EncryptionDependencyError("The 'cryptography' library is required but not installed.")
+
         if not key:
             key = os.environ.get("PII_ENCRYPTION_KEY")
         
@@ -33,6 +45,8 @@ class PIIEncryptionService:
 
     def encrypt(self, value: Optional[str]) -> Optional[str]:
         """Encrypts a plaintext value and returns a versioned ciphertext string."""
+        if not CRYPTOGRAPHY_AVAILABLE:
+            raise EncryptionDependencyError("The 'cryptography' library is required but not installed.")
         if value is None:
             return None
         val_str = str(value)
@@ -41,6 +55,8 @@ class PIIEncryptionService:
 
     def decrypt(self, value: Optional[str]) -> Optional[str]:
         """Decrypts a versioned ciphertext string and returns plaintext, supporting fallback migration for plaintext."""
+        if not CRYPTOGRAPHY_AVAILABLE:
+            raise EncryptionDependencyError("The 'cryptography' library is required but not installed.")
         if value is None:
             return None
         val_str = str(value)

@@ -228,8 +228,12 @@ class MriAnnotationService:
             decrypted_comment = ""
             if r["encrypted_comment"]:
                 if not self.encryption_service:
-                    raise MriAnnotationServiceException("PII Encryption Service is not initialized.")
-                decrypted_comment = self.encryption_service.decrypt(r["encrypted_comment"])
+                    decrypted_comment = "Encrypted Comment"
+                else:
+                    try:
+                        decrypted_comment = self.encryption_service.decrypt(r["encrypted_comment"])
+                    except Exception:
+                        decrypted_comment = "Encrypted Comment"
 
             results.append({
                 "annotation_id": r["annotation_id"],
@@ -610,8 +614,12 @@ class MriAnnotationService:
             decrypted_comment = ""
             if r["encrypted_comment"]:
                 if not self.encryption_service:
-                    raise MriAnnotationServiceException("PII Encryption Service is not initialized.")
-                decrypted_comment = self.encryption_service.decrypt(r["encrypted_comment"])
+                    decrypted_comment = "Encrypted Comment"
+                else:
+                    try:
+                        decrypted_comment = self.encryption_service.decrypt(r["encrypted_comment"])
+                    except Exception:
+                        decrypted_comment = "Encrypted Comment"
 
             results.append({
                 "annotation_id": r["annotation_id"],

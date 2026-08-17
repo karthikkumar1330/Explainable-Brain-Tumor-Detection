@@ -16,11 +16,7 @@ admin_router = APIRouter(prefix="/admin", tags=["Admin User Management"])
 
 
 def get_auth_use_cases() -> AuthUseCases:
-    default_base = "outputs/clinical_reports.db"
-    if DEFAULT_DB_PATH != default_base:
-        db_path = DEFAULT_DB_PATH
-    else:
-        db_path = os.environ.get("DB_PATH", DEFAULT_DB_PATH)
+    db_path = os.environ.get("DB_PATH") or DEFAULT_DB_PATH
     repo = SQLiteUserRepository(db_path=db_path)
     repo.initialize_security_tables()
     jwt_svc = JWTService()

@@ -1870,8 +1870,12 @@ def create_app(db_path: str) -> Flask:
                 if p_name is not None:
                     if str(p_name).startswith("enc:v1:"):
                         if encryption_service is None:
-                            raise ValueError("Patient name is encrypted but PII_ENCRYPTION_KEY is missing.")
-                        row_dict["patient_name"] = encryption_service.decrypt(p_name)
+                            row_dict["patient_name"] = "Encrypted Patient"
+                        else:
+                            try:
+                                row_dict["patient_name"] = encryption_service.decrypt(p_name)
+                            except Exception:
+                                row_dict["patient_name"] = "Encrypted Patient"
                 res.append(row_dict)
             return jsonify(res)
         finally:
@@ -1911,8 +1915,12 @@ def create_app(db_path: str) -> Flask:
             if p_name is not None:
                 if str(p_name).startswith("enc:v1:"):
                     if encryption_service is None:
-                        raise ValueError("Patient name is encrypted but PII_ENCRYPTION_KEY is missing.")
-                    row_dict["patient_name"] = encryption_service.decrypt(p_name)
+                        row_dict["patient_name"] = "Encrypted Patient"
+                    else:
+                        try:
+                            row_dict["patient_name"] = encryption_service.decrypt(p_name)
+                        except Exception:
+                            row_dict["patient_name"] = "Encrypted Patient"
 
             return jsonify(row_dict)
         finally:
@@ -2028,7 +2036,7 @@ def create_app(db_path: str) -> Flask:
                     cr.id as report_id, cr.prediction_id, s.id as scan_id, p.patient_id, p.name as patient_name,
                     pr.predicted_class, pr.confidence_score, pr.tumor_area_mm2, pr.tumor_percentage_brain,
                     pr.rule_based_severity, pr.severity_rule_description, cr.created_at,
-                    pr.predictive_entropy, pr.requires_review
+                    pr.predictive_entropy, pr.requires_review, cr.uncertainty_path, s.image_path as raw_path
                 FROM clinical_reports cr
                 JOIN predictions pr ON cr.prediction_id = pr.id
                 JOIN mri_scans s ON pr.scan_id = s.id
@@ -2039,6 +2047,16 @@ def create_app(db_path: str) -> Flask:
                 if not row:
                     return jsonify({"error": "Report not found"}), 404
                 report_dict = dict(row)
+
+                raw_path = report_dict.get("raw_path")
+                uncertainty_path = report_dict.get("uncertainty_path")
+                report_dict["raw_mri_available"] = bool(raw_path and os.path.exists(raw_path))
+                report_dict["uncertainty_available"] = bool(uncertainty_path and os.path.exists(uncertainty_path))
+
+                # Remove path variables from response metadata for PII/Path hiding
+                report_dict.pop("raw_path", None)
+                report_dict.pop("uncertainty_path", None)
+
                 try:
                     from security.infrastructure.encryption_service import PIIEncryptionService
                     encryption_service = PIIEncryptionService()
@@ -2049,8 +2067,12 @@ def create_app(db_path: str) -> Flask:
                 if p_name is not None:
                     if str(p_name).startswith("enc:v1:"):
                         if encryption_service is None:
-                            raise ValueError("Patient name is encrypted but PII_ENCRYPTION_KEY is missing.")
-                        report_dict["patient_name"] = encryption_service.decrypt(p_name)
+                            report_dict["patient_name"] = "Encrypted Patient"
+                        else:
+                            try:
+                                report_dict["patient_name"] = encryption_service.decrypt(p_name)
+                            except Exception:
+                                report_dict["patient_name"] = "Encrypted Patient"
             finally:
                 conn.close()
 
@@ -2635,9 +2657,20 @@ def create_app(db_path: str) -> Flask:
             pat_age_raw = row["age"]
             pat_gender_raw = row["gender"]
 
-            name = encryption_service.decrypt(pat_name_raw) if encryption_service and pat_name_raw and str(pat_name_raw).startswith("enc:v1:") else pat_name_raw
-            age = encryption_service.decrypt(pat_age_raw) if encryption_service and pat_age_raw and str(pat_age_raw).startswith("enc:v1:") else pat_age_raw
-            gender = encryption_service.decrypt(pat_gender_raw) if encryption_service and pat_gender_raw and str(pat_gender_raw).startswith("enc:v1:") else pat_gender_raw
+            try:
+                name = encryption_service.decrypt(pat_name_raw) if encryption_service and pat_name_raw and str(pat_name_raw).startswith("enc:v1:") else pat_name_raw
+            except Exception:
+                name = "Encrypted Patient"
+
+            try:
+                age = encryption_service.decrypt(pat_age_raw) if encryption_service and pat_age_raw and str(pat_age_raw).startswith("enc:v1:") else pat_age_raw
+            except Exception:
+                age = "Encrypted Age"
+
+            try:
+                gender = encryption_service.decrypt(pat_gender_raw) if encryption_service and pat_gender_raw and str(pat_gender_raw).startswith("enc:v1:") else pat_gender_raw
+            except Exception:
+                gender = "Encrypted Gender"
 
             try:
                 if age is not None:
@@ -2929,7 +2962,7 @@ def create_app(db_path: str) -> Flask:
 
         # 3. Log download success and serve
         service.log_report_access_event("REPORT_DOWNLOADED", current_user, report_id, "SUCCESS", f"Downloaded report version {version if version is not None else 'latest'}")
-        filename = os.path.basename(pdf_path)
+        filename = f"brain_tumor_report_{report_id}.pdf"
 
         response = send_file(pdf_path, mimetype="application/pdf", download_name=filename, as_attachment=True)
         response.headers["Content-Disposition"] = f"attachment; filename={filename}"
@@ -3146,6 +3179,13 @@ def create_app(db_path: str) -> Flask:
             logger = logging.getLogger("dashboard.web_server.get_visual_scan")
 
             if not img_path or not os.path.exists(img_path):
+                if image_type in ("uncertainty", "raw"):
+                    return jsonify({
+                        "available": False,
+                        "reason": "SOURCE_IMAGE_UNAVAILABLE",
+                        "message": "Spatial uncertainty visualization is unavailable because the original source MRI is no longer available."
+                    }), 404
+
                 import numpy as np
                 import cv2
                 import io
@@ -3202,6 +3242,8 @@ def create_app(db_path: str) -> Flask:
     @roles_accepted(Role.ADMIN, Role.DOCTOR)
     def doctor_generate_report(current_user: User):
         import requests
+        import logging
+        logger = logging.getLogger("dashboard.web_server.generate_report")
 
         # 1. Get input data and files
         if "mri_file" not in request.files:
@@ -3221,6 +3263,12 @@ def create_app(db_path: str) -> Flask:
         ensemble_mode_str = request.form.get("ensemble_mode", "false").strip()
         confirm_override_str = request.form.get("confirm_override", "false").strip()
         override_reason = request.form.get("override_reason", "").strip()
+
+        logger.info(
+            "Report generation request: doctor=%s patient_id=%s",
+            current_user.uuid if current_user else "None",
+            patient_id
+        )
 
         # Validate inputs basic
         if not patient_id or not patient_name:

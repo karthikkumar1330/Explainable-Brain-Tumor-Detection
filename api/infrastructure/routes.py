@@ -1257,6 +1257,8 @@ def _run_single_report_pipeline(
         db_repo.initialize_db()
         report_db_id = db_repo.save_report(clinical_report, output_dir=OUTPUT_REPORTS_DIR)
 
+        # Reverted auto-assignment during report pipeline to ensure strict external registration control
+
         # Trigger in-app notifications (G8.2.7)
         try:
             from clinical_reporting.application.notification_service import NotificationService
@@ -1754,7 +1756,7 @@ def serve_report_pdf(report_id: int, version: Optional[str] = Query(None), curre
 
     # 3. Log download success and serve
     service.log_report_access_event("REPORT_DOWNLOADED", current_user, report_id, "SUCCESS", f"Downloaded report version {validated_version if validated_version is not None else 'latest'}")
-    filename = os.path.basename(pdf_path)
+    filename = f"brain_tumor_report_{report_id}.pdf"
     headers = {
         "Content-Disposition": f"attachment; filename={filename}",
         "X-Content-Type-Options": "nosniff"
@@ -1949,6 +1951,17 @@ def serve_report_visual(report_id: int, visual_type: str, current_user: User = D
             img_path = os.path.abspath(img_path)
 
         if not img_path or not os.path.exists(img_path):
+            if visual_type in ("uncertainty", "raw"):
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    content={
+                        "available": False,
+                        "reason": "SOURCE_IMAGE_UNAVAILABLE",
+                        "message": "Spatial uncertainty visualization is unavailable because the original source MRI is no longer available."
+                    },
+                    status_code=404
+                )
+
             import numpy as np
             import cv2
 

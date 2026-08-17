@@ -203,8 +203,12 @@ class SegmentationReviewService:
         decrypted_comment = ""
         if review_data["encrypted_comment"]:
             if not self.encryption_service:
-                raise SegmentationReviewServiceException("PII Encryption Service is not initialized.")
-            decrypted_comment = self.encryption_service.decrypt(review_data["encrypted_comment"])
+                decrypted_comment = "Encrypted Comment"
+            else:
+                try:
+                    decrypted_comment = self.encryption_service.decrypt(review_data["encrypted_comment"])
+                except Exception:
+                    decrypted_comment = "Encrypted Comment"
 
         review_data["comment"] = decrypted_comment
         return review_data

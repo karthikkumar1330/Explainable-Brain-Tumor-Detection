@@ -193,8 +193,12 @@ class SQLitePredictionHistoryRepository(IPredictionHistoryRepository):
                     decrypted_name = p_name
                     if p_name is not None and str(p_name).startswith("enc:v1:"):
                         if encryption_service is None:
-                            raise ValueError("PII patient_name is encrypted but PII_ENCRYPTION_KEY is missing.")
-                        decrypted_name = encryption_service.decrypt(p_name)
+                            decrypted_name = "Encrypted Patient"
+                        else:
+                            try:
+                                decrypted_name = encryption_service.decrypt(p_name)
+                            except Exception:
+                                decrypted_name = "Encrypted Patient"
 
                     results.append(PredictionSummary(
                         report_id=row["report_id"],
@@ -226,8 +230,12 @@ class SQLitePredictionHistoryRepository(IPredictionHistoryRepository):
                         is_enc = str(p_name).startswith("enc:v1:")
                         if is_enc:
                             if encryption_service is None:
-                                raise ValueError("PII patient_name is encrypted but PII_ENCRYPTION_KEY is missing.")
-                            decrypted_name = encryption_service.decrypt(p_name)
+                                decrypted_name = "Encrypted Patient"
+                            else:
+                                try:
+                                    decrypted_name = encryption_service.decrypt(p_name)
+                                except Exception:
+                                    decrypted_name = "Encrypted Patient"
                         else:
                             decrypted_name = p_name
                     else:

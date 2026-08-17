@@ -2233,7 +2233,10 @@
                         
                         let activeStatus = "Active Session";
                         let activeColor = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
-                        if (s.event_type === "LOGOUT" || s.event_type === "REVOKE_ALL_SESSIONS") {
+                        if (s.event_type === "LOGIN_ATTEMPT") {
+                            activeStatus = "Attempt";
+                            activeColor = "bg-slate-800 text-slate-400 border border-slate-700/30";
+                        } else if (s.event_type === "LOGOUT" || s.event_type === "REVOKE_ALL_SESSIONS") {
                             activeStatus = "Logged Out";
                             activeColor = "bg-slate-850 text-slate-400";
                         } else if (s.event_type === "LOGIN_FAILURE") {

@@ -25,7 +25,9 @@ class TestEmailRetry(unittest.TestCase):
     """Phase G6 Email Delivery Retry & Failure Handling Tests."""
 
     def setUp(self):
-        self.db_path = os.environ["DB_PATH"]
+        EmailRetryScheduler._instance = None
+        self.db_path = os.environ.get("DB_PATH") or os.path.abspath("outputs/test_email_retry.db")
+        os.environ["DB_PATH"] = self.db_path
         if os.path.exists(self.db_path):
             try:
                 os.remove(self.db_path)
@@ -82,6 +84,7 @@ class TestEmailRetry(unittest.TestCase):
         self.service = ReportService(db_path=self.db_path)
 
     def tearDown(self):
+        EmailRetryScheduler._instance = None
         if os.path.exists(self.pdf_file_path):
             try:
                 os.remove(self.pdf_file_path)

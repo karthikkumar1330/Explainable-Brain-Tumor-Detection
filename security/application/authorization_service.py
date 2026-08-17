@@ -44,9 +44,9 @@ class AuthorizationService:
 
             local_conn = conn or self._get_connection()
             try:
-                # Check explicit assignment
+                # Check explicit assignment (case-insensitive query comparison)
                 assignment = local_conn.execute(
-                    "SELECT 1 FROM doctor_patient_assignments WHERE doctor_id = ? AND patient_id = ?;",
+                    "SELECT 1 FROM doctor_patient_assignments WHERE doctor_id = ? AND LOWER(patient_id) = LOWER(?);",
                     (doctor_id, patient_id)
                 ).fetchone()
                 if assignment:

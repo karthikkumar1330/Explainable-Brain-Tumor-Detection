@@ -191,12 +191,17 @@ class ClinicianNoteService:
         finally:
             conn.close()
 
-        if not self.encryption_service:
-            raise ClinicianNoteServiceException("PII Encryption Service is not initialized.")
-
         results = []
         for r in rows:
-            decrypted = self.encryption_service.decrypt(r["encrypted_content"])
+            decrypted = ""
+            if r["encrypted_content"]:
+                if not self.encryption_service:
+                    decrypted = "Encrypted Content"
+                else:
+                    try:
+                        decrypted = self.encryption_service.decrypt(r["encrypted_content"])
+                    except Exception:
+                        decrypted = "Encrypted Content"
             results.append({
                 "note_id": r["note_id"],
                 "scan_id": r["scan_id"],

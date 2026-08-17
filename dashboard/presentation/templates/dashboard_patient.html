@@ -1422,17 +1422,17 @@
                 <button onclick="openReportPreview(currentSelectedReportId)" class="btn-secondary text-xs flex items-center gap-2 border border-slate-700 cursor-pointer">
                     <i class="fa-solid fa-eye text-emerald-400"></i> Preview
                 </button>
-                <div class="flex items-center gap-2">
-                    <a id="modal-json-link" href="#" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-4 py-3 rounded-xl transition shadow-lg flex items-center gap-2 border border-slate-700">
+                <div class="flex flex-wrap items-center gap-2 justify-end">
+                    <a id="modal-json-link" href="#" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-4 py-3 rounded-xl transition shadow-lg flex items-center gap-2 border border-slate-700 cursor-pointer">
                         <i class="fa-solid fa-file-code text-sky-400"></i> Export JSON
                     </a>
-                    <a id="modal-csv-link" href="#" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-4 py-3 rounded-xl transition shadow-lg flex items-center gap-2 border border-slate-700">
+                    <a id="modal-csv-link" href="#" target="_blank" class="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-4 py-3 rounded-xl transition shadow-lg flex items-center gap-2 border border-slate-700 cursor-pointer">
                         <i class="fa-solid fa-file-csv text-indigo-400"></i> Export CSV
                     </a>
                     <button id="modal-email-btn" onclick="emailReport(currentSelectedReportId)" class="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-4 py-3 rounded-xl transition shadow-lg flex items-center gap-2 border border-slate-700 cursor-pointer">
                         <i class="fa-solid fa-envelope text-sky-400"></i> Email Report
                     </button>
-                    <a id="modal-pdf-link" href="#" target="_blank" class="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-extrabold text-xs px-6 py-3 rounded-xl transition shadow-lg flex items-center gap-2">
+                    <a id="modal-pdf-link" href="#" target="_blank" class="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-extrabold text-xs px-6 py-3 rounded-xl transition shadow-lg flex items-center gap-2 cursor-pointer">
                         <i class="fa-solid fa-file-pdf"></i> Download Official PDF Report
                     </a>
                 </div>
@@ -1494,10 +1494,19 @@
                     </button>
                 </div>
 
-                <!-- Actions (Print) -->
-                <div>
-                    <button id="preview-print-btn" onclick="printPreviewReport()" aria-label="Print report" class="btn-primary text-xs h-9 px-4 flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500 cursor-pointer">
-                        <i class="fa-solid fa-print"></i> Print Report
+                <!-- Actions (Details, Print, Download, Email) -->
+                <div class="flex flex-wrap items-center gap-2 justify-end">
+                    <button onclick="closeReportPreview()" class="btn-secondary text-xs h-9 px-3 flex items-center gap-1 cursor-pointer">
+                        <i class="fa-solid fa-circle-info text-sky-400"></i> Report Details
+                    </button>
+                    <button id="preview-print-btn" onclick="printPreviewReport()" aria-label="Print report" class="btn-secondary text-xs h-9 px-3 flex items-center gap-1 cursor-pointer">
+                        <i class="fa-solid fa-print"></i> Print
+                    </button>
+                    <button onclick="downloadReportPdf(currentPreviewReportId, currentPreviewVersion)" class="btn-secondary text-xs h-9 px-3 flex items-center gap-1 cursor-pointer">
+                        <i class="fa-solid fa-file-pdf text-rose-400"></i> Download PDF
+                    </button>
+                    <button onclick="emailReport(currentPreviewReportId)" class="btn-secondary text-xs h-9 px-3 flex items-center gap-1 cursor-pointer">
+                        <i class="fa-solid fa-envelope text-sky-400"></i> Email
                     </button>
                 </div>
             </div>
@@ -1818,11 +1827,26 @@
             }
         }
 
+        let currentPreviewReportId = null;
+        let currentPreviewVersion = null;
+
+        function downloadReportPdf(reportId, versionId) {
+            if (!reportId) reportId = currentPreviewReportId;
+            let url = `/api/report/${reportId}/pdf`;
+            if (versionId) {
+                url += `?version=${versionId}`;
+            }
+            window.open(url, '_blank');
+        }
+
         async function openReportPreview(reportId, versionId = null) {
             if (!reportId || isNaN(reportId)) {
                 alert("Invalid report ID provided.");
                 return;
             }
+
+            currentPreviewReportId = reportId;
+            currentPreviewVersion = versionId;
 
             if (previewAbortController) {
                 previewAbortController.abort();
@@ -2780,13 +2804,28 @@
 
                         const dateStr = item.attempted_at ? item.attempted_at.replace("T", " ").substring(0, 19) : "-";
 
+                        let failureDetails = item.failure_reason || "-";
+                        if (item.status === "FAILED" && item.failure_reason) {
+                            const reasonMap = {
+                                "INVALID_CONFIGURATION": "SMTP server is not configured or settings are incorrect.",
+                                "INVALID_RECIPIENT": "The recipient's email address is invalid.",
+                                "SMTP_AUTH_FAILED": "Authentication to SMTP server failed.",
+                                "SMTP_CONNECTION_FAILED": "Unable to connect to SMTP server.",
+                                "SMTP_TIMEOUT": "Connection to SMTP server timed out.",
+                                "MISSING_PDF": "Report PDF file not found on disk.",
+                                "TEMPLATE_RENDER_FAILURE": "Failed to compile the email notification body.",
+                                "EMAIL_SEND_FAILED": "SMTP transmission failure."
+                            };
+                            failureDetails = reasonMap[item.failure_reason] || item.failure_reason;
+                        }
+
                         tr.innerHTML = `
                             <td class="p-4 font-medium text-slate-350">${dateStr}</td>
                             <td class="p-4 font-bold text-slate-200">#${item.report_id} (${item.report_number})</td>
                             <td class="p-4 text-slate-300 font-mono">${item.recipient_email}</td>
                             <td class="p-4 text-slate-300">${item.actor_name}</td>
                             <td class="p-4">${statusBadge}</td>
-                            <td class="p-4 text-slate-400">${item.failure_reason || '-'}</td>
+                            <td class="p-4 text-slate-400">${failureDetails}</td>
                         `;
                         tbody.appendChild(tr);
                     });
@@ -3384,7 +3423,10 @@
 
                         let activeStatus = "Active Session";
                         let activeColor = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
-                        if (s.event_type === "LOGOUT" || s.event_type === "REVOKE_ALL_SESSIONS") {
+                        if (s.event_type === "LOGIN_ATTEMPT") {
+                            activeStatus = "Attempt";
+                            activeColor = "bg-slate-800 text-slate-400 border border-slate-700/30";
+                        } else if (s.event_type === "LOGOUT" || s.event_type === "REVOKE_ALL_SESSIONS") {
                             activeStatus = "Logged Out";
                             activeColor = "bg-slate-850 text-slate-400";
                         } else if (s.event_type === "LOGIN_FAILURE") {

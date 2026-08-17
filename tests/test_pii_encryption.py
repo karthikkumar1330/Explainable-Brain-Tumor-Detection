@@ -27,7 +27,8 @@ class TestPIIEncryption(unittest.TestCase):
         self.encryption_key = Fernet.generate_key().decode("utf-8")
         os.environ["PII_ENCRYPTION_KEY"] = self.encryption_key
         
-        self.db_path = os.environ["DB_PATH"]
+        self.db_path = os.environ.get("DB_PATH") or os.path.abspath("outputs/test_pii_encryption.db")
+        os.environ["DB_PATH"] = self.db_path
         if os.path.exists(self.db_path):
             try:
                 os.remove(self.db_path)
@@ -516,3 +517,21 @@ class TestPIIEncryption(unittest.TestCase):
         result = subprocess.run(["git", "grep", self.encryption_key], capture_output=True, text=True, cwd="d:\\BrainTumorProject\\UNeXt-pytorch")
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn(self.encryption_key, result.stdout)
+
+    # 21. test_missing_cryptography_dependency
+    def test_missing_cryptography_dependency(self):
+        import security.infrastructure.encryption_service as enc_mod
+        from security.infrastructure.encryption_service import PIIEncryptionService, EncryptionDependencyError
+
+        # 1. Instantiation fails when dependency is missing
+        with patch.object(enc_mod, 'CRYPTOGRAPHY_AVAILABLE', False):
+            with self.assertRaises(EncryptionDependencyError):
+                PIIEncryptionService()
+
+        # 2. Direct encrypt/decrypt calls fail when dependency is missing at call time
+        service = PIIEncryptionService(self.encryption_key)
+        with patch.object(enc_mod, 'CRYPTOGRAPHY_AVAILABLE', False):
+            with self.assertRaises(EncryptionDependencyError):
+                service.encrypt("test")
+            with self.assertRaises(EncryptionDependencyError):
+                service.decrypt("enc:v1:test")

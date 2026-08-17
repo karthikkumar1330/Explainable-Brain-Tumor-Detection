@@ -22,7 +22,8 @@ from security.infrastructure.password import PasswordHasher
 
 class TestReportJSONExportBase(unittest.TestCase):
     def setUp(self):
-        self.db_path = os.environ["DB_PATH"]
+        self.db_path = os.environ.get("DB_PATH") or os.path.abspath("outputs/test_json_export.db")
+        os.environ["DB_PATH"] = self.db_path
 
         # Override database path on imported FastAPI routers to avoid cached connections
         from api.infrastructure import routes as api_routes

@@ -309,7 +309,7 @@ class TestReportAccessSecurity(unittest.TestCase):
         res = self.client.get(f"/api/report/{report_id}/pdf", headers=headers)
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.headers.get("X-Content-Type-Options"), "nosniff")
-        self.assertEqual(res.headers.get("Content-Disposition"), "attachment; filename=integ_test.pdf")
+        self.assertEqual(res.headers.get("Content-Disposition"), "attachment; filename=brain_tumor_report_200.pdf")
 
         # 3. Wrong patient request -> 403 Forbidden
         headers = {"Authorization": f"Bearer {self.wrong_patient_token}"}
