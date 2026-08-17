@@ -1920,50 +1920,51 @@
             <button onclick="closeModal('details-modal')" class="absolute top-5 right-5 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 h-9 w-9 rounded-full flex items-center justify-center transition">
                 <i class="fa-solid fa-xmark text-lg"></i>
             </button>
-            <h3 id="modal-title" class="font-extrabold text-2xl text-slate-100">Diagnostic Report Details</h3>
-            <p id="modal-patient-meta" class="text-xs text-slate-400 mb-6">Patient ID: - | Name: -</p>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-950/90 rounded-2xl border border-slate-800/80 mb-4 text-xs shadow-inner">
-                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Class</span><span id="modal-diag" class="font-extrabold text-slate-100 text-sm">-</span></div>
-                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Severity</span><span id="modal-severity" class="font-extrabold text-sm">-</span></div>
-                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Confidence</span><span id="modal-conf" class="font-extrabold text-slate-100 text-sm">-</span></div>
-                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Tumor Area</span><span id="modal-area" class="font-extrabold text-slate-100 text-sm">-</span></div>
+            <div class="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 mb-6">
+                <h3 id="modal-title" class="font-extrabold text-2xl text-slate-100">Diagnostic Report Details</h3>
+                <p id="modal-patient-meta" class="text-xs text-slate-400 font-medium">Patient ID: - | Name: -</p>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-5 bg-slate-950/70 rounded-2xl border border-slate-800 mb-4 text-xs">
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold mb-1.5">Class</span><span id="modal-diag" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold mb-1.5">Severity</span><span id="modal-severity" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold mb-1.5">Confidence</span><span id="modal-conf" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold mb-1.5">Tumor Area</span><span id="modal-area" class="font-extrabold text-slate-100 text-sm">-</span></div>
             </div>
 
             <!-- Report Metadata Details (F2.1) -->
-            <div class="grid grid-cols-2 sm:grid-cols-6 gap-4 p-4 bg-slate-900/40 rounded-2xl border border-slate-800/50 mb-6 text-xs shadow-inner">
-                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Report Number</span><span id="modal-report-number" class="font-extrabold text-slate-100 text-sm">-</span></div>
-                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Status</span><span id="modal-report-status" class="font-extrabold text-slate-100 text-sm">-</span></div>
-                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Current Version</span><span id="modal-report-version" class="font-extrabold text-slate-100 text-sm">-</span></div>
-                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Updated At</span><span id="modal-report-updated" class="font-extrabold text-slate-100 text-sm">-</span></div>
-                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">AI Uncertainty</span><span id="modal-report-entropy" class="font-extrabold text-slate-100 text-sm">-</span></div>
-                <div><span class="text-slate-400 block text-[10px] uppercase font-bold">Review Status</span><span id="modal-report-review" class="font-extrabold text-slate-100 text-sm">-</span></div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 p-5 bg-slate-950/70 rounded-2xl border border-slate-800 mb-6 text-xs">
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold mb-1.5">Report Number</span><span id="modal-report-number" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold mb-1.5">Status</span><span id="modal-report-status" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold mb-1.5">Current Version</span><span id="modal-report-version" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold mb-1.5">Updated At</span><span id="modal-report-updated" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold mb-1.5">AI Uncertainty</span><span id="modal-report-entropy" class="font-extrabold text-slate-100 text-sm">-</span></div>
+                <div><span class="text-slate-400 block text-[10px] uppercase font-bold mb-1.5">Review Status</span><span id="modal-report-review" class="font-extrabold text-slate-100 text-sm">-</span></div>
             </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-[20px] mb-6">
                 <!-- Grad-CAM Blended View -->
-                <div class="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 flex flex-col justify-between">
-                    <div class="flex justify-between items-center mb-3">
-                        <h5 class="text-xs font-bold text-slate-355 uppercase tracking-wider flex items-center gap-1.5">
-                            <i class="fa-solid fa-fire text-amber-400"></i> Grad-CAM XAI Heatmap Blending
+                <div class="bg-slate-950/70 p-5 rounded-2xl border border-slate-800 flex flex-col h-full justify-between">
+                    <div class="min-h-[40px] md:min-h-[48px] flex items-start justify-between gap-3 mb-3">
+                        <h5 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 flex-1 min-w-0 leading-[1.25]">
+                            <i class="fa-solid fa-fire text-amber-400"></i> <span>Grad-CAM XAI Heatmap Blending</span>
                         </h5>
-                        <div class="flex items-center gap-2">
-                            <button id="toggle-annotation-btn" onclick="toggleAnnotationMode()" class="bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1">
+                        <div class="flex items-center justify-end gap-2 flex-wrap flex-shrink-0">
+                            <button id="toggle-annotation-btn" onclick="toggleAnnotationMode()" class="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1">
                                 <i class="fa-solid fa-location-dot text-sky-400"></i> Add Point
                             </button>
-                            <button id="toggle-rectangle-btn" onclick="toggleRectangleMode()" class="bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1">
+                            <button id="toggle-rectangle-btn" onclick="toggleRectangleMode()" class="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1">
                                 <i class="fa-solid fa-vector-square text-sky-400"></i> Add Rectangle
                             </button>
-                            <span id="label-overlay-opacity" class="text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-850">Opacity: 70%</span>
+                            <span id="label-overlay-opacity" class="text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800">Opacity: 70%</span>
                         </div>
                     </div>
-                    <div id="modal-visual-gradcam" class="relative w-full h-72 bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-center mb-3">
-                        <img id="modal-heatmap-raw" class="absolute max-w-full max-h-full object-contain" src="" alt="Raw MRI Scan" onload="alignSvgOverlay()">
-                        <img id="modal-overlay-img" class="absolute max-w-full max-h-full object-contain pointer-events-none" src="" alt="Grad-CAM Overlay" style="opacity: 0.70;">
+                    <div id="modal-visual-gradcam" class="relative w-full aspect-square bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-center overflow-hidden mb-3">
+                        <img id="modal-heatmap-raw" class="absolute w-full h-full object-contain" src="" alt="Raw MRI Scan" onload="alignSvgOverlay()">
+                        <img id="modal-overlay-img" class="absolute w-full h-full object-contain pointer-events-none" src="" alt="Grad-CAM Overlay" style="opacity: 0.70;">
                         <!-- Raw MRI Unavailable Overlay -->
-                        <div id="modal-heatmap-raw-unavailable" class="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center text-center p-4 hidden z-20">
-                            <i class="fa-solid fa-triangle-exclamation text-yellow-500 text-3xl mb-2"></i>
-                            <span class="font-bold text-slate-200 text-sm">Original MRI unavailable</span>
-                            <span class="text-[11px] text-slate-400 mt-1 max-w-[220px]">Original source MRI is unavailable for this historical report.</span>
+                        <div id="modal-heatmap-raw-unavailable" class="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center text-center p-4 gap-1 hidden z-20">
+                            <i class="fa-solid fa-triangle-exclamation text-slate-500 text-lg mb-0.5"></i>
+                            <span class="font-semibold text-slate-350 text-xs">Original MRI unavailable</span>
+                            <span class="text-[10px] text-slate-550 max-w-[200px] leading-relaxed">Image/overlay could not be rendered</span>
                         </div>
 
                         <!-- Point Annotations SVG Overlay -->
@@ -1972,7 +1973,7 @@
                         </svg>
 
                         <!-- Annotation Editor Tooltip/Popover -->
-                        <div id="annotation-popover" class="hidden absolute bg-slate-955 border border-slate-800 p-3 rounded-xl shadow-2xl z-50 w-60 space-y-3 text-xs text-slate-300">
+                        <div id="annotation-popover" class="hidden absolute bg-slate-900 border border-slate-800 p-3 rounded-xl shadow-2xl z-50 w-60 space-y-3 text-xs text-slate-300">
                             <div class="flex justify-between items-center border-b border-slate-900 pb-1.5">
                                 <span id="popover-title" class="font-bold text-slate-200">New Point Annotation</span>
                                 <button onclick="closeAnnotationPopover()" class="text-slate-500 hover:text-slate-300 cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
@@ -2004,21 +2005,23 @@
                 </div>
 
                 <!-- Segmentation Blended View -->
-                <div class="bg-slate-955/70 p-4 rounded-2xl border border-slate-800 flex flex-col justify-between">
-                    <div class="flex justify-between items-center mb-3">
-                        <h5 class="text-xs font-bold text-slate-355 uppercase tracking-wider flex items-center gap-1.5">
-                            <i class="fa-solid fa-draw-polygon text-sky-400"></i> UNeXt Segmentation Outline Blending
+                <div class="bg-slate-950/70 p-5 rounded-2xl border border-slate-800 flex flex-col h-full justify-between">
+                    <div class="min-h-[40px] md:min-h-[48px] flex items-start justify-between gap-3 mb-3">
+                        <h5 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 flex-1 min-w-0 leading-[1.25]">
+                            <i class="fa-solid fa-draw-polygon text-sky-400"></i> <span>UNeXt Segmentation Outline Blending</span>
                         </h5>
-                        <span id="label-mask-opacity" class="text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-850">Opacity: 70%</span>
+                        <div class="flex items-center justify-end gap-2 flex-wrap flex-shrink-0">
+                            <span id="label-mask-opacity" class="text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800">Opacity: 70%</span>
+                        </div>
                     </div>
-                    <div id="modal-visual-segmentation" class="relative w-full h-72 bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-center overflow-hidden mb-3">
-                        <img id="modal-mask-raw" class="absolute max-w-full max-h-full object-contain" src="" alt="Raw MRI Scan" onload="alignSvgOverlay()">
-                        <img id="modal-mask-img" class="absolute max-w-full max-h-full object-contain pointer-events-none" src="" alt="Segmentation Mask" style="opacity: 0.70;">
+                    <div id="modal-visual-segmentation" class="relative w-full aspect-square bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-center overflow-hidden mb-3">
+                        <img id="modal-mask-raw" class="absolute w-full h-full object-contain" src="" alt="Raw MRI Scan" onload="alignSvgOverlay()">
+                        <img id="modal-mask-img" class="absolute w-full h-full object-contain pointer-events-none" src="" alt="Segmentation Mask" style="opacity: 0.70;">
                         <!-- Raw MRI Unavailable Overlay -->
-                        <div id="modal-mask-raw-unavailable" class="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center text-center p-4 hidden z-20">
-                            <i class="fa-solid fa-triangle-exclamation text-yellow-500 text-3xl mb-2"></i>
-                            <span class="font-bold text-slate-200 text-sm">Original MRI unavailable</span>
-                            <span class="text-[11px] text-slate-400 mt-1 max-w-[220px]">Original source MRI is unavailable for this historical report.</span>
+                        <div id="modal-mask-raw-unavailable" class="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center text-center p-4 gap-1 hidden z-20">
+                            <i class="fa-solid fa-triangle-exclamation text-slate-500 text-lg mb-0.5"></i>
+                            <span class="font-semibold text-slate-350 text-xs">Original MRI unavailable</span>
+                            <span class="text-[10px] text-slate-550 max-w-[200px] leading-relaxed">Image/overlay could not be rendered</span>
                         </div>
                         <!-- Point Annotations SVG Overlay for Segmentation View -->
                         <svg id="segmentation-svg-overlay" class="absolute pointer-events-auto select-none" style="display:none;" onclick="handleSvgOverlayClick(event)">
@@ -2031,130 +2034,139 @@
                 </div>
 
                 <!-- AI Spatial Uncertainty Blending -->
-                <div class="bg-slate-955/70 p-4 rounded-2xl border border-slate-800 flex flex-col justify-between">
-                    <div class="flex justify-between items-center mb-3">
-                        <h5 class="text-xs font-bold text-slate-355 uppercase tracking-wider flex items-center gap-1.5">
-                            <i class="fa-solid fa-circle-nodes text-yellow-500"></i> AI Spatial Uncertainty Blending
+                <div class="bg-slate-950/70 p-5 rounded-2xl border border-slate-800 flex flex-col h-full justify-between">
+                    <div class="min-h-[40px] md:min-h-[48px] flex items-start justify-between gap-3 mb-3">
+                        <h5 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 flex-1 min-w-0 leading-[1.25]">
+                            <i class="fa-solid fa-circle-nodes text-yellow-500"></i> <span>AI Spatial Uncertainty Blending</span>
                         </h5>
-                        <span id="label-uncertainty-opacity" class="text-[10px] text-yellow-500 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-850">Opacity: 70%</span>
+                        <div class="flex items-center justify-end gap-2 flex-wrap flex-shrink-0">
+                            <span id="label-uncertainty-opacity" class="text-[10px] text-yellow-500 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800">Opacity: 70%</span>
+                        </div>
                     </div>
-                    <div id="modal-visual-uncertainty" class="relative w-full h-72 bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-center overflow-hidden mb-3">
-                        <img id="modal-uncertainty-raw" class="absolute max-w-full max-h-full object-contain" src="" alt="Raw MRI Scan" onload="alignSvgOverlay()">
-                        <img id="modal-uncertainty-img" class="absolute max-w-full max-h-full object-contain pointer-events-none" src="" alt="AI Uncertainty Map" style="opacity: 0.70;">
+                    <div id="modal-visual-uncertainty" class="relative w-full aspect-square bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-center overflow-hidden mb-3">
+                        <img id="modal-uncertainty-raw" class="absolute w-full h-full object-contain" src="" alt="Raw MRI Scan" onload="alignSvgOverlay()">
+                        <img id="modal-uncertainty-img" class="absolute w-full h-full object-contain pointer-events-none" src="" alt="AI Uncertainty Map" style="opacity: 0.70;">
                         <!-- Uncertainty Unavailable Overlay -->
-                        <div id="modal-uncertainty-unavailable" class="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center text-center p-4 hidden z-20">
-                            <i class="fa-solid fa-triangle-exclamation text-yellow-500 text-3xl mb-2"></i>
-                            <span class="font-bold text-slate-200 text-sm">Uncertainty visualization unavailable</span>
-                            <span class="text-[11px] text-slate-400 mt-1 max-w-[220px]">Original source MRI is unavailable for this historical report.</span>
+                        <div id="modal-uncertainty-unavailable" class="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center text-center p-4 gap-1 hidden z-20">
+                            <i class="fa-solid fa-triangle-exclamation text-slate-500 text-lg mb-0.5"></i>
+                            <span class="font-semibold text-slate-350 text-xs">Uncertainty visualization unavailable</span>
+                            <span class="text-[10px] text-slate-550 max-w-[200px] leading-relaxed">Image/overlay could not be rendered</span>
                         </div>
                     </div>
                     <div>
-                        <input type="range" min="0" max="100" value="70" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-yellow-500" oninput="adjustOpacity('uncertainty', this.value)">
+                        <input type="range" min="0" max="100" value="70" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-400" oninput="adjustOpacity('uncertainty', this.value)">
                     </div>
                 </div>
             </div>
 
             <!-- Report Versions List (F2.1) -->
-            <div class="bg-slate-950 p-4 rounded-2xl border border-slate-850 text-xs text-slate-300 mb-6">
-                <span class="font-bold text-slate-400 block mb-2 uppercase tracking-wider text-[10px]">Report Version History:</span>
+            <div class="bg-slate-950/70 p-5 rounded-2xl border border-slate-800 text-xs text-slate-300 mb-6">
+                <span class="font-bold text-slate-400 block mb-2.5 uppercase tracking-wider text-[10px]">Report Version History:</span>
                 <div id="modal-versions-list" class="space-y-1.5 max-h-32 overflow-y-auto pr-1">
                     <!-- populated dynamically -->
                 </div>
             </div>
 
-            <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs text-slate-300 mb-6">
-                <span class="font-bold text-slate-400 block mb-1 uppercase tracking-wider text-[10px]">Clinical Findings & Matched Rule Trace:</span>
+            <div class="bg-slate-950/70 p-5 rounded-2xl border border-slate-800 text-xs text-slate-300 mb-6">
+                <span class="font-bold text-slate-400 block mb-2.5 uppercase tracking-wider text-[10px]">Clinical Findings & Matched Rule Trace:</span>
                 <p id="modal-rule-desc" class="italic text-slate-200 text-sm">-</p>
             </div>
 
             <!-- G8.3: Prediction Feedback & Quality Review Sections -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-[20px] mb-6">
                 <!-- Prediction Feedback Form -->
-                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs text-slate-300">
-                    <span class="font-bold text-slate-400 block mb-2 uppercase tracking-wider text-[10px]"><i class="fa-solid fa-thumbs-up text-sky-400"></i> Was this result useful?</span>
-                    <div class="space-y-3">
-                        <div class="flex items-center gap-3">
-                            <button id="fb-thumb-yes" onclick="setFeedbackRating(5)" class="bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 hover:border-sky-500 font-bold transition flex items-center gap-1.5 cursor-pointer">
-                                👍 Yes
-                            </button>
-                            <button id="fb-thumb-no" onclick="setFeedbackRating(2)" class="bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 hover:border-red-500 font-bold transition flex items-center gap-1.5 cursor-pointer">
-                                👎 No
-                            </button>
-                            <div class="flex items-center gap-1.5 ml-2">
-                                <span class="text-[10px] text-slate-405">Rating:</span>
-                                <select id="fb-rating" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-100 focus:outline-none focus:border-sky-500 transition">
-                                    <option value="5">5 - Excellent</option>
-                                    <option value="4">4 - Good</option>
-                                    <option value="3">3 - Acceptable</option>
-                                    <option value="2">2 - Poor</option>
-                                    <option value="1">1 - Very poor</option>
+                <div class="bg-slate-950/70 p-5 rounded-2xl border border-slate-800 text-xs text-slate-300 flex flex-col justify-between">
+                    <span class="font-bold text-slate-400 block mb-3 uppercase tracking-wider text-[10px]"><i class="fa-solid fa-thumbs-up text-sky-400"></i> Was this result useful?</span>
+                    <div class="space-y-4 flex-1 flex flex-col justify-between">
+                        <div class="space-y-4">
+                            <div class="flex items-center gap-3">
+                                <button id="fb-thumb-yes" onclick="setFeedbackRating(5)" class="bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 hover:border-sky-500 font-bold transition flex items-center gap-1.5 cursor-pointer">
+                                    👍 Yes
+                                </button>
+                                <button id="fb-thumb-no" onclick="setFeedbackRating(2)" class="bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 hover:border-red-500 font-bold transition flex items-center gap-1.5 cursor-pointer">
+                                    👎 No
+                                </button>
+                                <div class="flex items-center gap-1.5 ml-2">
+                                    <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Rating:</span>
+                                    <select id="fb-rating" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                        <option value="5">5 - Excellent</option>
+                                        <option value="4">4 - Good</option>
+                                        <option value="3">3 - Acceptable</option>
+                                        <option value="2">2 - Poor</option>
+                                        <option value="1">1 - Very poor</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <span class="text-[10px] text-slate-400 block font-bold uppercase tracking-wider mb-1.5">Feedback Type:</span>
+                                <select id="fb-type" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                    <option value="ACCURATE">Accurate</option>
+                                    <option value="INACCURATE">Inaccurate</option>
+                                    <option value="UNCERTAIN">Uncertain</option>
+                                    <option value="TECHNICAL_QUALITY_ISSUE">Technical Quality Issue</option>
+                                    <option value="CLINICAL_REVIEW_REQUIRED">Clinical Review Required</option>
                                 </select>
                             </div>
+                            <div>
+                                <span class="text-[10px] text-slate-400 block font-bold uppercase tracking-wider mb-1.5">Optional Comment (Max 1000 chars):</span>
+                                <textarea id="fb-comment" placeholder="Provide details about accuracy or issues..." class="w-full h-24 bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
+                            </div>
                         </div>
-                        <div class="space-y-1.5">
-                            <span class="text-[10px] text-slate-450 block font-bold">Feedback Type:</span>
-                            <select id="fb-type" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
-                                <option value="ACCURATE">Accurate</option>
-                                <option value="INACCURATE">Inaccurate</option>
-                                <option value="UNCERTAIN">Uncertain</option>
-                                <option value="TECHNICAL_QUALITY_ISSUE">Technical Quality Issue</option>
-                                <option value="CLINICAL_REVIEW_REQUIRED">Clinical Review Required</option>
-                            </select>
-                        </div>
-                        <div class="space-y-1.5">
-                            <span class="text-[10px] text-slate-450 block font-bold">Optional Comment (Max 1000 chars):</span>
-                            <textarea id="fb-comment" rows="2" placeholder="Provide details about accuracy or issues..." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
-                        </div>
-                        <button onclick="submitPredictionFeedback()" class="w-full bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold py-1.5 rounded-xl transition cursor-pointer">
+                        <button onclick="submitPredictionFeedback()" class="w-full bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold py-2 rounded-xl transition cursor-pointer mt-4">
                             Submit Feedback
                         </button>
                     </div>
                 </div>
 
                 <!-- Quality Flag Form -->
-                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs text-slate-300">
-                    <span class="font-bold text-slate-400 block mb-2 uppercase tracking-wider text-[10px]"><i class="fa-solid fa-flag text-red-400"></i> Flag for Clinical Review</span>
-                    <div class="space-y-3">
-                        <div class="grid grid-cols-2 gap-2">
-                            <div class="space-y-1">
-                                <span class="text-[10px] text-slate-450 block font-bold">Flag Type:</span>
-                                <select id="flag-type" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
-                                    <option value="LOW_CONFIDENCE">Low Confidence</option>
-                                    <option value="POSSIBLE_FALSE_POSITIVE">Possible False Positive</option>
-                                    <option value="POSSIBLE_FALSE_NEGATIVE">Possible False Negative</option>
-                                    <option value="POOR_IMAGE_QUALITY">Poor Image Quality</option>
-                                    <option value="SEGMENTATION_CONCERN">Segmentation Concern</option>
-                                    <option value="CLASSIFICATION_CONCERN">Classification Concern</option>
-                                    <option value="REPORT_CONCERN">Report Concern</option>
-                                    <option value="CLINICAL_REVIEW_REQUIRED">Clinical Review Required</option>
-                                    <option value="OTHER">Other</option>
-                                </select>
+                <div class="bg-slate-950/70 p-5 rounded-2xl border border-slate-800 text-xs text-slate-300 flex flex-col justify-between">
+                    <span class="font-bold text-slate-400 block mb-3 uppercase tracking-wider text-[10px]"><i class="fa-solid fa-flag text-red-400"></i> Flag for Clinical Review</span>
+                    <div class="space-y-4 flex-1 flex flex-col justify-between">
+                        <div class="space-y-4">
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <span class="text-[10px] text-slate-400 block font-bold uppercase tracking-wider mb-1.5">Flag Type:</span>
+                                    <select id="flag-type" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                        <option value="LOW_CONFIDENCE">Low Confidence</option>
+                                        <option value="POSSIBLE_FALSE_POSITIVE">Possible False Positive</option>
+                                        <option value="POSSIBLE_FALSE_NEGATIVE">Possible False Negative</option>
+                                        <option value="POOR_IMAGE_QUALITY">Poor Image Quality</option>
+                                        <option value="SEGMENTATION_CONCERN">Segmentation Concern</option>
+                                        <option value="CLASSIFICATION_CONCERN">Classification Concern</option>
+                                        <option value="REPORT_CONCERN">Report Concern</option>
+                                        <option value="CLINICAL_REVIEW_REQUIRED">Clinical Review Required</option>
+                                        <option value="OTHER">Other</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <span class="text-[10px] text-slate-400 block font-bold uppercase tracking-wider mb-1.5">Severity:</span>
+                                    <select id="flag-severity" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
+                                        <option value="LOW">Low</option>
+                                        <option value="MEDIUM">Medium</option>
+                                        <option value="HIGH">High</option>
+                                        <option value="CRITICAL">Critical</option>
+                                    </select>
+                                </div>
                             </div>
-                            <div class="space-y-1">
-                                <span class="text-[10px] text-slate-450 block font-bold">Severity:</span>
-                                <select id="flag-severity" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition">
-                                    <option value="LOW">Low</option>
-                                    <option value="MEDIUM">Medium</option>
-                                    <option value="HIGH">High</option>
-                                    <option value="CRITICAL">Critical</option>
-                                </select>
+                            <div>
+                                <span class="text-[10px] text-slate-400 block font-bold uppercase tracking-wider mb-1.5">Description:</span>
+                                <textarea id="flag-description" placeholder="Why are you flagging this prediction?..." class="w-full h-24 bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
                             </div>
                         </div>
-                        <div class="space-y-1.5">
-                            <span class="text-[10px] text-slate-450 block font-bold">Description:</span>
-                            <textarea id="flag-description" rows="2" placeholder="Why are you flagging this prediction?..." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
-                        </div>
-                        <button onclick="submitPredictionFlag()" class="w-full bg-red-650 hover:bg-red-650/80 text-white font-bold py-1.5 rounded-xl transition cursor-pointer">
+                        <button onclick="submitPredictionFlag()" class="w-full bg-red-650 hover:bg-red-650/80 text-white font-bold py-2 rounded-xl transition cursor-pointer mt-4">
                             Submit Quality Flag
                         </button>
                     </div>
+                </div>
+            </div>
+
             <!-- Clinician Segmentation Review Panel (Phase I2) -->
-            <div id="segmentation-review-panel" class="bg-slate-950 p-5 rounded-2xl border border-slate-800 text-xs text-slate-300 mb-6 space-y-4">
+            <div id="segmentation-review-panel" class="bg-slate-950/70 p-5 rounded-2xl border border-slate-800 text-xs text-slate-300 mb-6 space-y-4">
                 <div class="border-b border-slate-800 pb-3 flex justify-between items-center">
                     <span class="font-extrabold text-slate-200 uppercase tracking-wider text-[11px] flex items-center gap-2">
                         <i class="fa-solid fa-clipboard-check text-sky-400 text-sm"></i> Clinician Segmentation Review
                     </span>
-                    <span class="text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-850" id="review-panel-badge">Pending Review</span>
+                    <span class="text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800" id="review-panel-badge">Pending Review</span>
                 </div>
 
                 <!-- Review Status Display (Only shown if already reviewed) -->
@@ -2181,7 +2193,7 @@
                 <div id="review-form-section" class="space-y-3">
                     <div class="space-y-1.5">
                         <span class="text-[10px] text-slate-450 block font-bold uppercase">Review Decision Status:</span>
-                        <div class="grid grid-cols-3 gap-2">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                             <button id="btn-status-asis" type="button" onclick="selectReviewStatus('APPROVED_AS_IS')" class="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 p-2.5 rounded-xl font-bold transition text-center cursor-pointer flex flex-col items-center gap-1">
                                 <i class="fa-solid fa-circle-check text-emerald-450 text-sm"></i>
                                 <span>Approve As-Is</span>
@@ -2199,7 +2211,7 @@
 
                     <div class="space-y-1.5">
                         <span class="text-[10px] text-slate-450 block font-bold uppercase">Clinician Comments (Max 2000 chars):</span>
-                        <textarea id="review-comment-input" rows="3" placeholder="Enter comments on UNeXt segmentation, quality observations, or correction notes... Comments are encrypted at rest." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
+                        <textarea id="review-comment-input" placeholder="Enter comments on UNeXt segmentation, quality observations, or correction notes... Comments are encrypted at rest." class="w-full h-24 bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
                     </div>
 
                     <button id="submit-review-btn" onclick="submitClinicalReview()" class="w-full bg-sky-600 hover:bg-sky-500 text-slate-950 font-extrabold py-2 rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md">
@@ -2209,7 +2221,7 @@
             </div>
 
             <!-- Clinician Notes Section (Phase H3.2-A) -->
-            <div class="bg-slate-950 p-5 rounded-2xl border border-slate-800 text-xs text-slate-300 mb-6 space-y-4">
+            <div class="bg-slate-950/70 p-5 rounded-2xl border border-slate-800 text-xs text-slate-300 mb-6 space-y-4">
                 <div class="border-b border-slate-800 pb-3 flex justify-between items-center">
                     <span class="font-extrabold text-slate-200 uppercase tracking-wider text-[11px] flex items-center gap-2">
                         <i class="fa-solid fa-comment-medical text-sky-400 text-sm"></i> Clinician Notes
@@ -2225,7 +2237,7 @@
                 <!-- Write observation form -->
                 <div class="space-y-2 pt-2 border-t border-slate-900">
                     <span class="font-bold text-slate-350 block mb-1 text-[10px] uppercase">Write a clinical observation...</span>
-                    <textarea id="note-content-input" rows="3" placeholder="Enter clinical observation... Note content is stored with field-level encryption." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
+                    <textarea id="note-content-input" placeholder="Enter clinical observation... Note content is stored with field-level encryption." class="w-full h-24 bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition resize-none"></textarea>
 
                     <div class="flex justify-end gap-2">
                         <button id="cancel-note-edit-btn" onclick="cancelNoteEdit()" class="hidden bg-slate-850 hover:bg-slate-800 text-slate-300 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer">
@@ -3719,7 +3731,7 @@
                     data.versions.forEach(v => {
                         const isCurrent = v.version_number === data.current_version;
                         const vItem = document.createElement("div");
-                        vItem.className = `flex justify-between items-center p-2 rounded mb-1.5 ${isCurrent ? 'bg-slate-900 border border-sky-500/40' : 'bg-slate-950/40 hover:bg-slate-900/40'}`;
+                        vItem.className = `flex flex-col sm:flex-row justify-between sm:items-center gap-[16px] p-2.5 rounded mb-1.5 ${isCurrent ? 'bg-slate-900 border border-sky-500/40' : 'bg-slate-950/40 hover:bg-slate-900/40'}`;
                         vItem.innerHTML = `
                             <div class="flex flex-col">
                                 <div class="flex items-center gap-2">
@@ -6123,7 +6135,7 @@
             listContainer.innerHTML = "";
 
             if (!notes || notes.length === 0) {
-                listContainer.innerHTML = '<p class="text-slate-500 italic text-center py-4">No clinician observations recorded for this scan.</p>';
+                listContainer.innerHTML = '<p class="text-slate-500 italic text-center py-2">No clinician observations recorded for this scan.</p>';
                 return;
             }
 
@@ -6802,7 +6814,7 @@
             const badge = document.getElementById("review-panel-badge");
             if (badge) {
                 badge.innerText = "Pending Review";
-                badge.className = "text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-850";
+                badge.className = "text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800";
             }
 
             const disp = document.getElementById("review-display-section");
