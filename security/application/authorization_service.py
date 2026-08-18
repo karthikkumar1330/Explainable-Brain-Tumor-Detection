@@ -15,6 +15,7 @@ class AuthorizationService:
     def _get_connection(self):
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON;")
         return conn
 
     def can_access_patient(self, user: Optional[Any], patient_id: str, conn: Optional[sqlite3.Connection] = None) -> bool:
@@ -44,6 +45,22 @@ class AuthorizationService:
 
             local_conn = conn or self._get_connection()
             try:
+                # Check if patient exists in the patients table
+                patient_exists = local_conn.execute(
+                    "SELECT 1 FROM patients WHERE LOWER(patient_id) = LOWER(?);",
+                    (patient_id,)
+                ).fetchone()
+                if not patient_exists:
+                    # If patient demographics do not exist yet, we only allow access
+                    # if the patient_id corresponds to a registered patient user in the users table.
+                    user_exists = local_conn.execute(
+                        "SELECT 1 FROM users WHERE LOWER(uuid) = LOWER(?) AND role = 'patient';",
+                        (patient_id,)
+                    ).fetchone()
+                    if user_exists:
+                        return True
+                    return False
+
                 # Check explicit assignment (case-insensitive query comparison)
                 assignment = local_conn.execute(
                     "SELECT 1 FROM doctor_patient_assignments WHERE doctor_id = ? AND LOWER(patient_id) = LOWER(?);",

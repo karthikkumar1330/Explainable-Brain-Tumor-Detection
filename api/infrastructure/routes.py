@@ -1257,7 +1257,19 @@ def _run_single_report_pipeline(
         db_repo.initialize_db()
         report_db_id = db_repo.save_report(clinical_report, output_dir=OUTPUT_REPORTS_DIR)
 
-        # Reverted auto-assignment during report pipeline to ensure strict external registration control
+        # Auto-assign the patient to the current doctor who generated this report
+        if current_user and current_user.role == Role.DOCTOR:
+            conn_assign = db_repo._get_connection()
+            try:
+                with conn_assign:
+                    conn_assign.execute(
+                        "INSERT OR IGNORE INTO doctor_patient_assignments (doctor_id, patient_id, created_at) VALUES (?, ?, ?);",
+                        (current_user.id, clinical_report.patient_info.patient_id, datetime.datetime.utcnow().isoformat())
+                    )
+            except Exception as assign_err:
+                logger.error(f"Failed to auto-assign patient {clinical_report.patient_info.patient_id} to doctor {current_user.id}: {assign_err}")
+            finally:
+                conn_assign.close()
 
         # Trigger in-app notifications (G8.2.7)
         try:

@@ -343,6 +343,15 @@ def create_app(db_path: str) -> Flask:
         return decorator
 
     # --- Web Routes ---
+    @app.route("/favicon.ico")
+    def favicon():
+        import flask
+        return flask.send_from_directory(
+            os.path.join(app.root_path, "..", "presentation", "static"),
+            "favicon.ico",
+            mimetype="image/x-icon"
+        )
+
     @app.route("/")
     def index():
         user, err_code = get_current_user_from_request()
@@ -2036,7 +2045,8 @@ def create_app(db_path: str) -> Flask:
                     cr.id as report_id, cr.prediction_id, s.id as scan_id, p.patient_id, p.name as patient_name,
                     pr.predicted_class, pr.confidence_score, pr.tumor_area_mm2, pr.tumor_percentage_brain,
                     pr.rule_based_severity, pr.severity_rule_description, cr.created_at,
-                    pr.predictive_entropy, pr.requires_review, cr.uncertainty_path, s.image_path as raw_path
+                    pr.predictive_entropy, pr.requires_review, cr.uncertainty_path, s.image_path as raw_path,
+                    cr.overlay_path, cr.mask_path
                 FROM clinical_reports cr
                 JOIN predictions pr ON cr.prediction_id = pr.id
                 JOIN mri_scans s ON pr.scan_id = s.id
@@ -2050,12 +2060,18 @@ def create_app(db_path: str) -> Flask:
 
                 raw_path = report_dict.get("raw_path")
                 uncertainty_path = report_dict.get("uncertainty_path")
+                overlay_path = report_dict.get("overlay_path")
+                mask_path = report_dict.get("mask_path")
                 report_dict["raw_mri_available"] = bool(raw_path and os.path.exists(raw_path))
                 report_dict["uncertainty_available"] = bool(uncertainty_path and os.path.exists(uncertainty_path))
+                report_dict["overlay_available"] = bool(overlay_path and os.path.exists(overlay_path))
+                report_dict["mask_available"] = bool(mask_path and os.path.exists(mask_path))
 
                 # Remove path variables from response metadata for PII/Path hiding
                 report_dict.pop("raw_path", None)
                 report_dict.pop("uncertainty_path", None)
+                report_dict.pop("overlay_path", None)
+                report_dict.pop("mask_path", None)
 
                 try:
                     from security.infrastructure.encryption_service import PIIEncryptionService

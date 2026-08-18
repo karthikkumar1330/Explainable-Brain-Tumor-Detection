@@ -2890,6 +2890,31 @@ class ReportService:
                 except Exception:
                     progression_distribution["UNKNOWN"] = progression_distribution.get("UNKNOWN", 0) + 1
 
+            # Query telemetry metrics with safety fallbacks
+            avg_runtime = 0.0
+            duplicate_uploads = 0
+            db_healthy = False
+            try:
+                row_runtime = conn.execute("SELECT AVG(runtime_sec) FROM ai_audit_logs;").fetchone()
+                if row_runtime and row_runtime[0] is not None:
+                    avg_runtime = float(row_runtime[0])
+            except Exception as e:
+                self.logger.warning(f"Failed to query avg_runtime: {e}")
+
+            try:
+                row_duplicates = conn.execute("SELECT COUNT(*) FROM mri_scan_validation WHERE is_valid = 0 AND scorecard_json LIKE '%Duplicate scan detected%';").fetchone()
+                if row_duplicates and row_duplicates[0] is not None:
+                    duplicate_uploads = int(row_duplicates[0])
+            except Exception as e:
+                self.logger.warning(f"Failed to query duplicate_uploads: {e}")
+
+            try:
+                cursor_tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
+                tables = [r["name"] for r in cursor_tables]
+                db_healthy = "clinical_reports" in tables and "predictions" in tables
+            except Exception as e:
+                self.logger.warning(f"Failed to query db_healthy: {e}")
+
             return PopulationAnalytics(
                 total_patients=total_patients,
                 total_reports=total_reports,
@@ -2899,7 +2924,10 @@ class ReportService:
                 progression_distribution=progression_distribution,
                 average_confidence=average_confidence,
                 average_tumor_area=average_tumor_area,
-                activity_over_time=activity_over_time
+                activity_over_time=activity_over_time,
+                avg_runtime=avg_runtime,
+                duplicate_uploads=duplicate_uploads,
+                db_healthy=db_healthy
             )
         finally:
             conn.close()

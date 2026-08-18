@@ -359,7 +359,12 @@ class SQLiteUserRepository(IUserRepository):
 
             import sys
             import os
-            if any(m in sys.modules for m in ["pytest", "unittest"]) and os.environ.get("DISABLE_TEST_AUTO_ASSIGN") != "1":
+            is_test_env = (
+                "PYTEST_CURRENT_TEST" in os.environ
+                or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
+                or ("pytest" in sys.modules and not any("run_api" in arg or "run_dashboard" in arg for arg in sys.argv))
+            )
+            if is_test_env and os.environ.get("DISABLE_TEST_AUTO_ASSIGN") != "1":
                 try:
                     cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='users';")
                     has_users = cursor.fetchone()

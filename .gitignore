@@ -21,3 +21,6 @@ dashboard/uploads/avatars/*
 
 # Local Configurations
 .env
+
+# Dynamic MRI Uploads
+uploads/

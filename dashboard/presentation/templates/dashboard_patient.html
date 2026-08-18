@@ -925,7 +925,7 @@
                     <div class="flex flex-col sm:flex-row items-center gap-6 bg-slate-900/40 p-4 rounded-2xl border border-slate-800/40">
                         <div class="relative group">
                             <div class="h-24 w-24 rounded-2xl overflow-hidden bg-slate-800 border border-slate-700/60 flex items-center justify-center shadow-lg relative">
-                                <img id="settings-avatar-img" class="h-full w-full object-cover" src="https://lh3.googleusercontent.com/avatar" alt="Profile Picture">
+                                <img id="settings-avatar-img" class="h-full w-full object-cover" src="/static/default_avatar.png" alt="Profile Picture">
                             </div>
                             <label class="absolute -bottom-2 -right-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl h-8 w-8 flex items-center justify-center cursor-pointer shadow-md transition hover:scale-105 border border-emerald-400/30">
                                 <i class="fa-solid fa-camera text-xs"></i>
@@ -3390,7 +3390,7 @@
             if (currentUser.google_profile_pic) {
                 avatarImg.src = currentUser.google_profile_pic;
             } else {
-                avatarImg.src = "https://lh3.googleusercontent.com/avatar";
+                avatarImg.src = "/static/default_avatar.png";
             }
 
             const badge = document.getElementById("settings-verification-badge");

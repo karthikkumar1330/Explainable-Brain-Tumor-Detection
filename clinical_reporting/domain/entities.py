@@ -758,6 +758,9 @@ class PopulationAnalytics:
     average_confidence: Optional[float]
     average_tumor_area: Optional[float]
     activity_over_time: List[Dict[str, Any]]
+    avg_runtime: Optional[float] = 0.0
+    duplicate_uploads: Optional[int] = 0
+    db_healthy: Optional[bool] = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.total_patients, int) or self.total_patients < 0:
@@ -774,6 +777,12 @@ class PopulationAnalytics:
             raise TypeError("progression_distribution must be a dictionary.")
         if not isinstance(self.activity_over_time, list):
             raise TypeError("activity_over_time must be a list.")
+        if self.avg_runtime is not None and not isinstance(self.avg_runtime, (int, float)):
+            raise TypeError("avg_runtime must be a float or int.")
+        if self.duplicate_uploads is not None and not isinstance(self.duplicate_uploads, int):
+            raise TypeError("duplicate_uploads must be an integer.")
+        if self.db_healthy is not None and not isinstance(self.db_healthy, bool):
+            raise TypeError("db_healthy must be a boolean.")
 
     def to_dict(self) -> Dict[str, Any]:
         res = {
@@ -785,7 +794,10 @@ class PopulationAnalytics:
             "progression_distribution": self.progression_distribution,
             "average_confidence": self.average_confidence,
             "average_tumor_area": self.average_tumor_area,
-            "activity_over_time": self.activity_over_time
+            "activity_over_time": self.activity_over_time,
+            "avg_runtime": self.avg_runtime,
+            "duplicate_uploads": self.duplicate_uploads,
+            "db_healthy": self.db_healthy
         }
         return sanitize_json_value(res)
 

@@ -1530,7 +1530,7 @@
                     <div class="flex flex-col sm:flex-row items-center gap-6 bg-slate-900/40 p-4 rounded-2xl border border-slate-800/40">
                         <div class="relative group">
                             <div class="h-24 w-24 rounded-2xl overflow-hidden bg-slate-800 border border-slate-700/60 flex items-center justify-center shadow-lg relative">
-                                <img id="settings-avatar-img" class="h-full w-full object-cover" src="https://lh3.googleusercontent.com/avatar" alt="Profile Picture">
+                                <img id="settings-avatar-img" class="h-full w-full object-cover" src="/static/default_avatar.png" alt="Profile Picture">
                             </div>
                             <label class="absolute -bottom-2 -right-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl h-8 w-8 flex items-center justify-center cursor-pointer shadow-md transition hover:scale-105 border border-indigo-400/30">
                                 <i class="fa-solid fa-camera text-xs"></i>
@@ -1916,7 +1916,7 @@
 
     <!-- SCAN DETAILED MODAL -->
     <div id="details-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4">
-        <div class="glass-panel w-full max-w-4xl rounded-3xl p-6 md:p-8 shadow-2xl relative max-h-[90vh] overflow-y-auto border border-slate-700">
+        <div class="glass-panel w-full max-w-6xl rounded-3xl p-6 md:p-8 shadow-2xl relative max-h-[90vh] overflow-y-auto border border-slate-700">
             <button onclick="closeModal('details-modal')" class="absolute top-5 right-5 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 h-9 w-9 rounded-full flex items-center justify-center transition">
                 <i class="fa-solid fa-xmark text-lg"></i>
             </button>
@@ -1940,12 +1940,13 @@
                 <div><span class="text-slate-400 block text-[10px] uppercase font-bold mb-1.5">AI Uncertainty</span><span id="modal-report-entropy" class="font-extrabold text-slate-100 text-sm">-</span></div>
                 <div><span class="text-slate-400 block text-[10px] uppercase font-bold mb-1.5">Review Status</span><span id="modal-report-review" class="font-extrabold text-slate-100 text-sm">-</span></div>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-[20px] mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-[20px] mb-6">
                 <!-- Grad-CAM Blended View -->
                 <div class="bg-slate-950/70 p-5 rounded-2xl border border-slate-800 flex flex-col h-full justify-between">
                     <div class="min-h-[40px] md:min-h-[48px] flex items-start justify-between gap-3 mb-3">
                         <h5 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 flex-1 min-w-0 leading-[1.25]">
                             <i class="fa-solid fa-fire text-amber-400"></i> <span>Grad-CAM XAI Heatmap Blending</span>
+                            <span id="heatmap-mri-warning" class="hidden text-[9px] text-amber-550 font-bold bg-slate-900/60 px-2 py-0.5 rounded border border-amber-900/50">MRI Unavailable</span>
                         </h5>
                         <div class="flex items-center justify-end gap-2 flex-wrap flex-shrink-0">
                             <button id="toggle-annotation-btn" onclick="toggleAnnotationMode()" class="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1">
@@ -2009,6 +2010,7 @@
                     <div class="min-h-[40px] md:min-h-[48px] flex items-start justify-between gap-3 mb-3">
                         <h5 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 flex-1 min-w-0 leading-[1.25]">
                             <i class="fa-solid fa-draw-polygon text-sky-400"></i> <span>UNeXt Segmentation Outline Blending</span>
+                            <span id="mask-mri-warning" class="hidden text-[9px] text-amber-550 font-bold bg-slate-900/60 px-2 py-0.5 rounded border border-amber-900/50">MRI Unavailable</span>
                         </h5>
                         <div class="flex items-center justify-end gap-2 flex-wrap flex-shrink-0">
                             <span id="label-mask-opacity" class="text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800">Opacity: 70%</span>
@@ -2038,6 +2040,7 @@
                     <div class="min-h-[40px] md:min-h-[48px] flex items-start justify-between gap-3 mb-3">
                         <h5 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 flex-1 min-w-0 leading-[1.25]">
                             <i class="fa-solid fa-circle-nodes text-yellow-500"></i> <span>AI Spatial Uncertainty Blending</span>
+                            <span id="uncertainty-mri-warning" class="hidden text-[9px] text-amber-550 font-bold bg-slate-900/60 px-2 py-0.5 rounded border border-amber-900/50">MRI Unavailable</span>
                         </h5>
                         <div class="flex items-center justify-end gap-2 flex-wrap flex-shrink-0">
                             <span id="label-uncertainty-opacity" class="text-[10px] text-yellow-500 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800">Opacity: 70%</span>
@@ -3603,7 +3606,24 @@
 
                 // 2. Fetch Deep Health Telemetry
                 const resTelemetry = await fetchWithAuth("/api/health-telemetry");
-                const telemetry = await resTelemetry.json();
+                let telemetry = {};
+                if (resTelemetry.status === 403) {
+                    // Fall back to database aggregates from stats (safe for DOCTOR role)
+                    telemetry = {
+                        avg_confidence: stats.average_confidence,
+                        avg_runtime: stats.avg_runtime,
+                        duplicate_uploads: stats.duplicate_uploads,
+                        db_healthy: stats.db_healthy
+                    };
+                } else if (!resTelemetry.ok) {
+                    telemetry = { error: `HTTP ${resTelemetry.status}` };
+                } else {
+                    try {
+                        telemetry = await resTelemetry.json();
+                    } catch (e) {
+                        telemetry = { error: "Failed to parse telemetry JSON" };
+                    }
+                }
 
                 if (!stats.error && !telemetry.error) {
                     // Populate Dashboard Tab stats
@@ -3776,7 +3796,7 @@
                 const nextStatus = nextTransitions[currentStatus];
                 if (nextStatus) {
                     const btnColor = nextStatus === 'FINAL' ? 'bg-emerald-600 hover:bg-emerald-500 border border-emerald-500 text-white' :
-                                     nextStatus === 'ARCHIVED' ? 'bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300' :
+                                     nextStatus === 'ARCHIVED' ? 'bg-slate-900/30 hover:bg-slate-900/50 border border-slate-800 text-slate-200' :
                                      'bg-sky-600 hover:bg-sky-500 border border-sky-500 text-white';
 
                     const transBtn = document.createElement("button");
@@ -3809,7 +3829,7 @@
                 // "Create New Version" button (disallowed only if archived)
                 if (currentStatus !== "ARCHIVED") {
                     const vBtn = document.createElement("button");
-                    vBtn.className = "bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer";
+                    vBtn.className = "bg-slate-900/30 hover:bg-slate-900/50 border border-slate-800 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer";
                     vBtn.innerHTML = `<i class="fa-solid fa-code-branch"></i> Create Version`;
                     vBtn.onclick = async () => {
                         const reason = prompt("Enter the reason / clinical comments for this new version:");
@@ -3851,58 +3871,89 @@
                     }
                 };
 
-                setImgSrc("modal-heatmap-raw", rawUrl);
-                setImgSrc("modal-mask-raw", rawUrl);
+                const rawSrc = data.raw_mri_available ? rawUrl : "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+                setImgSrc("modal-heatmap-raw", rawSrc);
+                setImgSrc("modal-mask-raw", rawSrc);
+
+                // Reset Opacity elements based on MRI availability
+                const defaultOpacity = data.raw_mri_available ? 70 : 100;
+                const defaultOpacityStr = `Opacity: ${defaultOpacity}%`;
 
                 const overlayImg = document.getElementById("modal-overlay-img");
-                if (overlayImg) overlayImg.style.opacity = 0.70;
+                if (overlayImg) overlayImg.style.opacity = defaultOpacity / 100;
                 setImgSrc("modal-overlay-img", `/api/report/${data.report_id}/visuals/overlay`);
 
                 const maskImg = document.getElementById("modal-mask-img");
-                if (maskImg) maskImg.style.opacity = 0.70;
+                if (maskImg) maskImg.style.opacity = defaultOpacity / 100;
                 setImgSrc("modal-mask-img", `/api/report/${data.report_id}/visuals/mask`);
 
-                setImgSrc("modal-uncertainty-raw", rawUrl);
+                setImgSrc("modal-uncertainty-raw", rawSrc);
                 const uncertaintyImg = document.getElementById("modal-uncertainty-img");
-                if (uncertaintyImg) uncertaintyImg.style.opacity = 0.70;
+                if (uncertaintyImg) uncertaintyImg.style.opacity = defaultOpacity / 100;
                 setImgSrc("modal-uncertainty-img", `/api/report/${data.report_id}/visuals/uncertainty`);
 
-                // Toggle overlays based on metadata availability flags
+                // Toggle overlays and MRI unavailable warnings
                 const heatmapRawOverlay = document.getElementById("modal-heatmap-raw-unavailable");
+                const heatmapWarning = document.getElementById("heatmap-mri-warning");
                 if (heatmapRawOverlay) {
-                    if (data.raw_mri_available) {
+                    if (data.overlay_available) {
                         heatmapRawOverlay.classList.add("hidden");
+                        if (heatmapWarning) {
+                            if (!data.raw_mri_available) {
+                                heatmapWarning.classList.remove("hidden");
+                            } else {
+                                heatmapWarning.classList.add("hidden");
+                            }
+                        }
                     } else {
                         heatmapRawOverlay.classList.remove("hidden");
+                        if (heatmapWarning) heatmapWarning.classList.add("hidden");
                     }
                 }
 
                 const maskRawOverlay = document.getElementById("modal-mask-raw-unavailable");
+                const maskWarning = document.getElementById("mask-mri-warning");
                 if (maskRawOverlay) {
-                    if (data.raw_mri_available) {
+                    if (data.mask_available) {
                         maskRawOverlay.classList.add("hidden");
+                        if (maskWarning) {
+                            if (!data.raw_mri_available) {
+                                maskWarning.classList.remove("hidden");
+                            } else {
+                                maskWarning.classList.add("hidden");
+                            }
+                        }
                     } else {
                         maskRawOverlay.classList.remove("hidden");
+                        if (maskWarning) maskWarning.classList.add("hidden");
                     }
                 }
 
                 const uncertaintyOverlay = document.getElementById("modal-uncertainty-unavailable");
+                const uncertaintyWarning = document.getElementById("uncertainty-mri-warning");
                 if (uncertaintyOverlay) {
                     if (data.uncertainty_available) {
                         uncertaintyOverlay.classList.add("hidden");
+                        if (uncertaintyWarning) {
+                            if (!data.raw_mri_available) {
+                                uncertaintyWarning.classList.remove("hidden");
+                            } else {
+                                uncertaintyWarning.classList.add("hidden");
+                            }
+                        }
                     } else {
                         uncertaintyOverlay.classList.remove("hidden");
+                        if (uncertaintyWarning) uncertaintyWarning.classList.add("hidden");
                     }
                 }
 
-                // Reset Opacity elements
-                document.getElementById("label-overlay-opacity").innerText = "Opacity: 70%";
-                document.getElementById("label-mask-opacity").innerText = "Opacity: 70%";
-                document.getElementById("label-uncertainty-opacity").innerText = "Opacity: 70%";
+                document.getElementById("label-overlay-opacity").innerText = defaultOpacityStr;
+                document.getElementById("label-mask-opacity").innerText = defaultOpacityStr;
+                document.getElementById("label-uncertainty-opacity").innerText = defaultOpacityStr;
 
                 // Reset sliders inputs
                 const sliders = document.querySelectorAll("#details-modal input[type='range']");
-                sliders.forEach(s => s.value = 70);
+                sliders.forEach(s => s.value = defaultOpacity);
 
                 openModal("details-modal");
             } catch (err) {
@@ -5334,7 +5385,7 @@
             if (currentUser.google_profile_pic) {
                 avatarImg.src = currentUser.google_profile_pic;
             } else {
-                avatarImg.src = "https://lh3.googleusercontent.com/avatar";
+                avatarImg.src = "/static/default_avatar.png";
             }
 
             const badge = document.getElementById("settings-verification-badge");

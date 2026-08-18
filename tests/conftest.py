@@ -1,6 +1,5 @@
 import os
 import pytest
-
 @pytest.fixture(autouse=True)
 def manage_auto_assign_env(request):
     """Autouse fixture to set/unset DISABLE_TEST_AUTO_ASSIGN based on the test module name to prevent environment leakage."""
