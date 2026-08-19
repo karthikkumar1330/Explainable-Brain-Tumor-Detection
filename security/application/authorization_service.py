@@ -5,7 +5,7 @@ from security.domain.entities import Role, User
 
 class AuthorizationService:
     """Centralized authorization service to enforce role-based and resource-level access controls.
-    
+
     Prevents IDOR (Insecure Direct Object Reference) and unauthorized cross-patient healthcare record access.
     """
 
@@ -34,7 +34,7 @@ class AuthorizationService:
             # Compare patient_id to user.uuid (primary identity key)
             if str(patient_id).lower() == str(user.uuid).lower():
                 return True
-            
+
             return False
 
         # Doctor policy: doctors can only access assigned patients
@@ -45,22 +45,6 @@ class AuthorizationService:
 
             local_conn = conn or self._get_connection()
             try:
-                # Check if patient exists in the patients table
-                patient_exists = local_conn.execute(
-                    "SELECT 1 FROM patients WHERE LOWER(patient_id) = LOWER(?);",
-                    (patient_id,)
-                ).fetchone()
-                if not patient_exists:
-                    # If patient demographics do not exist yet, we only allow access
-                    # if the patient_id corresponds to a registered patient user in the users table.
-                    user_exists = local_conn.execute(
-                        "SELECT 1 FROM users WHERE LOWER(uuid) = LOWER(?) AND role = 'patient';",
-                        (patient_id,)
-                    ).fetchone()
-                    if user_exists:
-                        return True
-                    return False
-
                 # Check explicit assignment (case-insensitive query comparison)
                 assignment = local_conn.execute(
                     "SELECT 1 FROM doctor_patient_assignments WHERE doctor_id = ? AND LOWER(patient_id) = LOWER(?);",
@@ -68,7 +52,6 @@ class AuthorizationService:
                 ).fetchone()
                 if assignment:
                     return True
-
             except Exception:
                 pass
             finally:
@@ -133,7 +116,7 @@ class AuthorizationService:
         local_conn = conn or self._get_connection()
         try:
             row = local_conn.execute("""
-                SELECT s.patient_id 
+                SELECT s.patient_id
                 FROM predictions p
                 JOIN mri_scans s ON p.scan_id = s.id
                 WHERE p.id = ?;
@@ -155,7 +138,7 @@ class AuthorizationService:
         try:
             # Check clinical_reports first (H0-H2 report table)
             row = local_conn.execute("""
-                SELECT s.patient_id 
+                SELECT s.patient_id
                 FROM clinical_reports cr
                 JOIN predictions p ON cr.prediction_id = p.id
                 JOIN mri_scans s ON p.scan_id = s.id
@@ -195,17 +178,17 @@ class AuthorizationService:
         conn = self._get_connection()
         try:
             row = conn.execute("""
-                SELECT p.scan_id 
+                SELECT p.scan_id
                 FROM clinical_reports cr
                 JOIN predictions p ON cr.prediction_id = p.id
                 WHERE cr.id = ?;
             """, (report_id,)).fetchone()
             if row:
                 return int(row["scan_id"]) == int(scan_id)
-            
+
             # Fallback to reports table
             row2 = conn.execute("""
-                SELECT p.scan_id 
+                SELECT p.scan_id
                 FROM reports r
                 JOIN report_versions rv ON r.report_id = rv.report_id
                 JOIN predictions p ON rv.prediction_id = p.id

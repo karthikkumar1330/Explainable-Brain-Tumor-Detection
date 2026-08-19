@@ -77,6 +77,8 @@ class TestEmailRetry(unittest.TestCase):
                 INSERT INTO report_versions (version_id, report_id, version_number, created_at, pdf_path, json_path, checksum, status)
                 VALUES (1, 1, 1, '2026-08-09T00:00:00', ?, 'outputs/clinical_reports/report_retry.json', 'hash123', 'FINAL');
             """, (self.pdf_file_path,))
+            from tests.helpers.authorization_fixtures import assign_doctor_to_patient
+            assign_doctor_to_patient(conn, "doctor@aurascan.ai", "pat-retry")
             conn.commit()
         finally:
             conn.close()

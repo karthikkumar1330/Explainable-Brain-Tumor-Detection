@@ -149,6 +149,10 @@ class TestPredictionFeedback(unittest.TestCase):
                 VALUES (802, 902, 'rpt2.md', 'rpt2.json', 'report2.pdf', '2026-08-10T12:00:00');
             """)
 
+            from tests.helpers.authorization_fixtures import assign_doctor_to_patient
+            assign_doctor_to_patient(conn, "doctor@aurascan.ai", self.patient.uuid)
+            assign_doctor_to_patient(conn, "doctor@aurascan.ai", self.other_patient.uuid)
+
         conn.close()
 
     def tearDown(self):

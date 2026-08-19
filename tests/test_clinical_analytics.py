@@ -183,6 +183,10 @@ class TestClinicalAnalyticsAPI(unittest.TestCase):
                 (102, 1, pred_2_id, "FINAL", "Follow-up scan", "outputs/r2.pdf", "outputs/r2.json", "checksum2", "2026-08-08T10:05:00")
             )
 
+            from tests.helpers.authorization_fixtures import assign_doctor_to_patient
+            assign_doctor_to_patient(conn, "doc@aurascan.ai", "pat-uuid-aaa")
+            assign_doctor_to_patient(conn, "doc@aurascan.ai", "pat-uuid-bbb")
+
             conn.commit()
         finally:
             conn.close()

@@ -357,45 +357,7 @@ class SQLiteUserRepository(IUserRepository):
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_doctor ON mri_point_annotations(doctor_id);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_mri_point_annotations_created ON mri_point_annotations(created_at);")
 
-            import sys
-            import os
-            is_test_env = (
-                "PYTEST_CURRENT_TEST" in os.environ
-                or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
-                or ("pytest" in sys.modules and not any("run_api" in arg or "run_dashboard" in arg for arg in sys.argv))
-            )
-            if is_test_env and os.environ.get("DISABLE_TEST_AUTO_ASSIGN") != "1":
-                try:
-                    cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='users';")
-                    has_users = cursor.fetchone()
-                    cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='patients';")
-                    has_patients = cursor.fetchone()
-                    if has_users and has_patients:
-                        cursor.execute("""
-                        CREATE TRIGGER IF NOT EXISTS auto_assign_doctor_on_insert
-                        AFTER INSERT ON users
-                        WHEN NEW.role = 'doctor'
-                        BEGIN
-                            INSERT OR IGNORE INTO doctor_patient_assignments (doctor_id, patient_id, created_at)
-                            SELECT NEW.id, patient_id, strftime('%Y-%m-%d %H:%M:%S', 'now') FROM patients;
-                        END;
-                        """)
-                        cursor.execute("""
-                        CREATE TRIGGER IF NOT EXISTS auto_assign_patient_on_insert
-                        AFTER INSERT ON patients
-                        BEGIN
-                            INSERT OR IGNORE INTO doctor_patient_assignments (doctor_id, patient_id, created_at)
-                            SELECT id, NEW.patient_id, strftime('%Y-%m-%d %H:%M:%S', 'now') FROM users WHERE role = 'doctor';
-                        END;
-                        """)
-                        cursor.execute("""
-                        INSERT OR IGNORE INTO doctor_patient_assignments (doctor_id, patient_id, created_at)
-                        SELECT id, patient_id, strftime('%Y-%m-%d %H:%M:%S', 'now')
-                        FROM users, patients
-                        WHERE users.role = 'doctor';
-                        """)
-                except Exception as trigger_err:
-                    self.logger.warning(f"Could not create auto-assignment triggers: {trigger_err}")
+
 
             # Create Audit Log Tamper Protection Triggers
             try:
@@ -750,7 +712,7 @@ class SQLiteUserRepository(IUserRepository):
             import time
             with conn:
                 cursor = conn.cursor()
-                
+
                 # 1. Find all JTIs that have already been logged out or revoked
                 cursor.execute("""
                     SELECT details FROM security_audit_logs
@@ -772,7 +734,7 @@ class SQLiteUserRepository(IUserRepository):
                     WHERE user_id = ? AND event_type = 'LOGIN_SUCCESS' AND status = 'SUCCESS';
                 """, (user_id,))
                 rows = cursor.fetchall()
-                
+
                 for r in rows:
                     details_str, email, ip_address, user_agent = r
                     try:
@@ -789,7 +751,7 @@ class SQLiteUserRepository(IUserRepository):
                                 INSERT INTO security_audit_logs (timestamp, event_type, user_id, email, ip_address, status, details, user_agent)
                                 VALUES (?, 'SESSION_REVOKED', ?, ?, ?, 'SUCCESS', ?, ?);
                             """, (logout_time, user_id, email, ip_address, json.dumps(revocation_details), user_agent))
-                            
+
                             # Add to revoked_tokens table
                             expires_at = time.time() + 86400
                             cursor.execute("""

@@ -213,6 +213,9 @@ class TestReportComparisonEngine(unittest.TestCase):
                  "outputs/clinical_reports/other.pdf", self.other_json_path, "dummy_checksum", "dummy_integrity")
             )
             
+            from tests.helpers.authorization_fixtures import assign_doctor_to_patient
+            assign_doctor_to_patient(conn, "doctor@aurascan.ai", "pat-uuid-999")
+            assign_doctor_to_patient(conn, "doctor@aurascan.ai", "pat-uuid-888")
             conn.commit()
         finally:
             conn.close()

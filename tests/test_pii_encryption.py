@@ -375,6 +375,9 @@ class TestPIIEncryption(unittest.TestCase):
         headers = {"Authorization": f"Bearer {token}"}
         
         # Search via API search endpoint
+        from tests.helpers.authorization_fixtures import assign_doctor_to_patient
+        assign_doctor_to_patient(self.db_path, "doctor_contract@hospital.org", "pat-api")
+
         response = self.client.get("/api/search?patient_name=api", headers=headers)
         self.assertEqual(response.status_code, 200)
         

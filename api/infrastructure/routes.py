@@ -288,6 +288,52 @@ def upload_mri_file(
     now = datetime.datetime.utcnow().isoformat()
 
     try:
+        if patient_id:
+            role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role).lower()
+            if role_val != "admin":
+                from security.application.authorization_service import AuthorizationService
+                auth_svc = AuthorizationService(DEFAULT_DB_PATH)
+                conn = auth_svc._get_connection()
+                try:
+                    patient_exists = conn.execute(
+                        "SELECT 1 FROM patients WHERE LOWER(patient_id) = LOWER(?);",
+                        (patient_id,)
+                    ).fetchone()
+
+                    allowed = True
+                    if not patient_exists:
+                        user_exists = conn.execute(
+                            "SELECT 1 FROM users WHERE LOWER(uuid) = LOWER(?) AND role = 'patient';",
+                            (patient_id,)
+                        ).fetchone()
+                        if not user_exists:
+                            allowed = False
+                        else:
+                            if not auth_svc.can_access_patient(current_user, patient_id, conn=conn):
+                                allowed = False
+                    else:
+                        if not auth_svc.can_access_patient(current_user, patient_id, conn=conn):
+                            allowed = False
+
+                    if not allowed:
+                        user_repo.log_security_event(SecurityAuditLog(
+                            id=None,
+                            timestamp=now,
+                            event_type="MRI_QUALITY_OVERRIDE",
+                            user_id=current_user.id if current_user else None,
+                            email=current_user.email if current_user else None,
+                            ip_address="127.0.0.1",
+                            status="FAILED",
+                            details=f"Upload attempt rejected: Unauthorized doctor for Patient ID {patient_id}, filename: {file.filename}",
+                            user_agent="System"
+                        ))
+                        raise HTTPException(
+                            status_code=403,
+                            detail="Access denied: Doctor not assigned to patient."
+                        )
+                finally:
+                    conn.close()
+
         file_bytes = file.file.read()
         with open(temp_filepath, "wb") as f:
             f.write(file_bytes)
@@ -319,26 +365,6 @@ def upload_mri_file(
                     status_code=400,
                     detail="Override rejected: Valid override reason (min 10 characters) is required."
                 )
-
-            if patient_id:
-                from security.application.authorization_service import AuthorizationService
-                auth_svc = AuthorizationService(DEFAULT_DB_PATH)
-                if not auth_svc.can_access_patient(current_user, patient_id):
-                    user_repo.log_security_event(SecurityAuditLog(
-                        id=None,
-                        timestamp=now,
-                        event_type="MRI_QUALITY_OVERRIDE",
-                        user_id=current_user.id if current_user else None,
-                        email=current_user.email if current_user else None,
-                        ip_address="127.0.0.1",
-                        status="FAILED",
-                        details=f"Override attempt rejected: Unauthorized doctor for Patient ID {patient_id}, filename: {file.filename}",
-                        user_agent="System"
-                    ))
-                    raise HTTPException(
-                        status_code=403,
-                        detail="Access denied: Doctor not assigned to patient."
-                    )
 
         scorecard = use_case.execute(
             filepath=temp_filepath,
@@ -649,9 +675,67 @@ def generate_clinical_report_pipeline(
 ):
     """API Endpoint: Runs the complete end-to-end MRI diagnostics report pipeline with validation."""
     from security.application.authorization_service import AuthorizationService
+    import datetime
     auth_svc = AuthorizationService(DEFAULT_DB_PATH)
-    if not auth_svc.can_access_patient(current_user, intake.patient_id):
-        raise HTTPException(status_code=403, detail="Access denied to patient records.")
+
+    role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role).lower()
+
+    if role_val != "admin":
+        conn = auth_svc._get_connection()
+        try:
+            # Check explicit access permissions first
+            if not auth_svc.can_access_patient(current_user, intake.patient_id, conn=conn):
+                raise HTTPException(status_code=403, detail="Access denied to patient records.")
+
+            # Check if patient demographics exist in patients table
+            patient_exists = conn.execute(
+                "SELECT 1 FROM patients WHERE LOWER(patient_id) = LOWER(?);",
+                (intake.patient_id,)
+            ).fetchone()
+
+            from security.infrastructure.encryption_service import PIIEncryptionService
+            encryption_service = PIIEncryptionService()
+            enc_name = encryption_service.encrypt(intake.name)
+            enc_age = encryption_service.encrypt(intake.age)
+            enc_gender = encryption_service.encrypt(intake.gender)
+            now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+            if not patient_exists:
+                # Check if patient exists as a registered user in users table
+                user_exists = conn.execute(
+                    "SELECT 1 FROM users WHERE LOWER(uuid) = LOWER(?) AND role = 'patient';",
+                    (intake.patient_id,)
+                ).fetchone()
+                if not user_exists:
+                    raise HTTPException(status_code=403, detail="Access denied to patient records.")
+
+                # Legitimate patient registration check passed. Let's create the patient demographics.
+                with conn:
+                    conn.execute(
+                        """
+                        INSERT INTO patients (patient_id, name, age, gender, created_at)
+                        VALUES (?, ?, ?, ?, ?);
+                        """,
+                        (intake.patient_id, enc_name, enc_age, enc_gender, now_str)
+                    )
+            else:
+                # Demographics already exist, update them with the latest intake details
+                with conn:
+                    conn.execute(
+                        """
+                        UPDATE patients
+                        SET name = ?, age = ?, gender = ?
+                        WHERE LOWER(patient_id) = LOWER(?);
+                        """,
+                        (enc_name, enc_age, enc_gender, intake.patient_id)
+                    )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error checking/creating patient authorization: {e}")
+            raise HTTPException(status_code=500, detail="Internal server error checking patient authorization.")
+        finally:
+            conn.close()
 
     if not os.path.exists(filepath):
         raise HTTPException(status_code=400, detail="Target upload MRI file path not found.")
@@ -1257,19 +1341,7 @@ def _run_single_report_pipeline(
         db_repo.initialize_db()
         report_db_id = db_repo.save_report(clinical_report, output_dir=OUTPUT_REPORTS_DIR)
 
-        # Auto-assign the patient to the current doctor who generated this report
-        if current_user and current_user.role == Role.DOCTOR:
-            conn_assign = db_repo._get_connection()
-            try:
-                with conn_assign:
-                    conn_assign.execute(
-                        "INSERT OR IGNORE INTO doctor_patient_assignments (doctor_id, patient_id, created_at) VALUES (?, ?, ?);",
-                        (current_user.id, clinical_report.patient_info.patient_id, datetime.datetime.utcnow().isoformat())
-                    )
-            except Exception as assign_err:
-                logger.error(f"Failed to auto-assign patient {clinical_report.patient_info.patient_id} to doctor {current_user.id}: {assign_err}")
-            finally:
-                conn_assign.close()
+
 
         # Trigger in-app notifications (G8.2.7)
         try:
@@ -1445,9 +1517,67 @@ async def generate_clinical_report_batch(
 ):
     """API Endpoint: Runs the complete diagnostics pipeline on multiple MRI files in one batch."""
     from security.application.authorization_service import AuthorizationService
+    import datetime
     auth_svc = AuthorizationService(DEFAULT_DB_PATH)
-    if not auth_svc.can_access_patient(current_user, patient_id):
-        raise HTTPException(status_code=403, detail="Access denied to patient records.")
+
+    role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role).lower()
+
+    if role_val != "admin":
+        conn = auth_svc._get_connection()
+        try:
+            # Check explicit access permissions first
+            if not auth_svc.can_access_patient(current_user, patient_id, conn=conn):
+                raise HTTPException(status_code=403, detail="Access denied to patient records.")
+
+            # Check if patient demographics exist in patients table
+            patient_exists = conn.execute(
+                "SELECT 1 FROM patients WHERE LOWER(patient_id) = LOWER(?);",
+                (patient_id,)
+            ).fetchone()
+
+            from security.infrastructure.encryption_service import PIIEncryptionService
+            encryption_service = PIIEncryptionService()
+            enc_name = encryption_service.encrypt(name)
+            enc_age = encryption_service.encrypt(age)
+            enc_gender = encryption_service.encrypt(gender)
+            now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+            if not patient_exists:
+                # Check if patient exists as a registered user in users table
+                user_exists = conn.execute(
+                    "SELECT 1 FROM users WHERE LOWER(uuid) = LOWER(?) AND role = 'patient';",
+                    (patient_id,)
+                ).fetchone()
+                if not user_exists:
+                    raise HTTPException(status_code=403, detail="Access denied to patient records.")
+
+                # Legitimate patient registration check passed. Let's create the patient demographics.
+                with conn:
+                    conn.execute(
+                        """
+                        INSERT INTO patients (patient_id, name, age, gender, created_at)
+                        VALUES (?, ?, ?, ?, ?);
+                        """,
+                        (patient_id, enc_name, enc_age, enc_gender, now_str)
+                    )
+            else:
+                # Demographics already exist, update them with the latest details
+                with conn:
+                    conn.execute(
+                        """
+                        UPDATE patients
+                        SET name = ?, age = ?, gender = ?
+                        WHERE LOWER(patient_id) = LOWER(?);
+                        """,
+                        (enc_name, enc_age, enc_gender, patient_id)
+                    )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error checking/creating patient authorization in batch: {e}")
+            raise HTTPException(status_code=500, detail="Internal server error checking patient authorization.")
+        finally:
+            conn.close()
 
     if not files:
         raise HTTPException(status_code=400, detail="No files provided in batch.")
@@ -2581,6 +2711,56 @@ class FollowupUpdatePayload(BaseModel):
     status: Optional[str] = None
     reason: Optional[str] = None
     notes: Optional[str] = None
+
+@router.post("/doctor/assign-patient")
+def assign_patient_to_doctor(
+    patient_id: str,
+    current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))
+):
+    """Explicitly assigns a patient to a doctor (onboarding)."""
+    from security.application.authorization_service import AuthorizationService
+    import datetime
+    auth_svc = AuthorizationService(DEFAULT_DB_PATH)
+    conn = auth_svc._get_connection()
+    try:
+        # Check if patient exists as a registered user in users table
+        user_row = conn.execute(
+            "SELECT full_name FROM users WHERE LOWER(uuid) = LOWER(?) AND role = 'patient';",
+            (patient_id,)
+        ).fetchone()
+        if not user_row:
+            raise HTTPException(status_code=404, detail="Patient user not found.")
+
+        role_val = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role).lower()
+        if role_val == "doctor":
+            now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            with conn:
+                # Ensure patient demographics row exists to satisfy foreign key constraint
+                patient_exists = conn.execute(
+                    "SELECT 1 FROM patients WHERE LOWER(patient_id) = LOWER(?);",
+                    (patient_id,)
+                ).fetchone()
+                if not patient_exists:
+                    from security.infrastructure.encryption_service import PIIEncryptionService
+                    encryption_service = PIIEncryptionService()
+                    enc_name = encryption_service.encrypt(user_row["full_name"])
+                    enc_age = encryption_service.encrypt("30")
+                    enc_gender = encryption_service.encrypt("Unknown")
+                    conn.execute(
+                        """
+                        INSERT INTO patients (patient_id, name, age, gender, created_at)
+                        VALUES (?, ?, ?, ?, ?);
+                        """,
+                        (patient_id, enc_name, enc_age, enc_gender, now_str)
+                    )
+
+                conn.execute(
+                    "INSERT OR IGNORE INTO doctor_patient_assignments (doctor_id, patient_id, created_at) VALUES (?, ?, ?);",
+                    (current_user.id, patient_id, now_str)
+                )
+        return {"status": "success", "message": "Patient successfully assigned to doctor."}
+    finally:
+        conn.close()
 
 @router.get("/doctor/patients/{patient_id}")
 def get_doctor_patient_profile_api(

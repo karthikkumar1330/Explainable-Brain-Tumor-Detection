@@ -156,6 +156,8 @@ class TestRBACIntegration(unittest.TestCase):
                 """,
                 (1, 1, "outputs/clinical_reports/rep.pdf", "outputs/clinical_reports/rep.json", "dummy_checksum", "FINALIZED", "dummy_hash", "dummy_token", "2026-08-06T00:00:00")
             )
+            from tests.helpers.authorization_fixtures import assign_doctor_to_patient
+            assign_doctor_to_patient(conn, "doctor@hospital.org", "pat-uuid-222")
             conn.commit()
         finally:
             conn.close()

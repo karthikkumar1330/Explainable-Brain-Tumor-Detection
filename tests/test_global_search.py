@@ -168,6 +168,12 @@ class TestGlobalSearchAndFiltering(unittest.TestCase):
                 reports_lifecycle
             )
 
+            from tests.helpers.authorization_fixtures import assign_doctor_to_patient
+            assign_doctor_to_patient(conn, "dr.alice@aurascan.ai", "pat-001")
+            assign_doctor_to_patient(conn, "dr.alice@aurascan.ai", "pat-002")
+            assign_doctor_to_patient(conn, "dr.alice@aurascan.ai", "pat-003")
+            assign_doctor_to_patient(conn, "dr.alice@aurascan.ai", "pat-004")
+
             conn.commit()
         finally:
             conn.close()

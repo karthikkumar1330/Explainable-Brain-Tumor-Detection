@@ -116,6 +116,14 @@ class TestNewPatientAuthRegression(unittest.TestCase):
         """
         new_patient_id = "pat-new-999"
         headers_a = {"Authorization": f"Bearer {self.token_doc_a}"}
+
+        # 0. Doctor A explicitly assigns/onboards the new patient
+        res_assign = self.client.post(
+            f"/api/doctor/assign-patient?patient_id={new_patient_id}",
+            headers=headers_a
+        )
+        self.assertEqual(res_assign.status_code, 200)
+
         payload = {
             "ref_physician": "Dr. Alice",
             "name": "Brand New Patient",
@@ -135,14 +143,14 @@ class TestNewPatientAuthRegression(unittest.TestCase):
         report_data = res.json()
         report_db_id = report_data["report_id"]
 
-        # 2. Check that the patient is auto-assigned to Doctor A in database
+        # 2. Check that the patient is assigned to Doctor A in database
         conn = sqlite3.connect(self.db_path)
         try:
             assignment = conn.execute(
                 "SELECT 1 FROM doctor_patient_assignments WHERE doctor_id = 301 AND patient_id = ?;",
                 (new_patient_id,)
             ).fetchone()
-            self.assertIsNotNone(assignment, "New patient was not auto-assigned to Doctor A.")
+            self.assertIsNotNone(assignment, "New patient was not assigned to Doctor A.")
 
             # Check that Doctor B is NOT assigned
             assignment_b = conn.execute(

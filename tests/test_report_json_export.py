@@ -61,6 +61,8 @@ class TestReportJSONExportBase(unittest.TestCase):
                 ("pat-uuid-888", "unauthorized_patient@aurascan.ai", pass_hash, "Alice Cooper", Role.PATIENT.value, datetime.datetime.utcnow().isoformat(), datetime.datetime.utcnow().isoformat())
             )
             self._create_test_hierarchy(conn)
+            from tests.helpers.authorization_fixtures import assign_doctor_to_patient
+            assign_doctor_to_patient(conn, "doctor@aurascan.ai", "pat-uuid-999")
             conn.commit()
         finally:
             conn.close()

@@ -173,6 +173,9 @@ class TestEmailDelivery(unittest.TestCase):
                 VALUES (2, 2, 1, '2026-08-09T00:00:00', ?, 'outputs/clinical_reports/report_2.json', ?, 'FINAL');
             """, (self.pdf_file_path, hash2))
 
+            from tests.helpers.authorization_fixtures import assign_doctor_to_patient
+            assign_doctor_to_patient(conn, "doctor@aurascan.ai", "pat-uuid-2222")
+            assign_doctor_to_patient(conn, "doctor@aurascan.ai", "pat-uuid-3333")
             conn.commit()
         finally:
             conn.close()
