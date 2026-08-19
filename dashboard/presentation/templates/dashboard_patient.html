@@ -2893,24 +2893,22 @@
 
                     document.getElementById('stat-reports').innerText = history.length;
 
-                    // Pull the physician name from the latest report if available
-                    if (history.length > 0) {
-                        try {
-                            const latestReportId = history[0].report_id;
-                            const resDetails = await fetchWithAuth(`/api/report/${latestReportId}`);
-                            const detailData = await resDetails.json();
-                            if (detailData && detailData.patient_id) {
-                                // Find reference physician (this requires requesting report details as physician is inside predictions/mri_scans or similar. Wait, report detail contains ref_physician, let's fallback to Dr. Sarah Smith if not present).
-                                // In report details we have: query has no ref_physician in SELECT but let's query it or set a fallback.
-                                // Actually, let's see what keys are returned by get_report_details.
-                                // Let's check web_server.py line 475: SELECT cr.id as report_id, p.patient_id, p.name as patient_name, pr.predicted_class, pr.confidence_score, pr.tumor_area_mm2, pr.tumor_percentage_brain, pr.rule_based_severity, pr.severity_rule_description, cr.created_at
-                                // Ah, ref_physician is not in the select query. So let's fall back to a nice message or get it from history record if possible. Since it's just a dashboard stat card, we can show "Assigned Clinician" or "Medical Team".
-                                document.getElementById('stat-physician').innerText = "Radiology Department";
+                    // Fetch assigned physician details from demographics profile
+                    try {
+                        const resProfile = await fetchWithAuth("/api/patient/profile");
+                        if (resProfile.ok) {
+                            const profileData = await resProfile.json();
+                            const doc = profileData.assigned_doctor;
+                            if (doc && doc.name) {
+                                document.getElementById('stat-physician').innerHTML = `${doc.name}<div class="text-[10px] text-slate-400 font-medium mt-0.5">${doc.email}</div>`;
+                            } else {
+                                document.getElementById('stat-physician').innerText = "Not Assigned";
                             }
-                        } catch (e) {
-                            document.getElementById('stat-physician').innerText = "Medical Staff";
+                        } else {
+                            document.getElementById('stat-physician').innerText = "Not Assigned";
                         }
-                    } else {
+                    } catch (e) {
+                        console.error("Failed to fetch referring physician details:", e);
                         document.getElementById('stat-physician').innerText = "Not Assigned";
                     }
                 }

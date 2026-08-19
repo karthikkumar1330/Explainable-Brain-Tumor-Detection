@@ -108,7 +108,7 @@ def create_app(db_path: str) -> Flask:
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
             "font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; "
             "img-src 'self' data: https://lh3.googleusercontent.com; "
-            "connect-src 'self';"
+            "connect-src 'self' http://127.0.0.1:8000 http://localhost:8000;"
         )
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -2664,6 +2664,21 @@ def create_app(db_path: str) -> Flask:
             if not row:
                 return jsonify({"error": "Patient record not found."}), 404
 
+            # Query assigned doctor from doctor_patient_assignments joined with users
+            doc_row = conn.execute(
+                """
+                SELECT u.full_name, u.email
+                FROM doctor_patient_assignments dpa
+                JOIN users u ON dpa.doctor_id = u.id
+                WHERE LOWER(dpa.patient_id) = LOWER(?);
+                """,
+                (current_user.uuid,)
+            ).fetchone()
+            assigned_doctor = {
+                "name": doc_row["full_name"],
+                "email": doc_row["email"]
+            } if doc_row else None
+
             try:
                 encryption_service = PIIEncryptionService()
             except Exception:
@@ -2699,7 +2714,8 @@ def create_app(db_path: str) -> Flask:
                 "name": name,
                 "email": current_user.email,
                 "age": age,
-                "gender": gender
+                "gender": gender,
+                "assigned_doctor": assigned_doctor
             }), 200
         except Exception as e:
             app.logger.error(f"Error retrieving patient profile: {e}", exc_info=True)

@@ -838,7 +838,8 @@ class ReportService:
                 insight = ClinicalInsight(
                     summary_narrative=ins_data.get("summary_narrative", ""),
                     key_findings=ins_data.get("key_findings", []),
-                    recommendations=ins_data.get("recommendations", [])
+                    recommendations=ins_data.get("recommendations", []),
+                    disclaimer=ins_data.get("disclaimer", "")
                 )
             except Exception:
                 pass

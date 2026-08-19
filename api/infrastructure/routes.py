@@ -1089,7 +1089,8 @@ def _run_single_report_pipeline(
 
         # Save explanation visualizations with boundary overlays
         os.makedirs(OUTPUT_REPORTS_DIR, exist_ok=True)
-        base_cam_name = f"{intake.patient_id}_api_gradcam"
+        file_prefix = os.path.splitext(os.path.basename(filepath))[0]
+        base_cam_name = f"{intake.patient_id}_{file_prefix}_gradcam"
 
         from classification.infrastructure.visualization import overlay_heatmap
         raw_overlay = overlay_heatmap(img_bgr, heatmap, alpha=0.6)
@@ -1110,14 +1111,14 @@ def _run_single_report_pipeline(
             logger.error(f"Failed to write overlay image to: {overlay_path}")
 
         # Save post-processed segmentation mask
-        mask_filename = f"{intake.patient_id}_api_mask.png"
+        mask_filename = f"{intake.patient_id}_{file_prefix}_mask.png"
         mask_path = os.path.join(OUTPUT_REPORTS_DIR, mask_filename)
         success_m = cv2.imwrite(mask_path, (final_mask * 255).astype(np.uint8))
         if not success_m:
             logger.error(f"Failed to write segmentation mask to: {mask_path}")
 
         # Phase I4: Generate and save Spatial Boundary Uncertainty map overlay
-        uncertainty_filename = f"{intake.patient_id}_api_uncertainty.png"
+        uncertainty_filename = f"{intake.patient_id}_{file_prefix}_uncertainty.png"
         uncertainty_path = os.path.join(OUTPUT_REPORTS_DIR, uncertainty_filename)
         uncertainty_overlay = img_bgr.copy()
         try:
@@ -1138,7 +1139,7 @@ def _run_single_report_pipeline(
             logger.error(f"Failed to write spatial uncertainty overlay to: {uncertainty_path}")
 
         # Save before-after post-processing comparison image
-        comparison_filename = f"{intake.patient_id}_api_comparison.png"
+        comparison_filename = f"{intake.patient_id}_{file_prefix}_comparison.png"
         comparison_path = os.path.join(OUTPUT_REPORTS_DIR, comparison_filename)
         create_segmentation_comparison_image(
             original_image=img_bgr,
@@ -2715,6 +2716,8 @@ class FollowupUpdatePayload(BaseModel):
 @router.post("/doctor/assign-patient")
 def assign_patient_to_doctor(
     patient_id: str,
+    age: Optional[str] = Query(None),
+    gender: Optional[str] = Query(None),
     current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))
 ):
     """Explicitly assigns a patient to a doctor (onboarding)."""
@@ -2744,8 +2747,8 @@ def assign_patient_to_doctor(
                     from security.infrastructure.encryption_service import PIIEncryptionService
                     encryption_service = PIIEncryptionService()
                     enc_name = encryption_service.encrypt(user_row["full_name"])
-                    enc_age = encryption_service.encrypt("30")
-                    enc_gender = encryption_service.encrypt("Unknown")
+                    enc_age = encryption_service.encrypt(age if age is not None else "30")
+                    enc_gender = encryption_service.encrypt(gender if gender is not None else "Unknown")
                     conn.execute(
                         """
                         INSERT INTO patients (patient_id, name, age, gender, created_at)
@@ -2761,6 +2764,73 @@ def assign_patient_to_doctor(
         return {"status": "success", "message": "Patient successfully assigned to doctor."}
     finally:
         conn.close()
+
+@router.get("/doctor/patient-users")
+def list_patient_users(
+    current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))
+):
+    """Retrieves all registered users with role='patient' to facilitate onboarding search."""
+    from security.application.authorization_service import AuthorizationService
+    auth_svc = AuthorizationService(DEFAULT_DB_PATH)
+    conn = auth_svc._get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT uuid, full_name, email FROM users WHERE LOWER(role) = 'patient' ORDER BY full_name ASC;"
+        ).fetchall()
+        return [{"uuid": r["uuid"], "full_name": r["full_name"], "email": r["email"]} for r in rows]
+    finally:
+        conn.close()
+
+@router.get("/doctor/assigned-patients")
+def get_doctor_assigned_patients(
+    current_user: User = Depends(require_roles([Role.ADMIN, Role.DOCTOR]))
+):
+    """Retrieves all patients explicitly assigned to the logged-in doctor with their decrypted demographics."""
+    from security.application.authorization_service import AuthorizationService
+    from security.infrastructure.encryption_service import PIIEncryptionService
+
+    auth_svc = AuthorizationService(DEFAULT_DB_PATH)
+    conn = auth_svc._get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT p.patient_id, p.name, p.age, p.gender, u.email
+            FROM doctor_patient_assignments dpa
+            JOIN patients p ON LOWER(dpa.patient_id) = LOWER(p.patient_id)
+            JOIN users u ON LOWER(p.patient_id) = LOWER(u.uuid)
+            WHERE dpa.doctor_id = ?
+            ORDER BY u.full_name ASC;
+            """,
+            (current_user.id,)
+        ).fetchall()
+
+        encryption_service = PIIEncryptionService()
+        results = []
+        for r in rows:
+            try:
+                dec_name = encryption_service.decrypt(r["name"])
+            except Exception:
+                dec_name = r["name"]
+            try:
+                dec_age = encryption_service.decrypt(r["age"])
+            except Exception:
+                dec_age = r["age"]
+            try:
+                dec_gender = encryption_service.decrypt(r["gender"])
+            except Exception:
+                dec_gender = r["gender"]
+
+            results.append({
+                "patient_id": r["patient_id"],
+                "name": dec_name,
+                "age": dec_age,
+                "gender": dec_gender,
+                "email": r["email"]
+            })
+        return results
+    finally:
+        conn.close()
+
 
 @router.get("/doctor/patients/{patient_id}")
 def get_doctor_patient_profile_api(

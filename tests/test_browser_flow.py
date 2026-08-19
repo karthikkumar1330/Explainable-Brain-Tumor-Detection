@@ -195,6 +195,10 @@ def run_e2e_test():
         page_px.wait_for_selector("text=Jane E2E Doe", timeout=5000)
         print("SUCCESS: Patient X successfully accesses own profile data.")
 
+        # Verify Referring Physician displays assigned doctor details
+        page_px.wait_for_selector("#stat-physician:has-text('doctor@aurascan.ai')", timeout=5000)
+        print("SUCCESS: Patient X dashboard displays assigned doctor details.")
+
         # Get Patient X auth token
         token_px = page_px.evaluate("localStorage.getItem('auth_token')")
         context_px.close()
@@ -205,6 +209,11 @@ def run_e2e_test():
         page_py = context_py.new_page()
         page_py.goto("http://127.0.0.1:5000/")
         handle_login(page_py, "pat_verify_e2e_browser_2@aurascan.ai", "Password@123", "/patient")
+
+        # Verify Patient Y Referring Physician displays "Not Assigned"
+        page_py.wait_for_selector("#stat-physician:has-text('Not Assigned')", timeout=5000)
+        print("SUCCESS: Unassigned Patient Y dashboard displays 'Not Assigned'.")
+
         token_py = page_py.evaluate("localStorage.getItem('auth_token')")
         context_py.close()
 

@@ -1184,6 +1184,45 @@
 
             <!-- TAB 2: PATIENT SEARCH DATABASE REGISTRY -->
             <div id="tab-database" class="hidden space-y-6">
+                <!-- Onboard & Assign Patient Card -->
+                <div class="glass-panel p-5 rounded-2xl border border-slate-800 space-y-4">
+                    <div class="flex items-center space-x-3 border-b border-slate-850 pb-3">
+                        <div class="h-8 w-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center">
+                            <i class="fa-solid fa-user-plus text-sky-400"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-extrabold text-slate-200 text-xs uppercase tracking-wider">Onboard & Assign New Patient</h4>
+                            <p class="text-[10px] text-slate-400">Explicitly onboard a registered patient user and assign them to your workstation</p>
+                        </div>
+                    </div>
+
+                    <form onsubmit="handleOnboardPatient(event)" class="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
+                        <div class="flex flex-col gap-1.5 sm:col-span-2">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Patient User</label>
+                            <select id="onboard-patient-uuid" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
+                                <option value="">-- Select Registered Patient --</option>
+                            </select>
+                        </div>
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Age (Years)</label>
+                            <input id="onboard-patient-age" type="number" required min="0" max="120" placeholder="e.g. 45" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
+                        </div>
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Gender</label>
+                            <select id="onboard-patient-gender" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
+                                <option value="Female">Female</option>
+                                <option value="Male">Male</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div class="sm:col-span-4 flex justify-end">
+                            <button type="submit" class="text-xs bg-sky-600 hover:bg-sky-700 text-white font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-user-check"></i> Onboard & Assign Patient
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
                 <!-- Advanced Multi-Criteria Filter Workstation -->
                 <div class="glass-panel p-5 rounded-2xl border border-slate-800 space-y-4">
                     <div class="flex justify-between items-center border-b border-slate-850 pb-3">
@@ -1388,6 +1427,12 @@
                     <form onsubmit="handleGenerateReport(event)" class="space-y-6">
                         <!-- Personal Demographics -->
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="md:col-span-2">
+                                <label class="block text-[10px] font-bold text-slate-300 mb-1.5 uppercase tracking-wider text-sky-400">Select Assigned Patient (Auto-fills Demographics)</label>
+                                <select id="gen-patient-select" onchange="handlePatientSelectionChange(this.value)" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
+                                    <option value="">-- Select Assigned Patient --</option>
+                                </select>
+                            </div>
                             <div>
                                 <label class="block text-[10px] font-bold text-slate-300 mb-1.5 uppercase tracking-wider">Patient ID</label>
                                 <input id="gen-patient-id" type="text" required placeholder="e.g. PATIENT_001" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
@@ -3062,6 +3107,12 @@
             initSidebarState();
             await checkAuthStatus();
 
+            try {
+                await loadAssignedPatientsForReportGeneration();
+            } catch (e) {
+                console.error("Failed to pre-load assigned patients on startup:", e);
+            }
+
             // Initialize Notifications (G8.2)
             await fetchUnreadNotificationCount();
             await loadNotificationPreferences();
@@ -3236,6 +3287,12 @@
                 } else if (tabName === 'database') {
                     loadRegistryData();
                 }
+            }
+            if (tabName === 'database') {
+                loadPatientUsersForOnboarding();
+            }
+            if (tabName === 'generate') {
+                loadAssignedPatientsForReportGeneration();
             }
             if (tabName === 'email-history') {
                 if (!dashboardDataLoaded) {
@@ -7091,6 +7148,111 @@
                 if (preview) preview.remove();
                 const previewRect = svg.querySelector(".preview-rect");
                 if (previewRect) previewRect.remove();
+            }
+        }
+
+        // Onboarding & Assigned Patients logic
+        async function loadPatientUsersForOnboarding() {
+            const select = document.getElementById("onboard-patient-uuid");
+            if (!select) return;
+            try {
+                const res = await fetchWithAuth("http://127.0.0.1:8000/api/doctor/patient-users");
+                if (res.ok) {
+                    const users = await res.json();
+                    select.innerHTML = '<option value="">-- Select Registered Patient --</option>';
+                    users.forEach(u => {
+                        const opt = document.createElement("option");
+                        opt.value = u.uuid;
+                        opt.textContent = `${u.full_name} (${u.email})`;
+                        select.appendChild(opt);
+                    });
+                }
+            } catch (e) {
+                console.error("Failed to load patient users for onboarding:", e);
+            }
+        }
+
+        async function handleOnboardPatient(e) {
+            e.preventDefault();
+            const pId = document.getElementById("onboard-patient-uuid").value;
+            const age = document.getElementById("onboard-patient-age").value.trim();
+            const gender = document.getElementById("onboard-patient-gender").value;
+
+            if (!pId) {
+                alert("Please select a patient to onboard.");
+                return;
+            }
+            if (!age) {
+                alert("Please enter patient age.");
+                return;
+            }
+
+            try {
+                const res = await fetchWithAuth(`http://127.0.0.1:8000/api/doctor/assign-patient?patient_id=${pId}&age=${age}&gender=${gender}`, {
+                    method: "POST"
+                });
+                if (res.ok) {
+                    alert("Patient successfully onboarded and assigned.");
+                    document.getElementById("onboard-patient-age").value = "";
+                    document.getElementById("onboard-patient-uuid").value = "";
+                    await loadAssignedPatientsForReportGeneration();
+                    await updateRegistryView();
+                } else {
+                    const err = await res.json();
+                    alert(`Error: ${err.detail || "Failed to onboard patient"}`);
+                }
+            } catch (e) {
+                console.error("Failed to onboard patient:", e);
+                alert("An error occurred during onboarding.");
+            }
+        }
+
+        let assignedPatientsCache = [];
+
+        async function loadAssignedPatientsForReportGeneration() {
+            const select = document.getElementById("gen-patient-select");
+            if (!select) return;
+            try {
+                const res = await fetchWithAuth("http://127.0.0.1:8000/api/doctor/assigned-patients");
+                if (res.ok) {
+                    assignedPatientsCache = await res.json();
+                    select.innerHTML = '<option value="">-- Select Assigned Patient --</option>';
+                    assignedPatientsCache.forEach(p => {
+                        const opt = document.createElement("option");
+                        opt.value = p.patient_id;
+                        opt.textContent = `${p.name} (${p.email})`;
+                        select.appendChild(opt);
+                    });
+                }
+            } catch (e) {
+                console.error("Failed to load assigned patients:", e);
+            }
+        }
+
+        function handlePatientSelectionChange(patientId) {
+            const patient = assignedPatientsCache.find(p => p.patient_id === patientId);
+            if (patient) {
+                document.getElementById("gen-patient-id").value = patient.patient_id;
+                document.getElementById("gen-patient-name").value = patient.name;
+                document.getElementById("gen-patient-age").value = patient.age;
+                document.getElementById("gen-patient-gender").value = patient.gender;
+
+                // Disable fields to prevent tampering
+                document.getElementById("gen-patient-id").readOnly = true;
+                document.getElementById("gen-patient-name").readOnly = true;
+                document.getElementById("gen-patient-age").readOnly = true;
+                document.getElementById("gen-patient-gender").disabled = true;
+            } else {
+                document.getElementById("gen-patient-id").value = "";
+                document.getElementById("gen-patient-name").value = "";
+                document.getElementById("gen-patient-age").value = "";
+                document.getElementById("gen-patient-gender").value = "Female";
+
+                // Enable fields
+                document.getElementById("gen-patient-id").readOnly = false;
+                document.getElementById("gen-patient-name").readOnly = false;
+                document.getElementById("gen-patient-age").readOnly = false;
+                document.getElementById("gen-patient-gender").disabled = false;
             }
         }
     </script>

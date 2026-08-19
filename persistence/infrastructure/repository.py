@@ -793,13 +793,34 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                     uncertainty_path
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """
-                # Extract paths from report object
-                # Markdown & JSON generated outputs are generated using PatientID prefix
-                # The caller should make sure actual paths are populated.
-                base_name = f"{report.patient_info.patient_id}_clinical_report"
+                # Extract paths from report object and rename files to include unique report number
+                report_number = self._generate_report_number(conn)
+                base_name = f"{report.patient_info.patient_id}_{report_number}_clinical_report"
+                old_base_name = f"{report.patient_info.patient_id}_clinical_report"
+
+                old_md = os.path.join(output_dir, f"{old_base_name}.md")
+                old_js = os.path.join(output_dir, f"{old_base_name}.json")
+                old_pdf = os.path.join(output_dir, f"{old_base_name}.pdf")
+
                 md_p = os.path.join(output_dir, f"{base_name}.md")
                 js_p = os.path.join(output_dir, f"{base_name}.json")
                 pdf_p = os.path.join(output_dir, f"{base_name}.pdf")
+
+                if os.path.exists(old_md):
+                    try:
+                        os.rename(old_md, md_p)
+                    except Exception:
+                        pass
+                if os.path.exists(old_js):
+                    try:
+                        os.rename(old_js, js_p)
+                    except Exception:
+                        pass
+                if os.path.exists(old_pdf):
+                    try:
+                        os.rename(old_pdf, pdf_p)
+                    except Exception:
+                        pass
 
                 cursor = conn.execute(report_sql, (
                     pred_id,
@@ -831,7 +852,6 @@ class SQLitePersistenceRepository(IPersistenceRepository):
                     except Exception:
                         return "da39a3ee5e6b4b0d3255bfef95601890afd80709"
 
-                report_number = self._generate_report_number(conn)
                 checksum = calculate_sha256(pdf_p)
 
                 # F2.2: Generate verification token and calculate canonical integrity hash
