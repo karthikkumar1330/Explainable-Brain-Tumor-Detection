@@ -88,7 +88,7 @@ try:
     pred_class = pred_res.class_name
     conf = pred_res.confidence_score
 
-    cls_ok = pred_class in ["Glioma", "Meningioma", "No Tumor", "Pituitary"] and conf > 0.5
+    cls_ok = pred_class in ["Glioma", "Meningioma", "Pituitary", "No Tumor"] and conf > 0.5
     test_results["4. Classification"] = "PASS" if cls_ok else "FAIL"
     print(f"4. Classification: {'PASS' if cls_ok else 'FAIL'} (Predicted: {pred_class}, Conf: {conf*100:.1f}%)")
 except Exception as e:

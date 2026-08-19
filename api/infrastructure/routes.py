@@ -889,42 +889,53 @@ def _run_single_report_pipeline(
                 from research_framework.application.ensemble import EnsembleEngine
 
                 registry = ModelRegistry(default_checkpoint_path=CLS_CHECKPOINT)
-                predictions = registry.predict_all(image_tensor_cls, device=device)
-
-                # Fetch baseline prediction specifically to keep classification_result populated
-                prod_pred = next((p for p in predictions if p.model_name == "efficientnet_b0"), None)
-                if prod_pred:
-                    uncal_conf = getattr(prod_pred, "uncalibrated_confidence_score", prod_pred.confidence)
-                    classification_result = PredictionResult(
-                        label=["Glioma", "Meningioma", "Pituitary", "No Tumor"].index(prod_pred.predicted_class),
-                        class_name=prod_pred.predicted_class,
-                        confidence_score=prod_pred.confidence,
-                        probabilities=prod_pred.probabilities,
-                        uncalibrated_confidence_score=uncal_conf,
-                        uncalibrated_probabilities=prod_pred.probabilities,
-                        is_calibrated=False
-                    )
-                else:
-                    classification_result = predict_use_case.execute(image_tensor_cls)
-
-                engine = EnsembleEngine()
-                ensemble_res = engine.compute_ensemble(predictions)
-
-                # Swap production result with ensemble prediction
-                class_to_label = {"Glioma": 0, "Meningioma": 1, "Pituitary": 2, "No Tumor": 3}
-                ensemble_label = class_to_label.get(ensemble_res.predicted_class, 3)
-
-                classification_result = PredictionResult(
-                    label=ensemble_label,
-                    class_name=ensemble_res.predicted_class,
-                    confidence_score=ensemble_res.confidence,
-                    probabilities=ensemble_res.probabilities,
-                    uncalibrated_confidence_score=classification_result.uncalibrated_confidence_score,
-                    uncalibrated_probabilities=classification_result.uncalibrated_probabilities,
-                    calibration_method="Ensemble (Soft Voting)",
-                    calibration_parameters={"num_models": len(predictions)},
-                    is_calibrated=True
+                
+                # Check if there is any research model with a valid checkpoint
+                has_valid_research = any(
+                    (not profile.is_production) and profile.checkpoint_path and os.path.exists(profile.checkpoint_path)
+                    for profile in registry.profiles.values()
                 )
+
+                if not has_valid_research:
+                    cls_warnings.append("Research ensemble unavailable: no validated research checkpoints. Production EfficientNet-B0 used.")
+                    classification_result = predict_use_case.execute(image_tensor_cls)
+                else:
+                    predictions = registry.predict_all(image_tensor_cls, device=device)
+
+                    # Fetch baseline prediction specifically to keep classification_result populated
+                    prod_pred = next((p for p in predictions if p.model_name == "efficientnet_b0"), None)
+                    if prod_pred:
+                        uncal_conf = getattr(prod_pred, "uncalibrated_confidence_score", prod_pred.confidence)
+                        classification_result = PredictionResult(
+                            label=["Glioma", "Meningioma", "Pituitary", "No Tumor"].index(prod_pred.predicted_class),
+                            class_name=prod_pred.predicted_class,
+                            confidence_score=prod_pred.confidence,
+                            probabilities=prod_pred.probabilities,
+                            uncalibrated_confidence_score=uncal_conf,
+                            uncalibrated_probabilities=prod_pred.probabilities,
+                            is_calibrated=False
+                        )
+                    else:
+                        classification_result = predict_use_case.execute(image_tensor_cls)
+
+                    engine = EnsembleEngine()
+                    ensemble_res = engine.compute_ensemble(predictions)
+
+                    # Swap production result with ensemble prediction
+                    class_to_label = {"Glioma": 0, "Meningioma": 1, "Pituitary": 2, "No Tumor": 3}
+                    ensemble_label = class_to_label.get(ensemble_res.predicted_class, 3)
+
+                    classification_result = PredictionResult(
+                        label=ensemble_label,
+                        class_name=ensemble_res.predicted_class,
+                        confidence_score=ensemble_res.confidence,
+                        probabilities=ensemble_res.probabilities,
+                        uncalibrated_confidence_score=classification_result.uncalibrated_confidence_score,
+                        uncalibrated_probabilities=classification_result.uncalibrated_probabilities,
+                        calibration_method="Ensemble (Soft Voting)",
+                        calibration_parameters={"num_models": len(predictions)},
+                        is_calibrated=True
+                    )
             else:
                 classification_result = predict_use_case.execute(image_tensor_cls)
         except Exception as e:

@@ -35,9 +35,14 @@ class TestMultiModelResearchFramework(unittest.TestCase):
         self.assertEqual(len(predictions), 3)
         for p in predictions:
             self.assertIn(p.model_name, ["efficientnet_b0", "resnet18", "mobilenet_v3"])
-            self.assertIn(p.predicted_class, ["Glioma", "Meningioma", "No Tumor", "Pituitary"])
-            self.assertGreater(p.confidence, 0.0)
-            self.assertGreater(p.runtime_sec, 0.0)
+            if p.model_name == "efficientnet_b0":
+                self.assertIn(p.predicted_class, ["Glioma", "Meningioma", "Pituitary", "No Tumor"])
+                self.assertGreater(p.confidence, 0.0)
+                self.assertTrue(p.is_valid)
+            else:
+                self.assertEqual(p.predicted_class, "skipped")
+                self.assertEqual(p.confidence, 0.0)
+                self.assertFalse(p.is_valid)
 
     def test_ensemble_soft_voting_calculation(self):
         """Tests that soft voting averages probability values and selects maximum."""

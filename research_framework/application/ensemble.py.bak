@@ -16,18 +16,17 @@ class EnsembleEngine:
         Returns:
             An EnsembleResult entity.
         """
-        valid_preds = [p for p in predictions if getattr(p, "is_valid", True)]
-        if not valid_preds:
+        if not predictions:
             raise ValueError("Predictions list cannot be empty.")
 
-        classes = ["Glioma", "Meningioma", "Pituitary", "No Tumor"]
+        classes = ["Glioma", "Meningioma", "No Tumor", "Pituitary"]
         avg_probs = {cls: 0.0 for cls in classes}
 
-        for pred in valid_preds:
+        for pred in predictions:
             for cls in classes:
                 avg_probs[cls] += pred.probabilities.get(cls, 0.0)
 
-        num_models = len(valid_preds)
+        num_models = len(predictions)
         for cls in classes:
             avg_probs[cls] /= num_models
 
@@ -36,12 +35,11 @@ class EnsembleEngine:
         ensemble_conf = avg_probs[pred_class]
 
         # Identify production prediction to compute agreement against
-        production_pred = next((p for p in valid_preds if p.model_name == "efficientnet_b0"), None)
-        has_valid_research = any(p.model_name != "efficientnet_b0" for p in valid_preds)
+        production_pred = next((p for p in predictions if p.model_name == "efficientnet_b0"), None)
         agreement = None
 
-        if production_pred and has_valid_research:
-            agreement = self.calculate_agreement(production_pred, valid_preds)
+        if production_pred and num_models > 1:
+            agreement = self.calculate_agreement(production_pred, predictions)
 
         return EnsembleResult(
             predicted_class=pred_class,
@@ -53,7 +51,7 @@ class EnsembleEngine:
 
     def calculate_agreement(self, production_pred: ModelPrediction, all_preds: List[ModelPrediction]) -> AgreementMetrics:
         """Computes Cosine Similarity and Jensen-Shannon Divergence compared to production baseline."""
-        classes = ["Glioma", "Meningioma", "Pituitary", "No Tumor"]
+        classes = ["Glioma", "Meningioma", "No Tumor", "Pituitary"]
         eps = 1e-9
 
         # 1. Build production probability vector
@@ -61,7 +59,7 @@ class EnsembleEngine:
         p_vec = p_vec / (p_vec.sum() + eps)
 
         # 2. Build research average probability vector
-        research_preds = [p for p in all_preds if p.model_name != "efficientnet_b0" and getattr(p, "is_valid", True)]
+        research_preds = [p for p in all_preds if p.model_name != "efficientnet_b0"]
         if not research_preds:
             # Fallback if only production is loaded
             r_vec = p_vec

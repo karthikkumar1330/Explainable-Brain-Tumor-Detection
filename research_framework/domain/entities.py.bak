@@ -21,8 +21,6 @@ class ModelPrediction:
     confidence: float
     probabilities: Dict[str, float]
     runtime_sec: float
-    is_valid: bool = True
-    status: str = "success"
 
 
 @dataclass(frozen=True)
