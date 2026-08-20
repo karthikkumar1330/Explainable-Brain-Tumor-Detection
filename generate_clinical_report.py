@@ -269,7 +269,7 @@ def main() -> None:
             output_seg = model_seg(input_tensor_seg)
             if seg_config["deep_supervision"]:
                 output_seg = output_seg[-1]
-            output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()
+            output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().float().numpy()
 
         # Binarize (using standard 0.5 threshold)
         bin_mask = (output_seg > 0.5).astype(np.uint8)
@@ -283,6 +283,9 @@ def main() -> None:
             area = stats[label, cv2.CC_STAT_AREA]
             if area >= 100:
                 filtered_mask[labels == label] = 1
+
+        if classification_result.class_name.lower().strip() in ["no tumor", "normal", "none"]:
+            filtered_mask = np.zeros_like(filtered_mask)
 
         # Resize the mask back to the original image dimensions
         orig_h, orig_w = original_image.shape[:2]
@@ -356,6 +359,23 @@ def main() -> None:
         # Generate Clinical Insight (B6.15)
         logger.info("Step 5.5: Generating AI Clinical Insights...")
         clinical_insight_res = None
+        overlap_pct = 0.0
+        if heatmap is not None and final_mask is not None and np.sum(final_mask) > 0:
+            try:
+                h_mask, w_mask = final_mask.shape[:2]
+                heatmap_resized = cv2.resize(
+                    heatmap, (w_mask, h_mask), interpolation=cv2.INTER_LINEAR
+                )
+                high_attention_mask = heatmap_resized > 0.5
+                tumor_binary_mask = final_mask > 0
+                intersection = np.logical_and(high_attention_mask, tumor_binary_mask).sum()
+                attention_total = high_attention_mask.sum()
+                if attention_total > 0:
+                    overlap_pct = float(intersection) / float(attention_total)
+            except Exception as e:
+                logger.error(f"Failed to calculate explainability overlap percentage: {e}")
+                overlap_pct = 0.0
+
         if classification_result is not None:
             try:
                 from clinical_insight.application.use_cases import GenerateClinicalInsightUseCase
@@ -377,7 +397,7 @@ def main() -> None:
                     solidity=solidity_val,
                     circularity=circularity_val,
                     xai_method="gradcam",
-                    xai_overlap_percentage=1.0 if segmentation_metrics else 0.0,
+                    xai_overlap_percentage=overlap_pct,
                     longitudinal_comparison=None
                 )
             except Exception as e:
@@ -396,7 +416,7 @@ def main() -> None:
             segmentation_mask_path=segmentation_mask_path,
             xai_method="gradcam",
             xai_explanation_text="Grad-CAM analysis highlights features within the predicted lesion area.",
-            xai_overlap_percentage=1.0 if segmentation_metrics else 0.0,
+            xai_overlap_percentage=overlap_pct,
             clinical_insight=clinical_insight_res,
             report_number=report_number,
         )

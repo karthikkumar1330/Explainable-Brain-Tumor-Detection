@@ -69,6 +69,19 @@ class GenerateClinicalInsightUseCase:
                 "Correlate findings with physical clinical evaluation and other imaging slices.",
                 "Schedule a repeat MRI scan or contact support to resolve the segmentation execution failure."
             ]
+        elif pixel_count == 0:
+            summary = (
+                f"Classification predicts {predicted_class} with {cal_str} confidence of {conf_pct}. "
+                f"No segmented tumor region was identified in the analyzed image."
+            )
+            key_findings = [
+                f"Lesion identified via classification: {predicted_class} (Confidence: {conf_pct}).",
+                "No segmented tumor region was identified in the analyzed image."
+            ]
+            recommendations = [
+                "Correlate findings with physical clinical symptoms and other imaging slices.",
+                "Schedule a follow-up assessment as per standard clinical protocol."
+            ]
         else:
             # Border & configuration descriptors
             solidity_desc = "highly regular/smooth"

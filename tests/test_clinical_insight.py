@@ -50,3 +50,27 @@ class TestClinicalInsightGenerator(unittest.TestCase):
         self.assertTrue(any("irregular" in f.lower() for f in insight.key_findings))
         self.assertTrue(any("elongated" in f.lower() for f in insight.key_findings))
         self.assertTrue(any("gradcam_plus_plus" in f.lower() for f in insight.key_findings))
+
+    def test_generate_clinical_insight_tumor_but_zero_pixels(self):
+        """Verifies insight generator handles classification predicting tumor but segmentation having 0 pixels correctly."""
+        insight = self.use_case.execute(
+            predicted_class="Pituitary",
+            confidence_score=0.4297,
+            is_calibrated=False,
+            probabilities={"Pituitary": 0.4297, "No Tumor": 0.5703},
+            tumor_area_mm2=0.0,
+            pixel_count=0,
+            solidity=None,
+            circularity=None,
+            xai_method="gradcam",
+            xai_overlap_percentage=0.0
+        )
+        self.assertIsInstance(insight, ClinicalInsight)
+        self.assertIn("Pituitary", insight.summary_narrative)
+        self.assertNotIn("active space-occupying lesion", insight.summary_narrative.lower())
+        self.assertIn("No segmented tumor region was identified in the analyzed image.", insight.summary_narrative)
+        self.assertTrue(any("No segmented tumor region was identified" in f for f in insight.key_findings))
+        for r in insight.recommendations:
+            self.assertNotIn("staging", r.lower())
+            self.assertNotIn("neurosurg", r.lower())
+            self.assertNotIn("oncolog", r.lower())

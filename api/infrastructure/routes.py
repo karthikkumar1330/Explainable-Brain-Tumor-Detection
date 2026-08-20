@@ -510,7 +510,7 @@ def run_segmentation(filepath: str, current_user: User = Depends(require_roles([
 
             if seg_config["deep_supervision"]:
                 output_seg = output_seg[-1]
-            output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()
+            output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().float().numpy()
 
         # Resize probability map to native resolution
         orig_h, orig_w = img_bgr.shape[:2]
@@ -1038,7 +1038,7 @@ def _run_single_report_pipeline(
 
                 if seg_config["deep_supervision"]:
                     output_seg = output_seg[-1]
-                output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()
+                output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().float().numpy()
         except Exception as e:
             logger.warning(f"Segmentation failed on {device}: {e}. Retrying with CPU fallback...")
             try:
@@ -1051,7 +1051,7 @@ def _run_single_report_pipeline(
                         output_seg = model_seg(input_tensor_seg_cpu)
                         if seg_config["deep_supervision"]:
                             output_seg = output_seg[-1]
-                        output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().numpy()
+                        output_seg = torch.sigmoid(output_seg).squeeze(0).squeeze(0).cpu().float().numpy()
                     else:
                         raise RuntimeError("Segmentation model is not loaded (None)")
                 seg_warnings.append("Auto-recovery warning: Segmentation execution failed on GPU. Retried and completed on CPU fallback mode.")
@@ -1078,6 +1078,8 @@ def _run_single_report_pipeline(
         post_proc = MedicalImagePostProcessor()
         post_proc_use_case = PostProcessSegmentationUseCase(post_processor=post_proc)
         final_mask, post_proc_meta = post_proc_use_case.execute(bin_mask_resized, prob_map_resized)
+        if classification_result.class_name.lower().strip() in ["no tumor", "normal", "none"]:
+            final_mask = np.zeros_like(final_mask)
 
         seg_latency = time.time() - t_seg
         timeline["Segmentation"] = time.time() - t_endpoint_start
