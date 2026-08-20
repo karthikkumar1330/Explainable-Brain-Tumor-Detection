@@ -1200,9 +1200,14 @@
                     <form onsubmit="handleOnboardPatient(event)" class="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
                         <div class="flex flex-col gap-1.5 sm:col-span-2">
                             <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Patient User</label>
-                            <select id="onboard-patient-uuid" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
-                                <option value="">-- Select Registered Patient --</option>
-                            </select>
+                            <div class="relative">
+                                <select id="onboard-patient-uuid" required class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3 pr-9 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition appearance-none">
+                                    <option value="">-- Select Registered Patient --</option>
+                                </select>
+                                <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true">
+                                    <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                                </span>
+                            </div>
                         </div>
                         <div class="flex flex-col gap-1.5">
                             <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Age (Years)</label>
