@@ -1995,14 +1995,14 @@
                             <i class="fa-solid fa-fire text-amber-400"></i> <span>Grad-CAM XAI Heatmap Blending</span>
                             <span id="heatmap-mri-warning" class="hidden text-[9px] text-amber-550 font-bold bg-slate-900/60 px-2 py-0.5 rounded border border-amber-900/50">MRI Unavailable</span>
                         </h5>
-                        <div class="flex items-center justify-end gap-2 flex-wrap">
-                            <button id="toggle-annotation-btn" onclick="toggleAnnotationMode()" class="h-8 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none">
+                        <div class="flex items-center justify-end gap-2 flex-nowrap">
+                            <button id="toggle-annotation-btn" onclick="toggleAnnotationMode()" class="h-8 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none flex-shrink-0">
                                 <i class="fa-solid fa-location-dot text-sky-400"></i> Add Point
                             </button>
-                            <button id="toggle-rectangle-btn" onclick="toggleRectangleMode()" class="h-8 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none">
+                            <button id="toggle-rectangle-btn" onclick="toggleRectangleMode()" class="h-8 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none flex-shrink-0">
                                 <i class="fa-solid fa-vector-square text-sky-400"></i> Add Rectangle
                             </button>
-                            <span id="label-overlay-opacity" class="h-8 bg-slate-900 text-sky-400 font-bold px-3 rounded-lg border border-slate-800 text-[10px] inline-flex items-center justify-center gap-1.5 leading-none">Opacity: 70%</span>
+                            <span id="label-overlay-opacity" class="h-8 bg-slate-900 text-sky-400 font-bold px-3 rounded-lg border border-slate-800 text-[10px] inline-flex items-center justify-center gap-1.5 leading-none flex-shrink-0">Opacity: 70%</span>
                         </div>
                     </div>
                     <div id="modal-visual-gradcam" class="relative w-full aspect-square bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-center overflow-hidden mb-3">
@@ -6694,7 +6694,7 @@
 
             if (annotationModeActive) {
                 btn.innerHTML = '<i class="fa-solid fa-ban text-rose-455"></i> Cancel Point';
-                btn.className = "h-8 bg-rose-950/40 text-rose-300 border border-rose-800 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none";
+                btn.className = "h-8 bg-rose-950/40 text-rose-300 border border-rose-800 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none flex-shrink-0";
                 svgs.forEach(svg => {
                     svg.classList.add("cursor-crosshair");
                     svg.style.pointerEvents = "auto";
@@ -6702,7 +6702,7 @@
                 closeAnnotationPopover();
             } else {
                 btn.innerHTML = '<i class="fa-solid fa-location-dot text-sky-400"></i> Add Point';
-                btn.className = "h-8 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none";
+                btn.className = "h-8 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none flex-shrink-0";
                 svgs.forEach(svg => {
                     svg.classList.remove("cursor-crosshair");
                     const preview = svg.querySelector(".preview-marker");
@@ -6722,7 +6722,7 @@
 
             if (rectangleModeActive) {
                 rectBtn.innerHTML = '<i class="fa-solid fa-ban text-rose-455"></i> Cancel Rectangle';
-                rectBtn.className = "h-8 bg-rose-950/40 text-rose-300 border border-rose-800 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none";
+                rectBtn.className = "h-8 bg-rose-950/40 text-rose-300 border border-rose-800 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none flex-shrink-0";
                 closeAnnotationPopover();
 
                 svgs.forEach(svg => {
@@ -6738,7 +6738,7 @@
                 });
             } else {
                 rectBtn.innerHTML = '<i class="fa-solid fa-vector-square text-sky-400"></i> Add Rectangle';
-                rectBtn.className = "h-8 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none";
+                rectBtn.className = "h-8 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none flex-shrink-0";
 
                 svgs.forEach(svg => {
                     svg.classList.remove("cursor-crosshair");
