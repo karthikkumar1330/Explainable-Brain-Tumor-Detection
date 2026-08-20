@@ -1013,7 +1013,7 @@ def _run_single_report_pipeline(
                 method=xai_param,
                 tumor_mask=final_mask
             )
-            setattr(xai_res, "heatmap_raw", heatmap_raw)
+            object.__setattr__(xai_res, "heatmap_raw", heatmap_raw)
             return xai_res
 
         # 3. Segmentation (B6.12 Retry & CPU fallback)
@@ -1098,10 +1098,19 @@ def _run_single_report_pipeline(
         cam_latency = time.time() - t_cam
         timeline["GradCAM"] = time.time() - t_endpoint_start
 
+        # Pre-allocate report_number before generating files to ensure unique visualization names
+        from persistence.infrastructure.repository import SQLitePersistenceRepository
+        db_repo = SQLitePersistenceRepository(db_path=DEFAULT_DB_PATH)
+        conn = db_repo._get_connection()
+        try:
+            with conn:
+                report_number = db_repo._generate_report_number(conn)
+        finally:
+            conn.close()
+
         # Save explanation visualizations with boundary overlays
         os.makedirs(OUTPUT_REPORTS_DIR, exist_ok=True)
-        file_prefix = os.path.splitext(os.path.basename(filepath))[0]
-        base_cam_name = f"{intake.patient_id}_{file_prefix}_gradcam"
+        base_cam_name = f"{intake.patient_id}_{report_number}_gradcam"
 
         from classification.infrastructure.visualization import overlay_heatmap
         raw_overlay = overlay_heatmap(img_bgr, heatmap, alpha=0.6)
@@ -1122,14 +1131,14 @@ def _run_single_report_pipeline(
             logger.error(f"Failed to write overlay image to: {overlay_path}")
 
         # Save post-processed segmentation mask
-        mask_filename = f"{intake.patient_id}_{file_prefix}_mask.png"
+        mask_filename = f"{intake.patient_id}_{report_number}_mask.png"
         mask_path = os.path.join(OUTPUT_REPORTS_DIR, mask_filename)
         success_m = cv2.imwrite(mask_path, (final_mask * 255).astype(np.uint8))
         if not success_m:
             logger.error(f"Failed to write segmentation mask to: {mask_path}")
 
         # Phase I4: Generate and save Spatial Boundary Uncertainty map overlay
-        uncertainty_filename = f"{intake.patient_id}_{file_prefix}_uncertainty.png"
+        uncertainty_filename = f"{intake.patient_id}_{report_number}_uncertainty.png"
         uncertainty_path = os.path.join(OUTPUT_REPORTS_DIR, uncertainty_filename)
         uncertainty_overlay = img_bgr.copy()
         try:
@@ -1150,7 +1159,7 @@ def _run_single_report_pipeline(
             logger.error(f"Failed to write spatial uncertainty overlay to: {uncertainty_path}")
 
         # Save before-after post-processing comparison image
-        comparison_filename = f"{intake.patient_id}_{file_prefix}_comparison.png"
+        comparison_filename = f"{intake.patient_id}_{report_number}_comparison.png"
         comparison_path = os.path.join(OUTPUT_REPORTS_DIR, comparison_filename)
         create_segmentation_comparison_image(
             original_image=img_bgr,
@@ -1328,6 +1337,7 @@ def _run_single_report_pipeline(
             xai_overlap_percentage=xai_result.overlap_percentage,
             quality_warnings=quality_warnings,
             clinical_insight=clinical_insight_res,
+            report_number=report_number,
         )
 
         timeline["Clinical Report"] = time.time() - t_endpoint_start

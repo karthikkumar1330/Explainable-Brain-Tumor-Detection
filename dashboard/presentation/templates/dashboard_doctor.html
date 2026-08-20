@@ -1244,7 +1244,7 @@
                         <div class="flex flex-col gap-1.5">
                             <label class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Global Search</label>
                             <div class="relative w-full">
-                                <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-[11px] text-slate-500"></i>
+                                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-[11px] text-slate-500"></i>
                                 <input id="registry-search" type="text" placeholder="Search ID, name, doctor..." oninput="debouncedUpdateRegistry()" onkeydown="if(event.key==='Enter') { updateRegistryView(); }" class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 transition">
                             </div>
                         </div>
@@ -1988,7 +1988,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-[20px] mb-6">
                 <!-- Grad-CAM Blended View -->
                 <div class="bg-slate-950/70 p-5 rounded-2xl border border-slate-800 flex flex-col h-full justify-between">
-                    <div class="min-h-[40px] md:min-h-[48px] flex items-start justify-between gap-3 mb-3">
+                    <div class="min-h-[40px] md:min-h-[48px] flex items-center justify-between gap-3 mb-3">
                         <h5 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 flex-1 min-w-0 leading-[1.25]">
                             <i class="fa-solid fa-fire text-amber-400"></i> <span>Grad-CAM XAI Heatmap Blending</span>
                             <span id="heatmap-mri-warning" class="hidden text-[9px] text-amber-550 font-bold bg-slate-900/60 px-2 py-0.5 rounded border border-amber-900/50">MRI Unavailable</span>

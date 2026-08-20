@@ -22,7 +22,10 @@ class MarkdownJSONReportGenerator(IClinicalReportGenerator):
         from pathlib import Path
         output_dir_obj = Path(output_dir).resolve()
         output_dir_obj.mkdir(parents=True, exist_ok=True)
-        base_name = f"{report.patient_info.patient_id}_clinical_report"
+        if report.report_number:
+            base_name = f"{report.patient_info.patient_id}_{report.report_number}_clinical_report"
+        else:
+            base_name = f"{report.patient_info.patient_id}_clinical_report"
 
         # 1. Generate JSON report
         json_path = output_dir_obj / f"{base_name}.json"

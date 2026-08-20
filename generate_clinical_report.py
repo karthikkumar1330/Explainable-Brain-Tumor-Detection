@@ -161,6 +161,17 @@ def main() -> None:
         print(f"Error: MRI image not found at {args.image_path}")
         sys.exit(1)
 
+    # Pre-allocate report_number before generating visualizations
+    from persistence.infrastructure.repository import SQLitePersistenceRepository
+    db_repo = SQLitePersistenceRepository(db_path=args.db_path, logger=logger)
+    db_repo.initialize_db()
+    conn = db_repo._get_connection()
+    try:
+        with conn:
+            report_number = db_repo._generate_report_number(conn)
+    finally:
+        conn.close()
+
     # 3. Predict Classification (EfficientNet-B0)
     logger.info("Step 1: Running Classification model...")
     t0 = time.time()
@@ -205,7 +216,7 @@ def main() -> None:
 
         # Save outputs
         os.makedirs(args.output_dir, exist_ok=True)
-        base_filename = f"{args.patient_id}_gradcam"
+        base_filename = f"{args.patient_id}_{report_number}_gradcam"
         original_image = cv2.imread(args.image_path)
         if original_image is None:
             raise IOError(f"Could not read image for Grad-CAM overlay: {args.image_path}")
@@ -280,7 +291,7 @@ def main() -> None:
         )
 
         # Save segmented mask
-        segmentation_mask_path = os.path.join(args.output_dir, f"{args.patient_id}_segmentation_mask.jpg")
+        segmentation_mask_path = os.path.join(args.output_dir, f"{args.patient_id}_{report_number}_segmentation_mask.jpg")
         cv2.imwrite(segmentation_mask_path, (final_mask * 255).astype(np.uint8))
         logger.info(f"Saved segmentation mask to: {segmentation_mask_path}")
         segmentation_latency = time.time() - t0
@@ -387,6 +398,7 @@ def main() -> None:
             xai_explanation_text="Grad-CAM analysis highlights features within the predicted lesion area.",
             xai_overlap_percentage=1.0 if segmentation_metrics else 0.0,
             clinical_insight=clinical_insight_res,
+            report_number=report_number,
         )
 
         # Wire generator Clean Architecture components
