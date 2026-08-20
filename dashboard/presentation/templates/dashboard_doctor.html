@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <!-- Global Theme Script -->
     <script src="/static/js/theme.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1226,8 +1227,9 @@
                 <!-- Advanced Multi-Criteria Filter Workstation -->
                 <div class="glass-panel p-5 rounded-2xl border border-slate-800 space-y-4">
                     <div class="flex justify-between items-center border-b border-slate-850 pb-3">
-                        <h4 class="font-extrabold text-slate-200 text-xs uppercase tracking-wider flex items-center gap-2">
-                            <i class="fa-solid fa-filter text-sky-400"></i> Registry Query Filters & Search Workstation
+                        <h4 class="font-extrabold text-slate-200 text-xs uppercase tracking-wider flex items-center gap-2 leading-none">
+                            <i class="fa-solid fa-filter text-sky-400"></i>
+                            <span>Registry Query Filters & Search Workstation</span>
                         </h4>
                         <div class="flex items-center gap-2.5">
                             <button onclick="resetRegistryFilters()" class="text-xs bg-slate-900 hover:bg-slate-800 text-slate-400 font-bold px-3 py-1.5 rounded-lg border border-slate-800 transition flex items-center gap-1.5">
@@ -1988,20 +1990,23 @@
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-[20px] mb-6">
                 <!-- Grad-CAM Blended View -->
                 <div class="bg-slate-950/70 p-5 rounded-2xl border border-slate-800 flex flex-col h-full justify-between">
-                    <div class="min-h-[40px] md:min-h-[48px] flex items-center justify-between gap-3 mb-3">
+                    <div class="flex items-center justify-between gap-3 mb-2.5">
                         <h5 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 flex-1 min-w-0 leading-[1.25]">
                             <i class="fa-solid fa-fire text-amber-400"></i> <span>Grad-CAM XAI Heatmap Blending</span>
                             <span id="heatmap-mri-warning" class="hidden text-[9px] text-amber-550 font-bold bg-slate-900/60 px-2 py-0.5 rounded border border-amber-900/50">MRI Unavailable</span>
                         </h5>
-                        <div class="flex items-center justify-end gap-2 flex-wrap flex-shrink-0">
-                            <button id="toggle-annotation-btn" onclick="toggleAnnotationMode()" class="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1">
+                    </div>
+                    <!-- Dedicated Compact Annotation Toolbar Row -->
+                    <div class="flex flex-wrap items-center justify-between gap-3 mb-3 bg-slate-900/40 p-2 rounded-xl border border-slate-800/80">
+                        <div class="flex items-center gap-2">
+                            <button id="toggle-annotation-btn" onclick="toggleAnnotationMode()" class="h-8 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none">
                                 <i class="fa-solid fa-location-dot text-sky-400"></i> Add Point
                             </button>
-                            <button id="toggle-rectangle-btn" onclick="toggleRectangleMode()" class="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1">
+                            <button id="toggle-rectangle-btn" onclick="toggleRectangleMode()" class="h-8 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none">
                                 <i class="fa-solid fa-vector-square text-sky-400"></i> Add Rectangle
                             </button>
-                            <span id="label-overlay-opacity" class="text-[10px] text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800">Opacity: 70%</span>
                         </div>
+                        <span id="label-overlay-opacity" class="h-8 bg-slate-900 text-sky-400 font-bold px-3 rounded-lg border border-slate-800 text-[10px] inline-flex items-center justify-center gap-1.5 leading-none">Opacity: 70%</span>
                     </div>
                     <div id="modal-visual-gradcam" class="relative w-full aspect-square bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-center overflow-hidden mb-3">
                         <img id="modal-heatmap-raw" class="absolute w-full h-full object-contain" src="" alt="Raw MRI Scan" onload="alignSvgOverlay()">
@@ -6692,7 +6697,7 @@
 
             if (annotationModeActive) {
                 btn.innerHTML = '<i class="fa-solid fa-ban text-rose-455"></i> Cancel Point';
-                btn.className = "bg-rose-950/40 text-rose-300 border border-rose-800 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1";
+                btn.className = "h-8 bg-rose-950/40 text-rose-300 border border-rose-800 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none";
                 svgs.forEach(svg => {
                     svg.classList.add("cursor-crosshair");
                     svg.style.pointerEvents = "auto";
@@ -6700,7 +6705,7 @@
                 closeAnnotationPopover();
             } else {
                 btn.innerHTML = '<i class="fa-solid fa-location-dot text-sky-400"></i> Add Point';
-                btn.className = "bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1";
+                btn.className = "h-8 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none";
                 svgs.forEach(svg => {
                     svg.classList.remove("cursor-crosshair");
                     const preview = svg.querySelector(".preview-marker");
@@ -6720,7 +6725,7 @@
 
             if (rectangleModeActive) {
                 rectBtn.innerHTML = '<i class="fa-solid fa-ban text-rose-455"></i> Cancel Rectangle';
-                rectBtn.className = "bg-rose-950/40 text-rose-300 border border-rose-800 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1";
+                rectBtn.className = "h-8 bg-rose-950/40 text-rose-300 border border-rose-800 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none";
                 closeAnnotationPopover();
 
                 svgs.forEach(svg => {
@@ -6736,7 +6741,7 @@
                 });
             } else {
                 rectBtn.innerHTML = '<i class="fa-solid fa-vector-square text-sky-400"></i> Add Rectangle';
-                rectBtn.className = "bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1";
+                rectBtn.className = "h-8 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-400 border border-slate-800 hover:border-sky-500/30 px-3 rounded-lg text-[10px] font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 leading-none";
 
                 svgs.forEach(svg => {
                     svg.classList.remove("cursor-crosshair");
