@@ -2526,6 +2526,9 @@
 
     <!-- JAVASCRIPT LOGIC -->
     <script>
+        // Centralized API configuration (dynamically resolves hostname for cross-device access)
+        const API_BASE_URL = `http://${window.location.hostname}:8000`;
+
         let diagnosisChart = null;
         let severityChart = null;
         let progressionChart = null;
@@ -7163,7 +7166,7 @@
             const select = document.getElementById("onboard-patient-uuid");
             if (!select) return;
             try {
-                const res = await fetchWithAuth("http://127.0.0.1:8000/api/doctor/patient-users");
+                const res = await fetchWithAuth(`${API_BASE_URL}/api/doctor/patient-users`);
                 if (res.ok) {
                     const users = await res.json();
                     select.innerHTML = '<option value="">-- Select Registered Patient --</option>';
@@ -7195,7 +7198,7 @@
             }
 
             try {
-                const res = await fetchWithAuth(`http://127.0.0.1:8000/api/doctor/assign-patient?patient_id=${pId}&age=${age}&gender=${gender}`, {
+                const res = await fetchWithAuth(`${API_BASE_URL}/api/doctor/assign-patient?patient_id=${pId}&age=${age}&gender=${gender}`, {
                     method: "POST"
                 });
                 if (res.ok) {
@@ -7220,7 +7223,7 @@
             const select = document.getElementById("gen-patient-select");
             if (!select) return;
             try {
-                const res = await fetchWithAuth("http://127.0.0.1:8000/api/doctor/assigned-patients");
+                const res = await fetchWithAuth(`${API_BASE_URL}/api/doctor/assigned-patients`);
                 if (res.ok) {
                     assignedPatientsCache = await res.json();
                     select.innerHTML = '<option value="">-- Select Assigned Patient --</option>';

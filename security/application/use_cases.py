@@ -21,7 +21,12 @@ def is_testing_env() -> bool:
         return False
 
     import sys
-    running_tests = "pytest" in sys.modules or "unittest" in sys.modules
+    # Avoid false positives where libraries (like torch._dynamo) import unittest standard library
+    running_pytest = "pytest" in sys.modules
+    running_unittest = "unittest" in sys.modules and any(
+        runner in sys.argv[0] for runner in ("pytest", "unittest", "setup.py")
+    )
+    running_tests = running_pytest or running_unittest or "PYTEST_CURRENT_TEST" in os.environ
 
     flask_testing = False
     try:
@@ -32,6 +37,15 @@ def is_testing_env() -> bool:
         pass
 
     return running_tests or flask_testing
+
+def get_public_base_url() -> str:
+    """Retrieves the public base URL of the application, preferring AURASCAN_PUBLIC_BASE_URL.
+
+    Falls back to APP_URL, and then defaults to http://127.0.0.1:5000 with explicit logging.
+    """
+    from security.application.config import app_config
+    return app_config.public_base_url
+
 
 def send_account_email(
     db_path: str,
@@ -169,7 +183,7 @@ class AuthUseCases:
             expires_at = (datetime.datetime.utcnow() + datetime.timedelta(hours=24)).isoformat()
             self.user_repo.save_verification_token(created_user.id, token_hash, expires_at)
 
-            base_url = os.environ.get("APP_URL", "http://127.0.0.1:5000")
+            base_url = get_public_base_url()
             verification_url = f"{base_url}/verify-email?token={raw_token}"
 
             from clinical_reporting.presentation.email_templates import EmailTemplateRenderer
@@ -763,7 +777,7 @@ class AuthUseCases:
 
         self.user_repo.save_verification_token(user.id, token_hash, expires_at)
 
-        base_url = os.environ.get("APP_URL", "http://127.0.0.1:5000")
+        base_url = get_public_base_url()
         verification_url = f"{base_url}/verify-email?token={raw_token}"
 
         from clinical_reporting.presentation.email_templates import EmailTemplateRenderer
@@ -847,7 +861,7 @@ class AuthUseCases:
 
         self.user_repo.save_password_reset_token(user.id, token_hash, expires_at)
 
-        base_url = os.environ.get("APP_URL", "http://127.0.0.1:5000")
+        base_url = get_public_base_url()
         reset_url = f"{base_url}/reset-password?token={raw_token}"
 
         from clinical_reporting.presentation.email_templates import EmailTemplateRenderer

@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import argparse
 import sys
 import os
@@ -8,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.infrastructure.routes import router, initialize_api_models
 from api.routes.auth_routes import auth_router, admin_router
 from security.infrastructure.repository import SQLiteUserRepository
+from security.application.config import app_config
 
 
 def parse_args() -> argparse.Namespace:
@@ -18,14 +22,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--host",
         type=str,
-        default="127.0.0.1",
-        help="Host interface to bind server to (default: 127.0.0.1)",
+        default=app_config.host,
+        help=f"Host interface to bind server to (default: {app_config.host})",
     )
     parser.add_argument(
         "--port",
         type=int,
-        default=8000,
-        help="Port to run the API server on (default: 8000)",
+        default=app_config.api_port,
+        help=f"Port to run the API server on (default: {app_config.api_port})",
     )
     parser.add_argument(
         "--reload",
@@ -50,13 +54,19 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Configure dynamic allowed CORS origins to support cross-device testing
+cors_origins = ["http://127.0.0.1:5000", "http://localhost:5000"]
+if app_config.public_base_url:
+    cors_origins.append(app_config.public_base_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5000", "http://localhost:5000"],
+    allow_origins=list(set(cors_origins)),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Request Telemetry Middleware
 @app.middleware("http")
@@ -186,10 +196,14 @@ def on_shutdown() -> None:
 
 def main() -> None:
     args = parse_args()
+    logger.info("Starting AuraScan AI REST API Server...")
+    logger.info(f" - API Host Bind: {args.host}")
+    logger.info(f" - API Port: {args.port}")
+    logger.info(f" - Allowed CORS public origin: {app_config.public_base_url}")
     try:
         uvicorn.run("run_api:app", host=args.host, port=args.port, reload=args.reload)
     except Exception as e:
-        print(f"Failed to start REST API server: {e}", file=sys.stderr)
+        logger.error(f"Failed to start REST API server: {e}")
         sys.exit(1)
 
 

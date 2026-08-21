@@ -102,13 +102,31 @@ def create_app(db_path: str) -> Flask:
             )
 
         # Configure robust Enterprise Security Headers
+        from security.application.config import app_config
+        host_ip = request.host.split(":")[0]
+        connect_srcs = {
+            "'self'",
+            "http://127.0.0.1:8000",
+            "http://localhost:8000",
+            f"http://{host_ip}:8000"
+        }
+        if app_config.public_base_url:
+            clean_val = app_config.public_base_url.rstrip("/")
+            connect_srcs.add(clean_val)
+            if ":5000" in clean_val:
+                connect_srcs.add(clean_val.replace(":5000", ":8000"))
+        if app_config.fastapi_url:
+            connect_srcs.add(app_config.fastapi_url.rstrip("/"))
+
+        connect_src_str = " ".join(sorted(list(connect_srcs)))
+
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
             "font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; "
             "img-src 'self' data: https://lh3.googleusercontent.com; "
-            "connect-src 'self' http://127.0.0.1:8000 http://localhost:8000;"
+            f"connect-src {connect_src_str};"
         )
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -3332,7 +3350,8 @@ def create_app(db_path: str) -> Flask:
             headers["Authorization"] = f"Bearer {token}"
 
         # 2. Forward to FastAPI
-        api_url = os.environ.get("FASTAPI_URL", "http://127.0.0.1:8000")
+        from security.application.config import app_config
+        api_url = app_config.fastapi_url
         try:
             files = {
                 "file": (mri_file.filename, mri_file.read(), mri_file.content_type or "image/png")
@@ -3457,7 +3476,8 @@ def create_app(db_path: str) -> Flask:
         if token:
             headers["Authorization"] = f"Bearer {token}"
 
-        api_url = os.environ.get("FASTAPI_URL", "http://127.0.0.1:8000")
+        from security.application.config import app_config
+        api_url = app_config.fastapi_url
         try:
             # Build files payload for requests library
             files_payload = []

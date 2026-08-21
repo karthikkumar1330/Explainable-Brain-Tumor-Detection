@@ -1,8 +1,12 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import argparse
 import sys
 import os
 import logging
 from dashboard.infrastructure.web_server import create_app
+from security.application.config import app_config
 
 
 def parse_args() -> argparse.Namespace:
@@ -19,14 +23,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--host",
         type=str,
-        default="127.0.0.1",
-        help="Host interface to bind server to",
+        default=app_config.host,
+        help=f"Host interface to bind server to (default: {app_config.host})",
     )
     parser.add_argument(
         "--port",
         type=int,
-        default=5000,
-        help="Port to run the dashboard server on (default: 5000)",
+        default=app_config.dashboard_port,
+        help=f"Port to run the dashboard server on (default: {app_config.dashboard_port})",
     )
     parser.add_argument(
         "--debug",
@@ -53,7 +57,10 @@ def main() -> None:
             f"Initializing a clean database. Run generate_clinical_report.py to populate scan records."
         )
 
-    logger.info(f"Starting AuraScan AI Web Server on http://{args.host}:{args.port}")
+    logger.info("Starting AuraScan AI Web Server...")
+    logger.info(f" - Configured Host Bind: {args.host}")
+    logger.info(f" - Configured Port: {args.port}")
+    logger.info(f" - Configured Public Base URL: {app_config.public_base_url}")
     try:
         app = create_app(db_path=args.db_path)
         app.run(host=args.host, port=args.port, debug=args.debug)
