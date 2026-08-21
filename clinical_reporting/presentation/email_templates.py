@@ -15,36 +15,57 @@ BASE_HTML_TEMPLATE = """<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ subject }}</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
-  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; padding: 24px 16px;">
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; padding: 40px 16px;">
     <tr>
       <td align="center">
         <!-- Card Container -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03), 0 1px 3px rgba(15, 23, 42, 0.02);">
+
           <!-- Header -->
           <tr>
-            <td style="background-color: #0f172a; padding: 24px; text-align: center; border-bottom: 3px solid #0284c7;">
-              <span style="color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: 0.5px;">AuraScan AI</span>
+            <td style="padding: 32px 32px 24px 32px; border-bottom: 1px solid #e2e8f0; text-align: left; background-color: #ffffff;">
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td style="vertical-align: middle; width: 44px;">
+                    <div style="background-color: #0284c7; border-radius: 8px; width: 36px; height: 36px; line-height: 36px; text-align: center; color: #ffffff; font-weight: 800; font-size: 18px; font-family: sans-serif; letter-spacing: -0.5px;">A</div>
+                  </td>
+                  <td style="vertical-align: middle; padding-left: 12px;">
+                    <div style="color: #0f172a; font-size: 20px; font-weight: 700; line-height: 1.2; letter-spacing: -0.2px; font-family: sans-serif;">AuraScan AI</div>
+                    <div style="color: #64748b; font-size: 12px; font-weight: 500; margin-top: 2px; font-family: sans-serif;">Intelligent Brain Tumor Analysis Platform</div>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
+
           <!-- Body Content -->
           <tr>
-            <td style="padding: 32px 24px; color: #334155; font-size: 16px; line-height: 1.6;">
+            <td style="padding: 36px 32px; color: #334155; font-size: 15px; line-height: 1.6; font-family: sans-serif;">
               {% if title %}
-              <h1 style="color: #0f172a; font-size: 20px; font-weight: 700; margin-top: 0; margin-bottom: 16px;">{{ title }}</h1>
+              <h1 style="color: #0f172a; font-size: 22px; font-weight: 700; margin-top: 0; margin-bottom: 20px; letter-spacing: -0.3px; font-family: sans-serif;">{{ title }}</h1>
               {% endif %}
-              
+
               {{ content | safe }}
             </td>
           </tr>
+
           <!-- Footer -->
           <tr>
-            <td style="background-color: #f1f5f9; padding: 24px; text-align: center; color: #64748b; font-size: 12px; line-height: 1.5; border-top: 1px solid #e2e8f0;">
-              <p style="margin: 0 0 8px 0; font-weight: 600;">AuraScan AI Platform</p>
-              <p style="margin: 0 0 12px 0;">This is an automated clinical notification. Please do not reply directly to this email.</p>
-              <p style="margin: 0; font-size: 11px; color: #94a3b8;">CONFIDENTIALITY NOTICE: This transmission is intended only for the use of the individual or entity named above. It contains highly sensitive health information.</p>
+            <td style="background-color: #f8fafc; padding: 32px; text-align: left; color: #64748b; font-size: 12px; line-height: 1.6; border-top: 1px solid #e2e8f0; font-family: sans-serif;">
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td>
+                    <p style="margin: 0 0 4px 0; font-weight: 700; color: #0f172a; font-size: 13px;">AuraScan AI Platform</p>
+                    <p style="margin: 0 0 16px 0; color: #64748b; font-size: 12px;">Intelligent healthcare AI. This is an automated clinical notification. Please do not reply directly to this email.</p>
+                    <div style="border-top: 1px dashed #e2e8f0; margin: 16px 0; height: 1px;"></div>
+                    <p style="margin: 0; font-size: 11px; color: #94a3b8; line-height: 1.5;"><strong>CONFIDENTIALITY NOTICE:</strong> This transmission is intended only for the use of the individual or entity named above. It contains highly sensitive and confidential health information protected under secure clinical communication standards.</p>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
+
         </table>
       </td>
     </tr>
@@ -96,10 +117,10 @@ def render_cta_button(cta_text: str, cta_url: str) -> str:
     validated_url = validate_url(cta_url)
     
     # Inline styled table for absolute compatibility in legacy clients
-    btn_template = """<table border="0" cellpadding="0" cellspacing="0" style="margin: 24px 0;">
+    btn_template = """<table border="0" cellpadding="0" cellspacing="0" style="margin: 28px 0; border-collapse: separate;">
   <tr>
-    <td align="center" bgcolor="#0284c7" style="border-radius: 4px;">
-      <a href="{{ url }}" target="_blank" style="display: inline-block; padding: 12px 24px; color: #ffffff; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 4px; border: 1px solid #0284c7;">{{ text }}</a>
+    <td align="center" bgcolor="#0284c7" style="border-radius: 6px;">
+      <a href="{{ url }}" target="_blank" style="display: inline-block; padding: 12px 28px; color: #ffffff; font-size: 14px; font-weight: 600; text-decoration: none; border-radius: 6px; border: 1px solid #0284c7; font-family: sans-serif; letter-spacing: 0.3px; text-align: center;">{{ text }}</a>
     </td>
   </tr>
 </table>"""
@@ -109,14 +130,14 @@ def render_cta_button(cta_text: str, cta_url: str) -> str:
 
 def render_info_card(card_items: List[Tuple[str, Any]]) -> str:
     """Generates an email-compatible information/detail card."""
-    card_template = """<table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; margin: 20px 0; padding: 16px;">
+    card_template = """<table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin: 24px 0; border-collapse: separate;">
   <tr>
-    <td>
+    <td style="padding: 12px 20px;">
       <table border="0" cellpadding="0" cellspacing="0" width="100%">
         {% for label, value in items %}
         <tr>
-          <td style="padding: 6px 0; font-weight: 600; color: #475569; width: 140px; font-size: 14px; vertical-align: top;">{{ label }}:</td>
-          <td style="padding: 6px 0; color: #334155; font-size: 14px; vertical-align: top;">{{ value }}</td>
+          <td style="padding: 10px 0; font-weight: 600; color: #475569; width: 160px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; vertical-align: top; {% if not loop.last %}border-bottom: 1px solid #e2e8f0;{% endif %} font-family: sans-serif;">{{ label }}</td>
+          <td style="padding: 10px 0; padding-left: 12px; color: #0f172a; font-size: 14px; font-weight: 500; vertical-align: top; word-break: break-all; word-wrap: break-word; {% if not loop.last %}border-bottom: 1px solid #e2e8f0;{% endif %} font-family: sans-serif;">{{ value }}</td>
         </tr>
         {% endfor %}
       </table>
@@ -132,19 +153,19 @@ def render_status_badge(label: str, status_type: str = "info") -> str:
     status_type = status_type.lower()
     
     if status_type in ("success", "completed", "low"):
-        bg_color = "#dcfce7"
-        color = "#15803d"
+        bg_color = "#d1fae5"
+        color = "#047857"
     elif status_type in ("warning", "moderate"):
-        bg_color = "#fef9c3"
-        color = "#a16207"
+        bg_color = "#fef3c7"
+        color = "#b45309"
     elif status_type in ("danger", "critical", "high"):
         bg_color = "#fee2e2"
         color = "#b91c1c"
     else:  # info
-        bg_color = "#e2e8f0"
-        color = "#475569"
+        bg_color = "#e0f2fe"
+        color = "#0369a1"
 
-    badge_template = """<span style="display: inline-block; padding: 4px 8px; font-size: 12px; font-weight: 600; border-radius: 9999px; text-transform: uppercase; background-color: {{ bg }}; color: {{ col }};">{{ text }}</span>"""
+    badge_template = """<span style="display: inline-block; padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; background-color: {{ bg }}; color: {{ col }}; font-family: sans-serif;">{{ text }}</span>"""
     t = jinja_env.from_string(badge_template)
     return t.render(text=label, bg=bg_color, col=color)
 
@@ -166,10 +187,18 @@ class EmailTemplateRenderer:
         """Compiles a generic notification layout into (HTML, Plain-Text) bodies."""
         from markupsafe import escape
 
+        # Intercept and upgrade Clinical Report email layout in presentation layer
+        is_clinical_report = (cta_text == "Access AuraScan Dashboard")
+        if is_clinical_report:
+            cta_text = "View Clinical Report"
+            if title and title.startswith("Clinical Report:"):
+                title = "Clinical Report Ready"
+            message_body = "Your clinical analysis report is ready to view."
+
         # Ensure message body is HTML-escaped and supports double-newline linebreaks
         escaped_body = str(escape(message_body)).replace("\n", "<br>")
         
-        html_content = f"<p style='margin: 0 0 16px 0; color: #334155;'>{escaped_body}</p>"
+        html_content = f"<p style='margin: 0 0 20px 0; color: #334155;'>{escaped_body}</p>"
         text_content = message_body
 
         # 1. Badge layout
@@ -188,13 +217,25 @@ class EmailTemplateRenderer:
                 text_card += f"\n- {label}: {value}"
             text_content += text_card
 
-        # 3. CTA Button layout
+        # 3. Add Clinical Security notice block for clinical reports
+        if is_clinical_report:
+            html_content += """
+<table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #e0f2fe; border-left: 4px solid #0284c7; margin: 24px 0; padding: 14px 16px; border-radius: 0 6px 6px 0;">
+  <tr>
+    <td>
+      <div style="font-weight: 700; color: #0369a1; font-size: 13px; font-family: sans-serif; text-transform: uppercase; letter-spacing: 0.5px;">Secure Clinical Communication</div>
+      <div style="color: #0369a1; font-size: 13px; font-family: sans-serif; margin-top: 4px; font-weight: 500;">Clinical information is transmitted through a secure channel.</div>
+    </td>
+  </tr>
+</table>"""
+
+        # 4. CTA Button layout
         if cta_text and cta_url:
             html_button = render_cta_button(cta_text, cta_url)
             html_content += html_button
             text_content += f"\n\n{cta_text}: {cta_url}"
 
-        # 4. Render final Base HTML
+        # 5. Render final Base HTML
         html_template = jinja_env.from_string(BASE_HTML_TEMPLATE)
         html_body = html_template.render(
             subject=subject,
@@ -202,7 +243,7 @@ class EmailTemplateRenderer:
             content=html_content
         )
 
-        # 5. Render final Base Text
+        # 6. Render final Base Text
         text_template = jinja_env.from_string(BASE_TEXT_TEMPLATE)
         text_body = text_template.render(
             title=title,
@@ -215,11 +256,11 @@ class EmailTemplateRenderer:
     def render_email_verification(verification_url: str, user_name: str) -> Tuple[str, str]:
         """Renders the account verification email template."""
         subject = "Verify Your AuraScan AI Account"
-        title = "Email Verification Required"
+        title = "Verify Your AuraScan AI Account"
         message_body = (
             f"Dear {user_name},\n\n"
-            f"Thank you for registering with AuraScan AI. To complete your registration and "
-            f"activate your clinical account, please verify your email address by clicking the link below."
+            f"Please verify your email address to activate your account.\n\n"
+            f"This verification link is valid for 24 hours. For security reasons, do not share this link with anyone."
         )
         return EmailTemplateRenderer.render_generic_notification(
             subject=subject,
@@ -256,11 +297,11 @@ class EmailTemplateRenderer:
     def render_password_reset(reset_url: str, user_name: str) -> Tuple[str, str]:
         """Renders the password recovery email template."""
         subject = "Reset Your AuraScan AI Password"
-        title = "Password Recovery Request"
+        title = "Reset Your AuraScan AI Password"
         message_body = (
             f"Dear {user_name},\n\n"
-            f"We received a request to reset your password. If you made this request, please "
-            f"click the link below to configure your new credentials. This link will expire shortly."
+            f"We received a request to reset your account password.\n\n"
+            f"If you did not request this password reset, you can safely ignore this email."
         )
         return EmailTemplateRenderer.render_generic_notification(
             subject=subject,
