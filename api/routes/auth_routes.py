@@ -165,7 +165,7 @@ class ForgotPasswordSchema(BaseModel):
 
 class ResetPasswordSchema(BaseModel):
     reset_token_or_otp: str
-    email: EmailStr
+    email: Optional[EmailStr] = None
     new_password: str = Field(..., min_length=8)
 
 

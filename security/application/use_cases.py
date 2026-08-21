@@ -902,8 +902,25 @@ class AuthUseCases:
 
         return res
 
-    def reset_password(self, reset_token_or_otp: str, email: str, new_password: str, ip_address: str = "127.0.0.1") -> Dict[str, Any]:
+    def reset_password(self, reset_token_or_otp: str, email: Optional[str] = None, new_password: str = "", ip_address: str = "127.0.0.1") -> Dict[str, Any]:
         """Resets the user's password using reset token or OTP code. Enforces security requirements."""
+        derived_email = None
+        import hashlib
+        token_hash = hashlib.sha256(reset_token_or_otp.encode("utf-8")).hexdigest()
+        token_rec = self.user_repo.get_password_reset_token(token_hash)
+        if token_rec:
+            user_from_token = self.user_repo.get_by_id(token_rec["user_id"])
+            if user_from_token:
+                derived_email = user_from_token.email
+
+        if derived_email:
+            if email and PasswordHasher.normalize_email(email) != PasswordHasher.normalize_email(derived_email):
+                raise ValueError("Invalid user or token.")
+            email = derived_email
+        else:
+            if not email:
+                raise ValueError("Email is required.")
+
         email_clean = PasswordHasher.normalize_email(email)
         user = self.user_repo.get_by_email(email_clean)
         if not user:
@@ -917,11 +934,6 @@ class AuthUseCases:
             raise ValueError(pass_err)
 
         token_valid = False
-
-        # Try finding as password reset token first
-        import hashlib
-        token_hash = hashlib.sha256(reset_token_or_otp.encode("utf-8")).hexdigest()
-        token_rec = self.user_repo.get_password_reset_token(token_hash)
 
         if token_rec:
             if token_rec["user_id"] != user.id:

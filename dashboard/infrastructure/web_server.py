@@ -614,7 +614,7 @@ def create_app(db_path: str) -> Flask:
         email = data.get("email")
         new_password = data.get("new_password")
 
-        if not code or not email or not new_password:
+        if not code or not new_password:
             return jsonify({"error": "Missing required fields."}), 400
 
         try:
