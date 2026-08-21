@@ -434,6 +434,10 @@
                 border-bottom: 1px solid #E2E8F0 !important;
             }
         }
+        /* Email Report Modal custom transition classes */
+        .email-modal-transition {
+            transition: opacity 200ms cubic-bezier(0.4, 0, 0.2, 1), transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+        }
     </style>
     <!-- PDF.js library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
@@ -2320,12 +2324,117 @@
                     <a id="modal-csv-link" href="#" target="_blank" class="btn-secondary text-xs flex items-center gap-2 border border-slate-700 cursor-pointer">
                         <i class="fa-solid fa-file-csv text-indigo-400"></i> Export CSV
                     </a>
-                    <button id="modal-email-btn" onclick="emailReport(currentSelectedReportId)" class="btn-secondary text-xs flex items-center gap-2 border border-slate-700 cursor-pointer">
+                    <button id="modal-email-btn" onclick="emailReport(currentSelectedReportId, this)" class="btn-secondary text-xs flex items-center gap-2 border border-slate-700 cursor-pointer">
                         <i class="fa-solid fa-envelope text-sky-400"></i> Email Report
                     </button>
                     <a id="modal-pdf-link" href="#" target="_blank" class="btn-primary text-xs flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500 cursor-pointer">
                         <i class="fa-solid fa-file-pdf"></i> Download PDF Clinical Report
                     </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PREMIUM EMAIL REPORT MODAL -->
+    <div id="email-report-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4" onclick="handleEmailReportBackdropClick(event)">
+        <div class="glass-panel w-full max-w-md rounded-3xl p-6 shadow-2xl relative email-modal-transition transform scale-95 opacity-0" id="email-report-modal-content">
+            <!-- Close Button -->
+            <button onclick="closeEmailReportModal()" aria-label="Close email report modal" class="absolute top-5 right-5 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 h-9 w-9 rounded-full flex items-center justify-center transition cursor-pointer">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+
+            <!-- Header -->
+            <div class="mb-5">
+                <h3 class="font-extrabold text-xl text-slate-100 flex items-center gap-2">
+                    <i class="fa-solid fa-envelope text-sky-400"></i> Email Clinical Report
+                </h3>
+                <p class="text-xs text-slate-400 mt-1">Securely share this patient's clinical report</p>
+            </div>
+
+            <!-- Form/Content Container -->
+            <div id="email-report-form-container" class="space-y-4">
+                <!-- Patient Box -->
+                <div class="bg-slate-950/50 p-4 rounded-2xl border border-slate-800/80">
+                    <span class="text-[10px] text-slate-400 block font-bold uppercase tracking-wider mb-1">Patient</span>
+                    <div id="email-report-patient-info" class="text-xs font-bold text-slate-200">-</div>
+                </div>
+
+                <!-- Recipient Email Field -->
+                <div id="email-report-recipient-container" class="space-y-1.5">
+                    <label for="email-report-input" class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Recipient Email</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-slate-500">
+                            <i class="fa-solid fa-envelope text-xs"></i>
+                        </span>
+                        <input type="email" id="email-report-input" placeholder="recipient@example.com (leave blank for self)" class="w-full pl-9 pr-4 py-2.5 rounded-xl border bg-slate-950 border-slate-800 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition duration-200">
+                    </div>
+                    <!-- Validation/Help Text -->
+                    <p id="email-report-validation-msg" class="text-[10px] font-semibold text-rose-400 hidden"></p>
+                </div>
+
+                <!-- Report Card Box -->
+                <div class="bg-slate-950/50 p-4 rounded-2xl border border-slate-800/80 flex items-center gap-3">
+                    <div class="h-9 w-9 rounded-xl bg-sky-500/10 flex items-center justify-center text-sky-400">
+                        <i class="fa-solid fa-file-pdf text-lg"></i>
+                    </div>
+                    <div>
+                        <div id="email-report-name" class="text-xs font-bold text-slate-200">Brain Tumor Analysis Report</div>
+                        <div class="text-[10px] text-slate-450 font-medium mt-0.5">Clinical PDF Report</div>
+                    </div>
+                </div>
+
+                <!-- Security Notice -->
+                <div class="flex items-start gap-2.5 p-3.5 bg-sky-500/5 border border-sky-500/10 rounded-2xl text-[11px] text-sky-350">
+                    <i class="fa-solid fa-shield-halved text-sky-400 mt-0.5"></i>
+                    <div>
+                        <span class="font-bold block text-slate-200">Secure transmission</span>
+                        <span class="text-slate-400 leading-normal block mt-0.5">Patient information will be transmitted securely to the specified recipient.</span>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex justify-end gap-3 pt-2">
+                    <button onclick="closeEmailReportModal()" class="bg-slate-850 hover:bg-slate-800 text-slate-350 hover:text-slate-200 font-bold px-4 py-2.5 rounded-xl text-xs transition cursor-pointer">
+                        Cancel
+                    </button>
+                    <button id="email-report-submit-btn" onclick="submitEmailReportAction()" class="bg-sky-600 hover:bg-sky-500 text-slate-950 font-extrabold px-5 py-2.5 rounded-xl text-xs transition cursor-pointer flex items-center gap-1.5 shadow-md">
+                        <i class="fa-solid fa-paper-plane"></i> Send Report
+                    </button>
+                </div>
+            </div>
+
+            <!-- Success State -->
+            <div id="email-report-success-container" class="hidden py-8 text-center space-y-4">
+                <div class="h-16 w-16 bg-emerald-500/10 text-emerald-400 rounded-full flex items-center justify-center mx-auto text-3xl">
+                    <i class="fa-solid fa-check"></i>
+                </div>
+                <div class="space-y-2">
+                    <h4 class="font-extrabold text-lg text-slate-100">Report Sent Successfully</h4>
+                    <p id="email-report-success-msg" class="text-xs text-slate-400 max-w-[280px] mx-auto leading-relaxed">The report has been securely sent to the recipient.</p>
+                </div>
+                <div class="pt-4">
+                    <button onclick="closeEmailReportModal()" class="w-full sm:w-auto bg-slate-800 hover:bg-slate-700 text-white font-bold px-8 py-2.5 rounded-xl text-xs transition cursor-pointer">
+                        Done
+                    </button>
+                </div>
+            </div>
+
+            <!-- Error State -->
+            <div id="email-report-error-container" class="hidden py-8 text-center space-y-4">
+                <div class="h-16 w-16 bg-rose-500/10 text-rose-450 rounded-full flex items-center justify-center mx-auto text-3xl animate-pulse">
+                    <i class="fa-solid fa-exclamation"></i>
+                </div>
+                <div class="space-y-2">
+                    <h4 class="font-extrabold text-lg text-slate-100">Unable to Send Report</h4>
+                    <p id="email-report-error-msg" class="text-xs text-rose-400 max-w-[320px] mx-auto leading-relaxed font-semibold">-</p>
+                </div>
+                <div class="pt-4 flex justify-center gap-3">
+                    <button onclick="closeEmailReportModal()" class="bg-slate-850 hover:bg-slate-800 text-slate-350 font-bold px-4 py-2.5 rounded-xl text-xs transition cursor-pointer">
+                        Cancel
+                    </button>
+                    <button id="email-report-retry-btn" onclick="submitEmailReportAction()" class="bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold px-5 py-2.5 rounded-xl text-xs transition cursor-pointer flex items-center gap-1.5">
+                        Try Again
+                    </button>
                 </div>
             </div>
         </div>
@@ -2504,7 +2613,7 @@
                     <button onclick="downloadReportPdf(currentPreviewReportId, currentPreviewVersion)" class="btn-secondary text-xs h-9 px-3 flex items-center gap-1 cursor-pointer">
                         <i class="fa-solid fa-file-pdf text-rose-400"></i> Download PDF
                     </button>
-                    <button onclick="emailReport(currentPreviewReportId)" class="btn-secondary text-xs h-9 px-3 flex items-center gap-1 cursor-pointer">
+                    <button onclick="emailReport(currentPreviewReportId, this)" class="btn-secondary text-xs h-9 px-3 flex items-center gap-1 cursor-pointer">
                         <i class="fa-solid fa-envelope text-sky-400"></i> Email
                     </button>
                     <button onclick="showVisualSection('modal-heatmap-raw')" class="btn-secondary text-xs h-9 px-3 flex items-center gap-1 cursor-pointer">
@@ -2817,23 +2926,134 @@
             }
         }
 
-        async function emailReport(reportId) {
+        let emailModalTriggerButton = null;
+        let emailModalReportId = null;
+
+        function closeEmailReportModal() {
+            const modal = document.getElementById("email-report-modal");
+            const content = document.getElementById("email-report-modal-content");
+            content.classList.remove("opacity-100", "scale-100");
+            content.classList.add("opacity-0", "scale-95");
+            setTimeout(() => {
+                modal.classList.add("hidden");
+            }, 200);
+
+            window.removeEventListener("keydown", handleEmailReportKeyDown);
+
+            if (emailModalTriggerButton) {
+                emailModalTriggerButton.focus();
+            }
+        }
+
+        function handleEmailReportKeyDown(e) {
+            if (e.key === "Escape") {
+                closeEmailReportModal();
+            }
+        }
+
+        function handleEmailReportBackdropClick(e) {
+            if (e.target === document.getElementById("email-report-modal")) {
+                closeEmailReportModal();
+            }
+        }
+
+        async function emailReport(reportId, triggerBtn) {
             if (!reportId || isNaN(reportId)) {
                 alert("Invalid report ID selected.");
                 return;
             }
-            const btn = document.getElementById("modal-email-btn");
-            if (!btn) return;
 
-            // Prompt for optional recipient email
-            const input = window.prompt("Enter recipient email (leave blank to send to your own registered email):");
-            if (input === null) return; // Action cancelled
-            const recipientEmail = input.trim();
+            emailModalTriggerButton = triggerBtn || document.getElementById("modal-email-btn");
+            emailModalReportId = reportId;
 
-            // Disable button and show spinner loading UX
-            const originalContent = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin text-sky-400"></i> Sending...';
+            // Reset modal state
+            document.getElementById("email-report-form-container").classList.remove("hidden");
+            document.getElementById("email-report-success-container").classList.add("hidden");
+            document.getElementById("email-report-error-container").classList.add("hidden");
+
+            const recipientInput = document.getElementById("email-report-input");
+            recipientInput.value = "";
+            recipientInput.disabled = false;
+            recipientInput.classList.remove("border-red-500", "focus:border-red-500");
+            document.getElementById("email-report-validation-msg").classList.add("hidden");
+
+            const submitBtn = document.getElementById("email-report-submit-btn");
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Send Report';
+
+            // Populate Patient Info
+            let patientName = "Patient";
+            let patientId = "N/A";
+
+            // Try to parse from details modal
+            const metaText = document.getElementById("modal-patient-meta")?.innerText || "";
+            if (metaText && metaText.includes("Patient ID:")) {
+                const parts = metaText.split("|");
+                for (let part of parts) {
+                    part = part.trim();
+                    if (part.startsWith("Name:")) {
+                        patientName = part.substring(5).trim();
+                    } else if (part.startsWith("Patient ID:")) {
+                        patientId = part.substring(11).trim();
+                    }
+                }
+            }
+
+            document.getElementById("email-report-patient-info").innerText = `Patient ID: ${patientId} | Name: ${patientName}`;
+            document.getElementById("email-report-name").innerText = `Brain Tumor Analysis Report (Report #${reportId})`;
+
+            // If we don't have patient name, dynamically fetch details using existing API to make UI complete
+            if (patientName === "Patient" || patientId === "N/A") {
+                try {
+                    const res = await fetchWithAuth(`/api/report/${reportId}`);
+                    const data = await res.json();
+                    if (data && !data.error) {
+                        document.getElementById("email-report-patient-info").innerText = `Patient ID: ${data.patient_id} | Name: ${data.patient_name}`;
+                    }
+                } catch(e) {
+                    console.error("Error fetching patient info for email modal:", e);
+                }
+            }
+
+            // Show Modal with animation
+            const modal = document.getElementById("email-report-modal");
+            const content = document.getElementById("email-report-modal-content");
+            modal.classList.remove("hidden");
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    content.classList.remove("opacity-0", "scale-95");
+                    content.classList.add("opacity-100", "scale-100");
+                });
+            });
+
+            window.addEventListener("keydown", handleEmailReportKeyDown);
+            recipientInput.focus();
+        }
+
+        async function submitEmailReportAction() {
+            const recipientInput = document.getElementById("email-report-input");
+            const recipientEmail = recipientInput.value.trim();
+            const submitBtn = document.getElementById("email-report-submit-btn");
+            const errorMsgEl = document.getElementById("email-report-validation-msg");
+
+            // Basic Client-side Validation (only if email is entered)
+            errorMsgEl.classList.add("hidden");
+            recipientInput.classList.remove("border-red-500", "focus:border-red-500");
+            if (recipientEmail !== "") {
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(recipientEmail)) {
+                    errorMsgEl.innerText = "Please enter a valid email address.";
+                    errorMsgEl.classList.remove("hidden");
+                    recipientInput.classList.add("border-red-500", "focus:border-red-500");
+                    recipientInput.focus();
+                    return;
+                }
+            }
+
+            // Disable UI while sending
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin text-sky-400"></i> Sending...';
+            recipientInput.disabled = true;
 
             try {
                 const payload = {};
@@ -2841,7 +3061,7 @@
                     payload.recipient_email = recipientEmail;
                 }
 
-                const response = await fetchWithAuth(`/api/reports/${reportId}/email`, {
+                const response = await fetchWithAuth(`/api/reports/${emailModalReportId}/email`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -2851,22 +3071,24 @@
 
                 const data = await response.json();
                 if (response.ok && data.success) {
-                    alert(data.message || "Report email sent successfully!");
+                    document.getElementById("email-report-form-container").classList.add("hidden");
+                    document.getElementById("email-report-success-msg").innerText = data.message || "The report has been securely sent to the recipient.";
+                    document.getElementById("email-report-success-container").classList.remove("hidden");
                 } else {
                     const errorMsg = data.detail || data.error || "";
+                    let finalError = errorMsg || "Failed to email report.";
                     if (response.status === 503 || errorMsg.includes("not configured") || errorMsg.includes("SMTP_HOST") || errorMsg.includes("configuration parameter is missing")) {
-                        alert("Email service is not configured. Please configure the SMTP settings before sending reports.");
-                    } else {
-                        alert(errorMsg || "Failed to email report.");
+                        finalError = "Email service is not configured. Please configure the SMTP settings before sending reports.";
                     }
+                    document.getElementById("email-report-form-container").classList.add("hidden");
+                    document.getElementById("email-report-error-msg").innerText = finalError;
+                    document.getElementById("email-report-error-container").classList.remove("hidden");
                 }
             } catch (err) {
                 console.error("Email send error:", err);
-                alert("Network error sending email request.");
-            } finally {
-                // Restore button state
-                btn.disabled = false;
-                btn.innerHTML = originalContent;
+                document.getElementById("email-report-form-container").classList.add("hidden");
+                document.getElementById("email-report-error-msg").innerText = "Network error sending email request.";
+                document.getElementById("email-report-error-container").classList.remove("hidden");
             }
         }
 
