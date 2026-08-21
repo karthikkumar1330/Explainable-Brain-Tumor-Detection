@@ -452,7 +452,7 @@
     <!-- FORGOT / RESET PASSWORD MODAL -->
     <div id="forgot-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 transition-all duration-300 animate-[fadeIn_0.2s_ease-out]">
         <div class="glass-panel w-full max-w-md rounded-3xl p-6 md:p-8 shadow-2xl relative border flex flex-col max-h-[95vh] overflow-y-auto">
-            <button onclick="closeModal('forgot-modal')" class="absolute top-5 right-5 text-slate-455 hover:text-slate-650 dark:hover:text-slate-200 h-8 w-8 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-all duration-200" aria-label="Close modal">
+            <button onclick="closeModal('forgot-modal')" class="absolute top-5 right-5 text-slate-400 hover:text-slate-655 dark:hover:text-slate-200 h-8 w-8 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-all duration-200" aria-label="Close modal">
                 <i class="fa-solid fa-xmark text-lg"></i>
             </button>
             
@@ -462,57 +462,28 @@
                 </div>
                 <div>
                     <h3 class="font-bold text-lg text-slate-900 dark:text-white leading-tight">Password Recovery</h3>
-                    <p class="text-xs text-slate-500 dark:text-slate-400">Restore secure access to your clinical account</p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Enter your registered email. We'll send you a secure password-reset link.</p>
                 </div>
             </div>
 
             <div id="forgot-msg" class="hidden"></div>
             
-            <div class="space-y-6">
-                <!-- STEP 1 Section -->
-                <div class="border border-slate-100 dark:border-slate-800/60 rounded-2xl p-4 bg-slate-50/50 dark:bg-slate-950/20">
-                    <div class="flex items-center gap-2 mb-3">
-                        <span class="flex items-center justify-center w-5 h-5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 text-xs font-bold">1</span>
-                        <h4 class="text-xs font-bold text-slate-700 dark:text-slate-350 uppercase tracking-wider">Request Verification Code</h4>
+            <div id="forgot-form-container" class="space-y-6">
+                <form onsubmit="handleForgotPasswordSubmit(event)" class="space-y-4">
+                    <div class="floating-group">
+                        <input id="forgot-email" type="email" placeholder=" " required class="floating-input">
+                        <label for="forgot-email" class="floating-label">Email</label>
                     </div>
-                    <form onsubmit="handleForgotPasswordSubmit(event)" class="space-y-4">
-                        <div class="floating-group">
-                            <input id="forgot-email" type="email" placeholder=" " required class="floating-input">
-                            <label for="forgot-email" class="floating-label">Registered Email</label>
-                        </div>
-                        <button type="submit" class="w-full btn-primary flex items-center justify-center">
-                            Send Reset Code
-                        </button>
-                    </form>
-                </div>
+                    <button type="submit" id="forgot-submit-btn" class="w-full btn-primary flex items-center justify-center">
+                        Send Reset Link
+                    </button>
+                </form>
+            </div>
 
-                <!-- STEP 2 Section -->
-                <div class="border border-slate-100 dark:border-slate-800/60 rounded-2xl p-4 bg-slate-50/50 dark:bg-slate-950/20">
-                    <div class="flex items-center gap-2 mb-3">
-                        <span class="flex items-center justify-center w-5 h-5 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 text-xs font-bold">2</span>
-                        <h4 class="text-xs font-bold text-slate-700 dark:text-slate-355 uppercase tracking-wider">Set New Password</h4>
-                    </div>
-                    <form onsubmit="handleResetPasswordSubmit(event)" class="space-y-4">
-                        <div class="floating-group">
-                            <input id="reset-code" type="text" placeholder=" " required class="floating-input">
-                            <label for="reset-code" class="floating-label">Reset Code or OTP</label>
-                        </div>
-                        <div class="floating-group">
-                            <input id="reset-email" type="email" placeholder=" " required class="floating-input">
-                            <label for="reset-email" class="floating-label">Confirm Email</label>
-                        </div>
-                        <div class="floating-group">
-                            <input id="reset-new-pass" type="password" placeholder=" " required class="floating-input pr-password">
-                            <label for="reset-new-pass" class="floating-label">New Password</label>
-                            <button type="button" id="toggle-reset-pwd" onclick="togglePasswordVisibility('reset-new-pass', 'toggle-reset-pwd')" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200" aria-label="Toggle password visibility">
-                                <i class="fa-solid fa-eye text-sm"></i>
-                            </button>
-                        </div>
-                        <button type="submit" class="w-full btn-primary flex items-center justify-center">
-                            Reset Password Now
-                        </button>
-                    </form>
-                </div>
+            <div class="mt-6 flex justify-between items-center text-xs border-t border-slate-100 dark:border-slate-800/60 pt-4 shrink-0">
+                <button type="button" onclick="closeModal('forgot-modal')" class="text-sky-600 dark:text-sky-400 hover:underline font-bold transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-arrow-left"></i> Back to Sign In
+                </button>
             </div>
         </div>
     </div>
@@ -525,6 +496,12 @@
         // Boot Initialization
         document.addEventListener("DOMContentLoaded", async () => {
             await checkAuthStatus();
+
+            // Auto-open Forgot Password modal if url query param present
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('forgot') === '1' || urlParams.get('action') === 'forgot-password') {
+                openModal('forgot-modal');
+            }
         });
 
         // Toggle Password Field Text/Password Visibility
@@ -570,7 +547,25 @@
         }
 
         // Modal Controls
-        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+        function openModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+            if (id === 'forgot-modal') {
+                const msgDiv = document.getElementById('forgot-msg');
+                const formContainer = document.getElementById('forgot-form-container');
+                const emailInput = document.getElementById('forgot-email');
+                if (msgDiv) {
+                    msgDiv.classList.add('hidden');
+                    msgDiv.innerText = '';
+                }
+                if (formContainer) {
+                    formContainer.classList.remove('hidden');
+                }
+                if (emailInput) {
+                    emailInput.value = '';
+                    emailInput.disabled = false;
+                }
+            }
+        }
         function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
         // Fetch wrapper with auth header
@@ -752,12 +747,18 @@
 
         async function handleForgotPasswordSubmit(e) {
             e.preventDefault();
-            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const submitBtn = document.getElementById('forgot-submit-btn') || e.target.querySelector('button[type="submit"]');
             if (submitBtn) submitBtn.disabled = true;
 
             const email = document.getElementById('forgot-email').value;
             const msgDiv = document.getElementById('forgot-msg');
+            const formContainer = document.getElementById('forgot-form-container');
             msgDiv.classList.add('hidden');
+
+            if (submitBtn) {
+                submitBtn.innerHTML = `<i class="fa-solid fa-spinner animate-spin mr-2"></i><span>Sending Reset Link...</span>`;
+            }
+
             try {
                 const res = await fetch('/api/auth/forgot-password', {
                     method: 'POST',
@@ -765,48 +766,33 @@
                     body: JSON.stringify({ email })
                 });
                 const data = await res.json();
-                if (data.error) {
-                    msgDiv.innerText = `Error: ${data.error}`;
+                if (res.status === 200) {
+                    msgDiv.innerText = data.message || "If the account exists, password reset instructions have been sent.";
+                    msgDiv.classList.remove('hidden');
+                    msgDiv.style.color = '#0d9488';
+                    msgDiv.style.backgroundColor = 'rgba(13, 148, 136, 0.1)';
+                    msgDiv.style.borderColor = 'rgba(13, 148, 136, 0.2)';
+                    if (formContainer) {
+                        formContainer.classList.add('hidden');
+                    }
+                } else {
+                    msgDiv.innerText = data.error || "An error occurred.";
                     msgDiv.classList.remove('hidden');
                     msgDiv.style.color = '#f43f5e';
                     msgDiv.style.backgroundColor = 'rgba(244, 63, 94, 0.1)';
                     msgDiv.style.borderColor = 'rgba(244, 63, 94, 0.2)';
-                    return;
                 }
-                msgDiv.innerText = `${data.message} Reset OTP: ${data.reset_otp || 'Sent'}`;
-                msgDiv.classList.remove('hidden');
-                msgDiv.style.color = '';
-                msgDiv.style.backgroundColor = '';
-                msgDiv.style.borderColor = '';
             } catch (err) {
-                alert("Failed: " + err);
+                msgDiv.innerText = "Network error: " + err;
+                msgDiv.classList.remove('hidden');
+                msgDiv.style.color = '#f43f5e';
+                msgDiv.style.backgroundColor = 'rgba(244, 63, 94, 0.1)';
+                msgDiv.style.borderColor = 'rgba(244, 63, 94, 0.2)';
             } finally {
-                if (submitBtn) submitBtn.disabled = false;
-            }
-        }
-
-        async function handleResetPasswordSubmit(e) {
-            e.preventDefault();
-            const submitBtn = e.target.querySelector('button[type="submit"]');
-            if (submitBtn) submitBtn.disabled = true;
-
-            const code = document.getElementById('reset-code').value;
-            const email = document.getElementById('reset-email').value;
-            const newPass = document.getElementById('reset-new-pass').value;
-
-            try {
-                const res = await fetch('/api/auth/reset-password', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ reset_token_or_otp: code, email, new_password: newPass })
-                });
-                const data = await res.json();
-                if (data.error) { alert("Reset Error: " + data.error); return; }
-                alert(data.message);
-                closeModal('forgot-modal');
-            } catch (err) { alert("Password reset failed: " + err); }
-            finally {
-                if (submitBtn) submitBtn.disabled = false;
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = `<span>Send Reset Link</span>`;
+                }
             }
         }
     </script>
