@@ -24,7 +24,7 @@ BASE_HTML_TEMPLATE = """<!DOCTYPE html>
 
           <!-- Header -->
           <tr>
-            <td style="padding: 32px 32px 24px 32px; border-bottom: 1px solid #e2e8f0; text-align: left; background-color: #ffffff;">
+            <td style="padding: 32px 32px 24px 32px; border-bottom: 3px solid #0284c7; text-align: left; background-color: #ffffff;">
               <table border="0" cellpadding="0" cellspacing="0" width="100%">
                 <tr>
                   <td style="vertical-align: middle; width: 44px;">
@@ -136,7 +136,7 @@ def render_info_card(card_items: List[Tuple[str, Any]]) -> str:
       <table border="0" cellpadding="0" cellspacing="0" width="100%">
         {% for label, value in items %}
         <tr>
-          <td style="padding: 10px 0; font-weight: 600; color: #475569; width: 160px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; vertical-align: top; {% if not loop.last %}border-bottom: 1px solid #e2e8f0;{% endif %} font-family: sans-serif;">{{ label }}</td>
+          <td style="padding: 10px 0; font-weight: 600; color: #475569; width: 160px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; vertical-align: top; {% if not loop.last %}border-bottom: 1px solid #e2e8f0;{% endif %} font-family: sans-serif;">{{ label }}:</td>
           <td style="padding: 10px 0; padding-left: 12px; color: #0f172a; font-size: 14px; font-weight: 500; vertical-align: top; word-break: break-all; word-wrap: break-word; {% if not loop.last %}border-bottom: 1px solid #e2e8f0;{% endif %} font-family: sans-serif;">{{ value }}</td>
         </tr>
         {% endfor %}
