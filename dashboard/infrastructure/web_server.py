@@ -3525,6 +3525,88 @@ def create_app(db_path: str) -> Flask:
         except Exception as e:
             return jsonify({"error": f"An unexpected batch error occurred: {str(e)}"}), 500
 
+    @app.route("/api/doctor/patient-users", methods=["GET"])
+    def proxy_doctor_patient_users():
+        """Proxies patient users lookup to FastAPI backend."""
+        import requests
+        from security.application.config import app_config
+
+        token = request.cookies.get("access_token") or request.headers.get("Authorization")
+        if token and token.startswith("Bearer "):
+            token = token[7:].strip()
+
+        headers = {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        api_url = app_config.fastapi_url
+        try:
+            resp = requests.get(f"{api_url}/api/doctor/patient-users", headers=headers, timeout=15)
+            return (resp.content, resp.status_code, {"Content-Type": "application/json"})
+        except requests.exceptions.ConnectionError:
+            return jsonify({"error": "Failed to connect to AI Inference REST API. Ensure FastAPI server is running on http://127.0.0.1:8000"}), 503
+        except requests.exceptions.Timeout:
+            return jsonify({"error": "Internal API connection timed out."}), 504
+        except Exception as e:
+            return jsonify({"error": f"An unexpected proxy error occurred: {str(e)}"}), 500
+
+    @app.route("/api/doctor/assign-patient", methods=["POST"])
+    def proxy_doctor_assign_patient():
+        """Proxies patient-to-doctor onboarding assignment to FastAPI backend."""
+        import requests
+        from security.application.config import app_config
+
+        token = request.cookies.get("access_token") or request.headers.get("Authorization")
+        if token and token.startswith("Bearer "):
+            token = token[7:].strip()
+
+        headers = {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        params = {}
+        for key in ("patient_id", "age", "gender"):
+            val = request.args.get(key)
+            if val is not None:
+                params[key] = val
+
+        api_url = app_config.fastapi_url
+        try:
+            resp = requests.post(f"{api_url}/api/doctor/assign-patient", params=params, headers=headers, timeout=15)
+            return (resp.content, resp.status_code, {"Content-Type": "application/json"})
+        except requests.exceptions.ConnectionError:
+            return jsonify({"error": "Failed to connect to AI Inference REST API. Ensure FastAPI server is running on http://127.0.0.1:8000"}), 503
+        except requests.exceptions.Timeout:
+            return jsonify({"error": "Internal API connection timed out."}), 504
+        except Exception as e:
+            return jsonify({"error": f"An unexpected proxy error occurred: {str(e)}"}), 500
+
+    @app.route("/api/doctor/assigned-patients", methods=["GET"])
+    def proxy_doctor_assigned_patients():
+        """Proxies assigned patients list to FastAPI backend."""
+        import requests
+        from security.application.config import app_config
+
+        token = request.cookies.get("access_token") or request.headers.get("Authorization")
+        if token and token.startswith("Bearer "):
+            token = token[7:].strip()
+
+        headers = {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        api_url = app_config.fastapi_url
+        try:
+            resp = requests.get(f"{api_url}/api/doctor/assigned-patients", headers=headers, timeout=15)
+            return (resp.content, resp.status_code, {"Content-Type": "application/json"})
+        except requests.exceptions.ConnectionError:
+            return jsonify({"error": "Failed to connect to AI Inference REST API. Ensure FastAPI server is running on http://127.0.0.1:8000"}), 503
+        except requests.exceptions.Timeout:
+            return jsonify({"error": "Internal API connection timed out."}), 504
+        except Exception as e:
+            return jsonify({"error": f"An unexpected proxy error occurred: {str(e)}"}), 500
+
+
     @app.route("/verify/<token>")
     def verify_report_page(token: str):
         """Web page for public verification of a report version by secure token."""

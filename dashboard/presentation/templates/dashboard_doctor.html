@@ -2649,8 +2649,8 @@
 
     <!-- JAVASCRIPT LOGIC -->
     <script>
-        // Centralized API configuration (dynamically resolves hostname for cross-device access)
-        const API_BASE_URL = `http://${window.location.hostname}:8000`;
+        // Centralized API configuration (uses same-origin relative URLs through dashboard proxy)
+        const API_BASE_URL = "";
 
         let diagnosisChart = null;
         let severityChart = null;

@@ -7,10 +7,19 @@ __pycache__/
 logs/
 
 # Outputs
-outputs/
+outputs/*
+!outputs/.gitkeep
+!outputs/clinical_reports/
+outputs/clinical_reports/*
+!outputs/clinical_reports/.gitkeep
+!outputs/temp_uploads/
+outputs/temp_uploads/*
+!outputs/temp_uploads/.gitkeep
 
 # Trained models
 *.pth
+!models/classification/efficientnet_b0_brain_tumor.pth
+!models/brain_tumor_unext/model.pth
 
 # VS Code
 .vscode/
