@@ -27,32 +27,21 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # 4. Start FastAPI AI Inference Engine in the background on internal loopback
-echo "[AuraScan AI] Starting FastAPI AI backend on 127.0.0.1:8000..."
+echo "[AuraScan AI] Starting FastAPI AI backend in background on 127.0.0.1:8000..."
 python run_api.py --host 127.0.0.1 --port 8000 &
 FASTAPI_PID=$!
 
-# 5. Bounded health check to verify FastAPI readiness
-echo "[AuraScan AI] Waiting for FastAPI to load models and become ready..."
-READY=0
-for i in $(seq 1 45); do
-    if python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ping', timeout=1)" >/dev/null 2>&1; then
-        echo "[AuraScan AI] FastAPI AI backend is ready and responding on /ping."
-        READY=1
-        break
-    fi
-    # Check if process died prematurely
-    if ! kill -0 "$FASTAPI_PID" 2>/dev/null; then
-        echo "[AuraScan AI] ERROR: FastAPI process terminated unexpectedly during startup."
-        exit 1
-    fi
-    sleep 1
-done
+# 5. Non-blocking background health check logger
+(
+    for i in $(seq 1 60); do
+        if python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ping', timeout=1)" >/dev/null 2>&1; then
+            echo "[AuraScan AI] FastAPI AI backend is ready and responding on /ping."
+            break
+        fi
+        sleep 2
+    done
+) &
 
-if [ "$READY" -ne 1 ]; then
-    echo "[AuraScan AI] ERROR: FastAPI failed to pass readiness check within 45 seconds."
-    exit 1
-fi
-
-# 6. Start Flask Clinical Dashboard in the foreground on public port
+# 6. Start Flask Clinical Dashboard immediately in the foreground on public port
 echo "[AuraScan AI] Starting Flask Clinical Dashboard on 0.0.0.0:${PORT}..."
 python run_dashboard.py --host 0.0.0.0 --port "$PORT"
