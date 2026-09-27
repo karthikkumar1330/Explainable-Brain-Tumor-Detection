@@ -17,6 +17,7 @@ reportlab
 fastapi
 uvicorn
 pydantic
+email-validator>=2.0.0
 python-multipart
 flask
 gunicorn>=21.2.0
