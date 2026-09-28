@@ -54,15 +54,18 @@ def validate_version_param(version_val: Any) -> Optional[int]:
     return val_int
 
 
-def create_app(db_path: str) -> Flask:
+def create_app(db_path: Optional[str] = None) -> Flask:
     """Factory function to build and configure the Flask web dashboard application with OWASP security.
 
     Args:
-        db_path: Path to the SQLite database.
+        db_path: Path to the SQLite database. If None, defaults to DB_PATH env or outputs/clinical_reports.db.
 
     Returns:
         Configured Flask application instance.
     """
+    if db_path is None:
+        db_path = os.environ.get("DB_PATH", "outputs/clinical_reports.db")
+
     template_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "presentation", "templates")
     )
@@ -369,6 +372,16 @@ def create_app(db_path: str) -> Flask:
             "favicon.ico",
             mimetype="image/x-icon"
         )
+
+    @app.route("/ping")
+    @app.route("/health")
+    def health_check():
+        import datetime
+        return jsonify({
+            "status": "healthy",
+            "service": "dashboard",
+            "timestamp": datetime.datetime.utcnow().isoformat()
+        }), 200
 
     @app.route("/")
     def index():

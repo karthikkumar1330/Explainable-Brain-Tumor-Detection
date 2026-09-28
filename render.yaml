@@ -1,0 +1,29 @@
+# ==============================================================================
+# AuraScan AI - Render Infrastructure Blueprint
+# Single-Service Co-located Production Deployment (FastAPI + Flask)
+# ==============================================================================
+services:
+  - type: web
+    name: aurascan-ai
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /ping
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ENV_MODE
+        value: production
+      - key: AURASCAN_HOST
+        value: 0.0.0.0
+      - key: FASTAPI_INTERNAL_URL
+        value: http://127.0.0.1:8000
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: PII_ENCRYPTION_KEY
+        sync: false
