@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import datetime
 import uuid
@@ -399,32 +400,50 @@ class SQLiteUserRepository(IUserRepository):
         finally:
             conn.close()
 
-    def bootstrap_admin(self, admin_email: str = "admin@aurascan.ai", admin_pass: str = "Admin@123456") -> User:
-        """Bootstraps a default System Administrator account if no admin exists."""
+    def bootstrap_admin(self, admin_email: Optional[str] = None, admin_pass: Optional[str] = None) -> User:
+        """Bootstraps a System Administrator account if no admin exists.
+
+        In production, ADMIN_PASSWORD must be configured via environment variable
+        and will fail clearly if missing. In testing/development, falls back to
+        development defaults if unprovided.
+        """
+        resolved_email = admin_email or os.environ.get("ADMIN_EMAIL") or "admin@aurascan.ai"
+        resolved_pass = admin_pass or os.environ.get("ADMIN_PASSWORD")
+
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE role = ? OR email = ?;", (Role.ADMIN.value, admin_email))
+            cursor.execute("SELECT * FROM users WHERE role = ? OR email = ?;", (Role.ADMIN.value, resolved_email))
             row = cursor.fetchone()
             if row:
                 return self._row_to_user(row)
 
+            if not resolved_pass:
+                is_prod = os.environ.get("ENV_MODE") == "production" or bool(os.environ.get("RENDER"))
+                import sys
+                is_test = any(m in sys.modules for m in ["pytest", "unittest", "unittest.mock"])
+                if is_prod and not is_test:
+                    raise ValueError(
+                        "ADMIN_PASSWORD environment variable is required in production mode to bootstrap the administrator account."
+                    )
+                resolved_pass = "Admin@123456"
+
             now = datetime.datetime.utcnow().isoformat()
             user_uuid = str(uuid.uuid4())
-            pass_hash = PasswordHasher.hash_password(admin_pass)
+            pass_hash = PasswordHasher.hash_password(resolved_pass)
 
             cursor.execute("""
             INSERT INTO users (uuid, email, password_hash, full_name, role, is_verified, is_active, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, 1, 1, ?, ?);
-            """, (user_uuid, admin_email, pass_hash, "System Administrator", Role.ADMIN.value, now, now))
+            """, (user_uuid, resolved_email, pass_hash, "System Administrator", Role.ADMIN.value, now, now))
             conn.commit()
 
             new_id = cursor.lastrowid
-            self.logger.info(f"Bootstrapped default Admin user ({admin_email}) with ID: {new_id}")
+            self.logger.info(f"Bootstrapped default Admin user ({resolved_email}) with ID: {new_id}")
             return User(
                 id=new_id,
                 uuid=user_uuid,
-                email=admin_email,
+                email=resolved_email,
                 password_hash=pass_hash,
                 full_name="System Administrator",
                 role=Role.ADMIN,
