@@ -7439,7 +7439,8 @@
             try {
                 const res = await fetchWithAuth(`${API_BASE_URL}/api/doctor/patient-users`);
                 if (res.ok) {
-                    const users = await res.json();
+                    const data = await res.json();
+                    const users = Array.isArray(data) ? data : (data.users || data.data || []);
                     select.innerHTML = '<option value="">-- Select Registered Patient --</option>';
                     users.forEach(u => {
                         const opt = document.createElement("option");
@@ -7447,6 +7448,8 @@
                         opt.textContent = `${u.full_name} (${u.email})`;
                         select.appendChild(opt);
                     });
+                } else {
+                    console.error("Failed to load patient users for onboarding, HTTP status:", res.status);
                 }
             } catch (e) {
                 console.error("Failed to load patient users for onboarding:", e);
@@ -7496,14 +7499,22 @@
             try {
                 const res = await fetchWithAuth(`${API_BASE_URL}/api/doctor/assigned-patients`);
                 if (res.ok) {
-                    assignedPatientsCache = await res.json();
+                    const data = await res.json();
+                    assignedPatientsCache = Array.isArray(data) ? data : (data.patients || data.data || []);
+                    const currentVal = select.value;
                     select.innerHTML = '<option value="">-- Select Assigned Patient --</option>';
                     assignedPatientsCache.forEach(p => {
                         const opt = document.createElement("option");
                         opt.value = p.patient_id;
-                        opt.textContent = `${p.name} (${p.email})`;
+                        const label = p.name ? `${p.name}${p.email ? ` (${p.email})` : ''}` : (p.email || p.patient_id);
+                        opt.textContent = label;
                         select.appendChild(opt);
                     });
+                    if (currentVal && assignedPatientsCache.some(p => p.patient_id === currentVal)) {
+                        select.value = currentVal;
+                    }
+                } else {
+                    console.error("Failed to load assigned patients, HTTP status:", res.status);
                 }
             } catch (e) {
                 console.error("Failed to load assigned patients:", e);

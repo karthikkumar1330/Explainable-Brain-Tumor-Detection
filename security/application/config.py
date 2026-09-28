@@ -74,6 +74,14 @@ class AppConfig:
         else:
             return f"{base_url}:{self.api_port}"
 
+    @property
+    def internal_api_url(self) -> str:
+        """Internal loopback or container URL for backend-to-backend proxy requests."""
+        fastapi_internal_url = os.environ.get("FASTAPI_INTERNAL_URL") or os.environ.get("FASTAPI_URL")
+        if fastapi_internal_url:
+            return fastapi_internal_url.rstrip("/")
+        return f"http://127.0.0.1:{self.api_port}"
+
     def validate_public_url(self, url: str) -> None:
         """Enforces clean structure, scheme correctness, and rejects placeholders."""
         if not url:
@@ -101,7 +109,8 @@ class AppConfig:
             "AURASCAN_PUBLIC_BASE_URL": self.public_base_url,
             "DASHBOARD_PORT": self.dashboard_port,
             "REST_PORT": self.api_port,
-            "FASTAPI_URL": self.fastapi_url
+            "FASTAPI_URL": self.fastapi_url,
+            "INTERNAL_API_URL": self.internal_api_url
         }
 
 # Global Configuration Singleton

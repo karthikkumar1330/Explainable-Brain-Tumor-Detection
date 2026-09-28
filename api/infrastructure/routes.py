@@ -2820,9 +2820,9 @@ def get_doctor_assigned_patients(
             SELECT p.patient_id, p.name, p.age, p.gender, u.email
             FROM doctor_patient_assignments dpa
             JOIN patients p ON LOWER(dpa.patient_id) = LOWER(p.patient_id)
-            JOIN users u ON LOWER(p.patient_id) = LOWER(u.uuid)
+            LEFT JOIN users u ON LOWER(p.patient_id) = LOWER(u.uuid)
             WHERE dpa.doctor_id = ?
-            ORDER BY u.full_name ASC;
+            ORDER BY COALESCE(u.full_name, p.name) ASC;
             """,
             (current_user.id,)
         ).fetchall()

@@ -3349,9 +3349,8 @@ def create_app(db_path: str) -> Flask:
         if token:
             headers["Authorization"] = f"Bearer {token}"
 
-        # 2. Forward to FastAPI
         from security.application.config import app_config
-        api_url = app_config.fastapi_url
+        api_url = getattr(app_config, "internal_api_url", None) or app_config.fastapi_url
         try:
             files = {
                 "file": (mri_file.filename, mri_file.read(), mri_file.content_type or "image/png")
@@ -3477,7 +3476,7 @@ def create_app(db_path: str) -> Flask:
             headers["Authorization"] = f"Bearer {token}"
 
         from security.application.config import app_config
-        api_url = app_config.fastapi_url
+        api_url = getattr(app_config, "internal_api_url", None) or app_config.fastapi_url
         try:
             # Build files payload for requests library
             files_payload = []
@@ -3525,28 +3524,47 @@ def create_app(db_path: str) -> Flask:
         except Exception as e:
             return jsonify({"error": f"An unexpected batch error occurred: {str(e)}"}), 500
 
+    def _extract_proxy_token():
+        auth_header = request.headers.get("Authorization")
+        cookie_token = request.cookies.get("access_token")
+        token = None
+        if auth_header:
+            parts = auth_header.split()
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                token = parts[1]
+            else:
+                token = auth_header
+        elif cookie_token:
+            token = cookie_token
+
+        if token and token.startswith("Bearer "):
+            token = token[7:].strip()
+        return token
+
     @app.route("/api/doctor/patient-users", methods=["GET"])
     def proxy_doctor_patient_users():
         """Proxies patient users lookup to FastAPI backend."""
         import requests
         from security.application.config import app_config
 
-        token = request.cookies.get("access_token") or request.headers.get("Authorization")
-        if token and token.startswith("Bearer "):
-            token = token[7:].strip()
-
+        token = _extract_proxy_token()
         headers = {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
 
-        api_url = app_config.fastapi_url
+        api_url = getattr(app_config, "internal_api_url", None) or app_config.fastapi_url
+        loopback_url = f"http://127.0.0.1:{app_config.api_port}"
         try:
             resp = requests.get(f"{api_url}/api/doctor/patient-users", headers=headers, timeout=15)
             return (resp.content, resp.status_code, {"Content-Type": "application/json"})
-        except requests.exceptions.ConnectionError:
-            return jsonify({"error": "Failed to connect to AI Inference REST API. Ensure FastAPI server is running on http://127.0.0.1:8000"}), 503
-        except requests.exceptions.Timeout:
-            return jsonify({"error": "Internal API connection timed out."}), 504
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            if api_url != loopback_url:
+                try:
+                    resp = requests.get(f"{loopback_url}/api/doctor/patient-users", headers=headers, timeout=10)
+                    return (resp.content, resp.status_code, {"Content-Type": "application/json"})
+                except Exception:
+                    pass
+            return jsonify({"error": f"Failed to connect to AI Inference REST API. Ensure FastAPI server is running on {loopback_url}"}), 503
         except Exception as e:
             return jsonify({"error": f"An unexpected proxy error occurred: {str(e)}"}), 500
 
@@ -3556,10 +3574,7 @@ def create_app(db_path: str) -> Flask:
         import requests
         from security.application.config import app_config
 
-        token = request.cookies.get("access_token") or request.headers.get("Authorization")
-        if token and token.startswith("Bearer "):
-            token = token[7:].strip()
-
+        token = _extract_proxy_token()
         headers = {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
@@ -3570,14 +3585,19 @@ def create_app(db_path: str) -> Flask:
             if val is not None:
                 params[key] = val
 
-        api_url = app_config.fastapi_url
+        api_url = getattr(app_config, "internal_api_url", None) or app_config.fastapi_url
+        loopback_url = f"http://127.0.0.1:{app_config.api_port}"
         try:
             resp = requests.post(f"{api_url}/api/doctor/assign-patient", params=params, headers=headers, timeout=15)
             return (resp.content, resp.status_code, {"Content-Type": "application/json"})
-        except requests.exceptions.ConnectionError:
-            return jsonify({"error": "Failed to connect to AI Inference REST API. Ensure FastAPI server is running on http://127.0.0.1:8000"}), 503
-        except requests.exceptions.Timeout:
-            return jsonify({"error": "Internal API connection timed out."}), 504
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            if api_url != loopback_url:
+                try:
+                    resp = requests.post(f"{loopback_url}/api/doctor/assign-patient", params=params, headers=headers, timeout=10)
+                    return (resp.content, resp.status_code, {"Content-Type": "application/json"})
+                except Exception:
+                    pass
+            return jsonify({"error": f"Failed to connect to AI Inference REST API. Ensure FastAPI server is running on {loopback_url}"}), 503
         except Exception as e:
             return jsonify({"error": f"An unexpected proxy error occurred: {str(e)}"}), 500
 
@@ -3587,22 +3607,24 @@ def create_app(db_path: str) -> Flask:
         import requests
         from security.application.config import app_config
 
-        token = request.cookies.get("access_token") or request.headers.get("Authorization")
-        if token and token.startswith("Bearer "):
-            token = token[7:].strip()
-
+        token = _extract_proxy_token()
         headers = {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
 
-        api_url = app_config.fastapi_url
+        api_url = getattr(app_config, "internal_api_url", None) or app_config.fastapi_url
+        loopback_url = f"http://127.0.0.1:{app_config.api_port}"
         try:
             resp = requests.get(f"{api_url}/api/doctor/assigned-patients", headers=headers, timeout=15)
             return (resp.content, resp.status_code, {"Content-Type": "application/json"})
-        except requests.exceptions.ConnectionError:
-            return jsonify({"error": "Failed to connect to AI Inference REST API. Ensure FastAPI server is running on http://127.0.0.1:8000"}), 503
-        except requests.exceptions.Timeout:
-            return jsonify({"error": "Internal API connection timed out."}), 504
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            if api_url != loopback_url:
+                try:
+                    resp = requests.get(f"{loopback_url}/api/doctor/assigned-patients", headers=headers, timeout=10)
+                    return (resp.content, resp.status_code, {"Content-Type": "application/json"})
+                except Exception:
+                    pass
+            return jsonify({"error": f"Failed to connect to AI Inference REST API. Ensure FastAPI server is running on {loopback_url}"}), 503
         except Exception as e:
             return jsonify({"error": f"An unexpected proxy error occurred: {str(e)}"}), 500
 
