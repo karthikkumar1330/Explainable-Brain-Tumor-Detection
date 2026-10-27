@@ -290,3 +290,8 @@ html:not(.dark) [class*="hover:bg-slate-900/"]:hover {
     font-size: 11px;
     font-weight: 500;
 }
+
+/* Defensive Utility Fallbacks: Ensure hidden states and modals are never displayed without layout */
+.hidden {
+    display: none !important;
+}

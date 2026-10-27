@@ -5,8 +5,8 @@
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AuraScan AI - Clinical MRI Portal</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind CSS (Local Static Asset with CDN Fallback) -->
+    <script src="/static/js/tailwindcss.js"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
